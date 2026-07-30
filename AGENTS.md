@@ -40,7 +40,9 @@ There is **no test suite** configured (no Jest/Vitest/Playwright).
 
 ### Dev server gotchas
 
-- If you see **Internal Server Error** or missing `.next` manifest errors after a build, stop the dev server, run `rm -rf .next`, then restart `npm run dev`.
+- **Do not run `npm run build` while `npm run dev` is running.** Both write to `.next`; concurrent use corrupts manifests and returns **Internal Server Error** (500) with `ENOENT` for `app-build-manifest.json` or `_buildManifest.js.tmp.*` in logs.
+- Recovery: stop the dev server, then run `npm run dev:clean` (or `npm run clean` followed by `npm run dev`).
+- If you see **Internal Server Error** without a clear cause, same recovery usually fixes it.
 - Run the dev server in tmux so it stays alive across commands (e.g. session name `nextjs-dev-server`).
 
 ### Auth for end-to-end testing
