@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 60 10% 95%; /* #F4F4F0 Cream */
+    --foreground: 0 0% 4%; /* #0A0A0A Ink */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 4%;
+    --primary: 223 100% 33%; /* #002FA7 Brand Blue */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 32%; /* #525252 */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 60 10% 90%;
+    --muted-foreground: 0 0% 32%;
+    --accent: 223 100% 33%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 7%; /* #121212 Strong Border */
+    --input: 0 0% 88%;
+    --ring: 223 100% 33%;
+    --radius: 0px;
+    --success: 163 100% 38%;
+    --warning: 38 100% 57%;
+
+    /* Emergent Semantic Palette */
+    --ink: 0 0% 4%;
+    --cream: 60 10% 95%;
+    --brand: 223 100% 33%;
+    --surface: 0 0% 100%;
+    --app: 60 10% 95%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border rounded-none;
+  }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline tracking-tighter uppercase leading-none;
+  }
+}
+
+/* Tactical Swiss Grid Pattern */
+.tactical-grid {
+  background-image: 
+    linear-gradient(to right, rgba(18, 18, 18, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(18, 18, 18, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-attachment: fixed;
+}
+
+/* Swiss Tactical Grid Classes */
+.brutalist-shadow {
+  box-shadow: 12px 12px 0px rgba(0, 47, 167, 1);
+}
+
+.terminal-overline {
+  @apply text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500 mb-2 flex items-center gap-2;
+}
+
+.terminal-overline::before {
+  content: "";
+  @apply h-[1px] w-4 bg-neutral-300;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  @apply w-1.5 h-1.5;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-neutral-400/50 hover:bg-neutral-500/50;
+}
+
+/* Status Dot Pulse */
+.pulse-dot {
+  @apply rounded-full;
+  animation: tactical-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tactical-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(0.9); }
+}
+
+input:focus, select:focus, textarea:focus {
+  @apply ring-0 border-brand border-[2px] outline-none !important;
+}
