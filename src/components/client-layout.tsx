@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
 import { cn } from "@/lib/utils";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export const ChromeContext = React.createContext<{
@@ -49,6 +49,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         {showChrome && isMobile && (
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetContent side="left" className="p-0 w-[280px] border-r border-ink sm:max-w-[280px] [&>button]:hidden rounded-none gap-0 z-[120]">
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
               <AppSidebar mobile onNavigate={() => setMobileNavOpen(false)} />
             </SheetContent>
           </Sheet>
