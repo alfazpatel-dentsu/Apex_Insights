@@ -10,18 +10,14 @@ export function FirebaseErrorListener() {
 
   useEffect(() => {
     const handlePermissionError = (error: FirestorePermissionError) => {
-      console.error(error); // Also log to console for dev
-      if (process.env.NODE_ENV === 'development') {
-        toast({
-          variant: 'destructive',
-          title: 'Firestore Permission Error',
-          description: (
-            <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
-              <code className="text-white">{error.message}</code>
-            </pre>
-          ),
-        });
-      }
+      console.error(error);
+      toast({
+        variant: 'destructive',
+        title: 'Save / sync failed',
+        description: error.context?.path
+          ? `Could not complete ${error.context.operation} on ${error.context.path}. Check permissions and try again.`
+          : error.message,
+      });
     };
 
     errorEmitter.on('permission-error', handlePermissionError);
