@@ -1,0 +1,12 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "aztec-pattern",
+      "description": "Intricate Aztec stone carving pattern",
+      "imageUrl": "https://picsum.photos/seed/aztec123/1920/1080",
+      "imageHint": "aztec pattern"
+    }
+  ],
+  "avatarPlaceholders": []
+}

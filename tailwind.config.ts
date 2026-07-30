@@ -34,6 +34,8 @@ const config = {
         cream: "hsl(var(--cream))",
         brand: "hsl(var(--brand))",
         surface: "hsl(var(--surface))",
+        app: "hsl(var(--app))",
+        hairline: "hsl(var(--hairline))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",

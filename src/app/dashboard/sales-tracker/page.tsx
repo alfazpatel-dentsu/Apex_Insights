@@ -101,14 +101,14 @@ export default function SalesTrackerPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input 
               placeholder="Search prospects..." 
-              className="pl-9 w-[220px] rounded-2xl glass border-none h-10 text-xs shadow-lg"
+              className="pl-9 w-[220px] rounded-none glass h-10 text-xs shadow-lg"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-2xl p-1 px-4 backdrop-blur-md shadow-inner border border-white/20 h-10">
-             <Filter className="h-3 w-3 opacity-40" />
+          <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 px-4 backdrop-blur-md shadow-inner border border-white/20 h-10">
+             <Filter className="h-3 w-3 text-secondary" />
              <select 
                className="bg-transparent border-none text-[10px] font-black uppercase outline-none focus:ring-0 cursor-pointer"
                value={statusFilter}
@@ -127,7 +127,7 @@ export default function SalesTrackerPage() {
 
           <Button 
             size="sm" 
-            className="h-10 rounded-2xl gap-2 shadow-xl shadow-primary/20 font-bold px-6"
+            className="h-10 rounded-none gap-2 shadow-primary/20 font-bold px-6"
             onClick={() => { setSelectedLead(null); setIsDialogOpen(true); }}
           >
             <PlusCircle className="h-4 w-4" />
@@ -136,7 +136,7 @@ export default function SalesTrackerPage() {
         </div>
       </PageHeader>
 
-      <div className="rounded-[2.5rem] glass overflow-hidden shadow-2xl border-none">
+      <div className="rounded-none glass overflow-hidden ">
         <Table>
           <TableHeader className="bg-foreground/[0.02]">
             <TableRow className="border-b border-foreground/5 hover:bg-transparent">
@@ -151,7 +151,7 @@ export default function SalesTrackerPage() {
             {loading ? (
               <TableRow><TableCell colSpan={5} className="text-center py-32"><Loader2 className="animate-spin h-10 w-10 mx-auto text-primary/40" /></TableCell></TableRow>
             ) : filteredLeads.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-40 text-muted-foreground italic uppercase text-[10px] font-black tracking-widest opacity-40">No prospect records found in active registry.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center py-40 text-muted-foreground italic uppercase text-[10px] font-black tracking-widest text-secondary">No prospect records found in active registry.</TableCell></TableRow>
             ) : filteredLeads.map((lead) => {
               const StatusIcon = statusVariants[lead.status].icon;
               return (
@@ -174,7 +174,7 @@ export default function SalesTrackerPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge className={cn("text-[9px] font-black uppercase h-6 px-3 rounded-xl flex items-center gap-1.5 w-fit", statusVariants[lead.status].color)}>
+                    <Badge className={cn("text-[9px] font-black uppercase h-6 px-3 rounded-none flex items-center gap-1.5 w-fit", statusVariants[lead.status].color)}>
                       <StatusIcon className="h-3 w-3" />
                       {lead.status}
                     </Badge>
@@ -185,9 +185,9 @@ export default function SalesTrackerPage() {
                   <TableCell className="px-6">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><MoreHorizontal className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none"><MoreHorizontal className="h-4 w-4" /></Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="rounded-xl glass border-none shadow-2xl p-2 min-w-[140px]">
+                      <DropdownMenuContent align="end" className="rounded-none glass p-2 min-w-[140px]">
                         <DropdownMenuItem className="rounded-lg text-[10px] font-black uppercase tracking-widest gap-2" onSelect={openDialogFromMenu(() => { setSelectedLead(lead); setIsDialogOpen(true); })}>
                           <ArrowRight className="h-3 w-3" /> Edit Details
                         </DropdownMenuItem>
@@ -215,7 +215,7 @@ export default function SalesTrackerPage() {
       />
 
       <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <AlertDialogContent className="rounded-[2.5rem] glass border-none shadow-2xl">
+        <AlertDialogContent className="rounded-none glass ">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-headline text-3xl font-black uppercase tracking-tighter">Delete Lead?</AlertDialogTitle>
             <AlertDialogDescription className="text-foreground/70 font-bold uppercase text-[10px] tracking-widest leading-relaxed">
@@ -223,8 +223,8 @@ export default function SalesTrackerPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-8">
-            <AlertDialogCancel className="rounded-xl h-12 px-6 font-bold uppercase text-[10px] tracking-widest">Abort</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-xl h-12 px-8 font-black uppercase text-[10px] tracking-widest" onClick={async () => {
+            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold uppercase text-[10px] tracking-widest">Abort</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-none h-12 px-8 font-black uppercase text-[10px] tracking-widest" onClick={async () => {
               if (deletingId) {
                 await deleteLead(firestore, deletingId);
                 toast({ title: 'Lead deleted' });

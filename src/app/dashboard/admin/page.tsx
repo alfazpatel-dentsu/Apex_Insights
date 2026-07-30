@@ -224,7 +224,7 @@ export default function AdminPage() {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-px bg-ink border border-ink shadow-2xl overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-px bg-ink border border-ink overflow-hidden">
         <div className="lg:col-span-2 bg-white flex flex-col border-r border-ink">
           <div className="p-8 flex items-center justify-between border-b border-ink">
             <div>
@@ -258,7 +258,7 @@ export default function AdminPage() {
                   <TableCell colSpan={4} className="text-center py-20">
                     <div className="flex flex-col items-center gap-2">
                       <CircleNotch className="h-6 w-6 animate-spin text-brand" />
-                      <span className="text-[9px] font-black uppercase tracking-widest opacity-40">Syncing Registry...</span>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-secondary">Syncing Registry...</span>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -334,8 +334,8 @@ export default function AdminPage() {
                             {isCurrentResending ? <CircleNotch className="h-4 w-4 animate-spin" /> : <DotsThree className="h-5 w-5" />}
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="rounded-none border-ink bg-white shadow-2xl p-1 min-w-[160px]">
-                          <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest opacity-40 px-3 py-2">Actions</DropdownMenuLabel>
+                        <DropdownMenuContent align="end" className="rounded-none border-ink bg-white p-1 min-w-[160px]">
+                          <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-secondary px-3 py-2">Actions</DropdownMenuLabel>
                           {user.status === 'Invite sent' && (
                               <DropdownMenuItem className="rounded-none text-xs font-black uppercase flex items-center gap-2 px-3 py-2 cursor-pointer focus:bg-cream" onClick={() => handleResendInvite(user)}>
                                   <PaperPlaneTilt className="h-4 w-4" /> RESEND INVITE
@@ -433,7 +433,7 @@ export default function AdminPage() {
       />
 
       <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
-        <AlertDialogContent className="rounded-none border-ink shadow-2xl bg-white p-10">
+        <AlertDialogContent className="rounded-none border-ink bg-white p-10">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-3xl font-black uppercase tracking-tighter">Delete User Account?</AlertDialogTitle>
             <AlertDialogDescription className="text-sm font-medium text-secondary/80 mt-4 leading-relaxed">
@@ -453,7 +453,7 @@ export default function AdminPage() {
       </AlertDialog>
 
       <AlertDialog open={isPurgeAlertOpen} onOpenChange={setIsPurgeAlertOpen}>
-        <AlertDialogContent className="rounded-none border-ink shadow-2xl bg-white p-10">
+        <AlertDialogContent className="rounded-none border-ink bg-white p-10">
           <AlertDialogHeader>
             <div className="flex items-center gap-4 text-destructive mb-4">
               <Warning weight="fill" size={48} />
@@ -477,7 +477,7 @@ export default function AdminPage() {
       </AlertDialog>
 
       <AlertDialog open={isMaintenanceAlertOpen} onOpenChange={setIsMaintenanceAlertOpen}>
-        <AlertDialogContent className="rounded-none border-ink shadow-2xl bg-white p-10">
+        <AlertDialogContent className="rounded-none border-ink bg-white p-10">
           <AlertDialogHeader>
             <div className="flex items-center gap-4 text-brand mb-4">
               <Database weight="fill" size={48} />
@@ -511,7 +511,7 @@ function MaintenanceButton({ label, icon, onClick }: { label: string, icon: Reac
       onClick={onClick}
     >
       <span>{label}</span>
-      <span className="opacity-40 group-hover:opacity-100 transition-opacity">{icon}</span>
+      <span className="text-secondary group-hover:opacity-100 transition-opacity">{icon}</span>
     </Button>
   );
 }

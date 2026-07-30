@@ -100,7 +100,7 @@ function SearchableFilterContent({ placeholder, options, selected, onToggle }: {
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground/60" />
           <Input 
             placeholder={placeholder} 
-            className="pl-8 h-9 rounded-xl text-xs bg-foreground/5 border-none focus-visible:ring-1 focus-visible:ring-primary/30" 
+            className="pl-8 h-9 rounded-none text-xs bg-foreground/5 border-none focus-visible:ring-1 focus-visible:ring-primary/30" 
             value={search} 
             onChange={(e) => setSearch(e.target.value)} 
           />
@@ -108,7 +108,7 @@ function SearchableFilterContent({ placeholder, options, selected, onToggle }: {
       </div>
       <div className="max-h-[300px] overflow-y-auto space-y-1">
         {filtered.length > 0 ? filtered.map(option => (
-          <div key={option} className="flex items-center gap-2 p-2 rounded-xl hover:bg-foreground/5 cursor-pointer text-xs font-bold" onClick={() => onToggle(option)}>
+          <div key={option} className="flex items-center gap-2 p-2 rounded-none hover:bg-foreground/5 cursor-pointer text-xs font-bold" onClick={() => onToggle(option)}>
             <div className={cn("h-4 w-4 border rounded-md flex items-center justify-center transition-colors", selected.includes(option) ? "bg-primary border-primary text-white" : "border-foreground/20")}>
               {selected.includes(option) && <Check className="h-3 w-3" />}
             </div>
@@ -432,7 +432,7 @@ function KpiTrackingContent() {
           <Button 
             variant="default" 
             size="sm" 
-            className="h-10 rounded-2xl gap-2 bg-brand hover:bg-ink font-black shadow-xl transition-all"
+            className="h-10 rounded-none gap-2 bg-brand hover:bg-ink font-black transition-all"
             onClick={() => setShouldFetch(true)}
             disabled={shouldFetch && kpiLoading}
           >
@@ -444,22 +444,22 @@ function KpiTrackingContent() {
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-10 rounded-2xl gap-2 glass border-none shadow-lg">
+              <Button size="sm" variant="outline" className="h-10 rounded-none gap-2 glass shadow-lg">
                 <Upload className="h-4 w-4 text-primary" />Manage
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-2xl glass border-none p-2 shadow-2xl">
-              <DropdownMenuItem className="rounded-xl flex items-center gap-2" onClick={handleDownloadTemplate}>
+            <DropdownMenuContent align="end" className="rounded-none glass p-2 ">
+              <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={handleDownloadTemplate}>
                 <Download className="h-4 w-4" />Download Template
               </DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl flex items-center gap-2" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+              <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
                 <Upload className="h-4 w-4" />Upload CSV
               </DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl flex items-center gap-2" onClick={handleExportExcel}>
+              <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={handleExportExcel}>
                 <FileSpreadsheet className="h-4 w-4" />Export to Excel
               </DropdownMenuItem>
               <DropdownMenuItem 
-                className="rounded-xl flex items-center gap-2 text-destructive focus:text-destructive focus:bg-destructive/10" 
+                className="rounded-none flex items-center gap-2 text-destructive focus:text-destructive focus:bg-destructive/10" 
                 onClick={() => setIsClearAllAlertOpen(true)}
               >
                 <Trash className="h-4 w-4" />Clear All Data
@@ -467,7 +467,7 @@ function KpiTrackingContent() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button size="sm" className="h-10 px-4 rounded-2xl gap-2 shadow-xl shadow-primary/20 font-bold" onClick={() => { setSelectedKpiId(undefined); setIsDialogOpen(true); }}>
+          <Button size="sm" className="h-10 px-4 rounded-none gap-2 shadow-primary/20 font-bold" onClick={() => { setSelectedKpiId(undefined); setIsDialogOpen(true); }}>
             <PlusCircle className="h-4 w-4" />New Record
           </Button>
         </div>
@@ -476,30 +476,30 @@ function KpiTrackingContent() {
       {isUploading && ( <div className="space-y-3 glass-card p-6 mb-6"><div className="flex items-center justify-between text-xs font-black uppercase tracking-widest text-primary"><span className="flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" />Syncing Performance Data...</span><span>{uploadProgress}%</span></div><Progress value={uploadProgress} className="h-2 rounded-full" /></div> )}
 
       {!shouldFetch ? (
-        <div className="flex flex-col items-center justify-center p-32 border border-dashed border-ink/20 rounded-[2.5rem] bg-foreground/[0.02] text-center space-y-6">
-          <div className="h-20 w-20 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+        <div className="flex flex-col items-center justify-center p-12 md:p-16 border border-dashed border-ink/20 rounded-none bg-foreground/[0.02] text-center space-y-6">
+          <div className="h-20 w-20 bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
             <Database className="h-10 w-10" />
           </div>
           <div className="space-y-2">
-            <h3 className="text-xl font-bold uppercase tracking-tighter">Standby Mode</h3>
-            <p className="text-[11px] font-mono text-secondary uppercase tracking-widest max-w-sm">Select a timeline and click <strong>FETCH RECORDS</strong> to consult the KPI registry.</p>
+            <h3 className="text-xl font-bold uppercase tracking-tighter">No KPIs loaded</h3>
+            <p className="text-sm text-secondary max-w-sm mx-auto">Select a date range, then click <strong>Fetch records</strong> to load the KPI registry.</p>
           </div>
           <Button 
-            className="h-14 px-12 rounded-[2rem] bg-brand text-white font-black uppercase tracking-[0.2em] text-[10px] brutalist-shadow active:translate-x-1 active:translate-y-1 active:shadow-none transition-all"
+            className="h-12 px-10 rounded-none bg-brand text-white font-bold uppercase tracking-[0.15em] text-xs brutalist-shadow active:translate-x-1 active:translate-y-1 active:shadow-none transition-all"
             onClick={() => setShouldFetch(true)}
           >
-            Fetch Records
+            Fetch records
           </Button>
         </div>
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Popover><PopoverTrigger asChild><Button variant="outline" size="sm" className={cn("h-9 rounded-xl glass border-none gap-2 px-4 shadow-sm", selectedClients.length > 0 && "bg-primary/10")}><Filter className="h-3.5 w-3.5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">Clients</span></Button></PopoverTrigger><PopoverContent className="w-[280px] p-2 rounded-2xl glass" align="start"><SearchableFilterContent placeholder="Search clients..." options={Array.from(new Set(groupedDisplayData.map(d => d.clientName))).sort()} selected={selectedClients} onToggle={(c) => setSelectedClients(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])} /></PopoverContent></Popover>
-            <Popover><PopoverTrigger asChild><Button variant="outline" size="sm" className={cn("h-9 rounded-xl glass border-none gap-2 px-4 shadow-sm", selectedLobs.length > 0 && "bg-primary/10")}><Filter className="h-3.5 w-3.5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">LOB</span></Button></PopoverTrigger><PopoverContent className="w-[280px] p-2 rounded-2xl glass" align="start"><SearchableFilterContent placeholder="Search LOB..." options={Array.from(new Set(groupedDisplayData.map(d => d.lob))).sort()} selected={selectedLobs} onToggle={(l) => setSelectedLobs(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l])} /></PopoverContent></Popover>
+            <Popover><PopoverTrigger asChild><Button variant="outline" size="sm" className={cn("h-9 rounded-none glass  gap-2 px-4 shadow-sm", selectedClients.length > 0 && "bg-primary/10")}><Filter className="h-3.5 w-3.5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">Clients</span></Button></PopoverTrigger><PopoverContent className="w-[280px] p-2 rounded-none glass" align="start"><SearchableFilterContent placeholder="Search clients..." options={Array.from(new Set(groupedDisplayData.map(d => d.clientName))).sort()} selected={selectedClients} onToggle={(c) => setSelectedClients(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])} /></PopoverContent></Popover>
+            <Popover><PopoverTrigger asChild><Button variant="outline" size="sm" className={cn("h-9 rounded-none glass  gap-2 px-4 shadow-sm", selectedLobs.length > 0 && "bg-primary/10")}><Filter className="h-3.5 w-3.5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">LOB</span></Button></PopoverTrigger><PopoverContent className="w-[280px] p-2 rounded-none glass" align="start"><SearchableFilterContent placeholder="Search LOB..." options={Array.from(new Set(groupedDisplayData.map(d => d.lob))).sort()} selected={selectedLobs} onToggle={(l) => setSelectedLobs(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l])} /></PopoverContent></Popover>
             { (selectedClients.length > 0 || selectedLobs.length > 0) && <Button variant="ghost" size="sm" onClick={() => {setSelectedClients([]); setSelectedLobs([]);}} className="text-[10px] font-black uppercase tracking-widest text-destructive">Clear All</Button> }
           </div>
 
-          <div className="rounded-[2.5rem] glass overflow-x-auto shadow-2xl border-none">
+          <div className="rounded-none glass overflow-x-auto ">
             <Table>
               <TableHeader><TableRow className="border-none hover:bg-transparent">
                 <TableHead className="px-8 py-8 text-[11px] font-black uppercase min-w-[200px] cursor-pointer text-foreground" onClick={() => handleSort('clientName')}>CLIENT <SortIcon columnKey="clientName" /></TableHead>
@@ -518,7 +518,7 @@ function KpiTrackingContent() {
                 })}
                 <TableHead className="text-center px-4 text-[11px] font-black uppercase bg-primary/[0.03] min-w-[90px]">Status</TableHead>
                 {weekDates.map((w) => (
-                  <TableHead key={`header-${w.id}`} className="text-center text-[10px] px-2 py-4 font-black leading-tight uppercase text-muted-foreground/60 bg-foreground/[0.03] min-w-[110px]"><div className="flex flex-col items-center"><span>W{w.num}</span><span className="text-[8px] opacity-40 font-bold whitespace-nowrap">{w.range}</span></div></TableHead>
+                  <TableHead key={`header-${w.id}`} className="text-center text-[10px] px-2 py-4 font-black leading-tight uppercase text-muted-foreground/60 bg-foreground/[0.03] min-w-[110px]"><div className="flex flex-col items-center"><span>W{w.num}</span><span className="text-[8px] text-secondary font-bold whitespace-nowrap">{w.range}</span></div></TableHead>
                 ))}
                 <TableHead className="w-10 px-4 bg-primary/[0.03]"></TableHead>
               </TableRow></TableHeader>
@@ -549,16 +549,16 @@ function KpiTrackingContent() {
                               <TableCell className="text-center px-4"><Badge variant={ragVariantMap[statusVal]} className="text-[9px] font-black uppercase">{group.pacingStatus}</Badge></TableCell>
                               {weekDates.map((w) => {
                                   const wd = group.rangeWeekly.find((d: any) => d.weekId === w.id);
-                                  if (!wd) return <TableCell key={`cell-${group.id}-${w.id}`} className="text-center opacity-20">—</TableCell>;
+                                  if (!wd) return <TableCell key={`cell-${group.id}-${w.id}`} className="text-center text-secondary/70">—</TableCell>;
                                   const wdIdx = group.rangeWeekly.findIndex((d: any) => d.weekId === w.id);
                                   const prevWd = wdIdx > 0 ? group.rangeWeekly[wdIdx - 1] : null;
                                   const weeklyStatus = getWeeklyStatus(wd.achieved, prevWd ? prevWd.achieved : null, group.direction);
                                   const weeklyColor = weeklyStatus === 'Green' ? 'text-success' : (weeklyStatus === 'Amber' ? 'text-warning' : 'text-destructive');
                                   return (
-                                      <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} /></div></TooltipTrigger><TooltipContent className="rounded-xl glass border-none p-3 shadow-xl max-w-[200px]">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}</TooltipContent></Tooltip></TooltipProvider></TableCell>
+                                      <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} /></div></TooltipTrigger><TooltipContent className="rounded-none glass p-3 max-w-[200px]">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}</TooltipContent></Tooltip></TooltipProvider></TableCell>
                                   );
                               })}
-                              <TableCell className="px-4 text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-xl glass border-none p-2"><DropdownMenuItem className="rounded-lg text-xs font-bold" onSelect={openDialogFromMenu(() => { setSelectedKpiId(group.latestId); setIsDialogOpen(true); })}>Edit Latest Month</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                              <TableCell className="px-4 text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-none glass p-2"><DropdownMenuItem className="rounded-lg text-xs font-bold" onSelect={openDialogFromMenu(() => { setSelectedKpiId(group.latestId); setIsDialogOpen(true); })}>Edit Latest Month</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                           </TableRow>
                       );
                   })}
@@ -585,7 +585,7 @@ function KpiTrackingContent() {
       }} kpi={selectedKpi} weeklyData={selectedWeeklyData} currentMonth={format(dateRange?.to || new Date(), "MMMM yyyy")} weekDates={weekDates.filter(w => w.monthKey === format(dateRange?.to || new Date(), 'yyyy-MM')) as any} clients={clients || []} kpis={kpiDefinitions || []} channels={channels || []} />
 
       <AlertDialog open={isClearAllAlertOpen} onOpenChange={setIsClearAllAlertOpen}>
-        <AlertDialogContent className="rounded-[2.5rem] glass border-none shadow-2xl">
+        <AlertDialogContent className="rounded-none glass ">
           <AlertDialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
               <AlertTriangle className="h-8 w-8" />
@@ -596,9 +596,9 @@ function KpiTrackingContent() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-8">
-            <AlertDialogCancel className="rounded-xl h-12 px-6 font-bold" disabled={isClearing}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold" disabled={isClearing}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              className="rounded-xl bg-destructive hover:bg-destructive/90 h-12 px-10 font-black" 
+              className="rounded-none bg-destructive hover:bg-destructive/90 h-12 px-10 font-black" 
               onClick={handleClearAll}
               disabled={isClearing}
             >
@@ -623,10 +623,10 @@ export function QuickCommentPopover({ weekData }: { weekData: KpiWeeklyData }) {
     const { toast } = useToast();
     return (
         <Popover open={isOpen} onOpenChange={setIsOpen}>
-            <PopoverTrigger asChild><button className={cn("h-4 w-4 flex items-center justify-center rounded-full transition-all outline-none", weekData.comment ? "bg-primary/20 text-primary" : "text-muted-foreground/40 opacity-40 hover:opacity-100 hover:text-primary")} onClick={(e) => e.stopPropagation()}><MessageSquare className="h-2.5 w-2.5" /></button></PopoverTrigger>
-            <PopoverContent className="w-[260px] p-4 rounded-2xl glass border-none shadow-2xl space-y-3" align="center" onClick={(e) => e.stopPropagation()}>
+            <PopoverTrigger asChild><button className={cn("h-4 w-4 flex items-center justify-center rounded-full transition-all outline-none", weekData.comment ? "bg-primary/20 text-primary" : "text-muted-foreground/40 text-secondary hover:opacity-100 hover:text-primary")} onClick={(e) => e.stopPropagation()}><MessageSquare className="h-2.5 w-2.5" /></button></PopoverTrigger>
+            <PopoverContent className="w-[260px] p-4 rounded-none glass space-y-3" align="center" onClick={(e) => e.stopPropagation()}>
                 <span className="text-[10px] font-black uppercase tracking-widest text-primary/80">Add Comment (W{weekData.weekOfMonth})</span>
-                <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Provide context..." className="min-h-[80px] rounded-xl bg-foreground/5 border-none text-xs" />
+                <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Provide context..." className="min-h-[80px] rounded-none bg-foreground/5 border-none text-xs" />
                 <div className="flex justify-end pt-1"><Button size="sm" className="h-8 rounded-lg font-bold text-[10px]" onClick={async () => { setIsSaving(true); await updateWeeklyComment(firestore, weekData.id, comment); toast({ title: "Comment saved" }); setIsSaving(false); setIsOpen(false); }} disabled={isSaving}>{isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}Save</Button></div>
             </PopoverContent>
         </Popover>
