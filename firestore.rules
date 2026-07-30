@@ -1,0 +1,81 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+    }
+
+    // USERS
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if (isSignedIn() && request.auth.uid == userId) || isAdmin();
+    }
+    
+    // CLIENTS
+    match /clients/{clientId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // LEADS
+    match /leads/{leadId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // KPI DATA & WEEKLY BREAKDOWN
+    match /kpis/{kpiId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    match /kpiWeeklyData/{weeklyDataId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // KPI DEFINITIONS
+    match /kpiDefinitions/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // CHANNELS
+    match /channels/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // SPENDS
+    match /monthlySpends/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    match /weeklySpends/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // BUSINESS SNAPSHOTS
+    match /businessSnapshots/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // DEPRECATED COLLECTIONS (Maintenance)
+    match /actionItems/{id} { allow read, write: if isSignedIn(); }
+    match /wbrEntries/{id} { allow read, write: if isSignedIn(); }
+    match /pageManagement/{id} { allow read, write: if isSignedIn(); }
+    match /clusterInsights/{id} { allow read, write: if isSignedIn(); }
+  }
+}
