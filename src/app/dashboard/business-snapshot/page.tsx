@@ -4,7 +4,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { 
-  Sparkle, 
   ArrowsClockwise, 
   CircleNotch, 
   FileText, 
@@ -26,8 +25,9 @@ import { format, parse, subMonths, subWeeks, startOfWeek, addDays, isValid, isBe
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
-import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead } from '@/lib/types';
+import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
+import { getMonthlyStatus, kpiAttainmentPct } from '@/lib/kpi-rag';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -128,6 +128,28 @@ const actionBoardAccent: Record<ActionStatus, string> = {
   Completed: 'bg-success',
 };
 
+type ClientPath = 'on-path' | 'off-path' | 'no-signal';
+
+interface ClientHealthRow {
+  clientId: string;
+  clientName: string;
+  cluster: string;
+  lead: string;
+  kpiName: string;
+  channel: string;
+  achieved: number;
+  target: number;
+  direction: 'ASC' | 'DESC';
+  currency?: string;
+  pathStatus: RagStatus;
+  path: ClientPath;
+  performanceRag: RagStatus;
+  engagementRag: RagStatus;
+  attainment: number | null;
+}
+
+const PATH_RANK: Record<ClientPath, number> = { 'off-path': 0, 'no-signal': 1, 'on-path': 2 };
+
 export default function BusinessSnapshotPage() {
   const firestore = useFirestore();
   const { user } = useUser();
@@ -148,6 +170,9 @@ export default function BusinessSnapshotPage() {
   const [channelSpendWeekLabel, setChannelSpendWeekLabel] = useState<string | null>(null);
   const [pipelineData, setPipelineData] = useState<any[]>([]);
   const [accountabilityPulse, setAccountabilityPulse] = useState<any[]>([]);
+  const [clientHealth, setClientHealth] = useState<ClientHealthRow[]>([]);
+  const [clientHealthLoading, setClientHealthLoading] = useState(false);
+  const [healthCycleDate, setHealthCycleDate] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -440,7 +465,181 @@ export default function BusinessSnapshotPage() {
     };
   }, [monthlySpends, weeklySpends, mounted]);
 
-  const { data: snapshotDoc, loading: sLoading } = useDoc<BusinessSnapshot>(stats ? `businessSnapshots/${stats.month}` : null);
+  const { data: snapshotDoc } = useDoc<BusinessSnapshot>(stats ? `businessSnapshots/${stats.month}` : null);
+
+  useEffect(() => {
+    if (!mounted || !firestore || !stats?.month) return;
+
+    const loadClientHealth = async () => {
+      setClientHealthLoading(true);
+      try {
+        const looksLikeClientId = (value?: string | null, cid?: string) => {
+          if (!value?.trim()) return true;
+          const v = value.trim();
+          if (cid && v === cid) return true;
+          return /^CLID\d+$/i.test(v);
+        };
+
+        // Latest WBR cycle — prefer snapshot regenerate date, else discover from recent entries
+        let cycleDate = snapshotDoc?.stats?.wbrCycleDate || '';
+        if (!cycleDate) {
+          const recentWbr = await getDocs(
+            query(collection(firestore, 'wbrEntries'), orderBy('wbrDate', 'desc'), limit(50))
+          );
+          const dates = Array.from(new Set(recentWbr.docs.map((d) => d.data().wbrDate).filter(Boolean))).sort().reverse();
+          cycleDate = dates[0] || '';
+        }
+        setHealthCycleDate(cycleDate || null);
+
+        const kpiSnap = await getDocs(
+          query(collection(firestore, 'kpis'), where('month', '==', stats.month), limit(500))
+        );
+        const clientSnap = await getDocs(collection(firestore, 'clients'));
+        const wbrSnap = cycleDate
+          ? await getDocs(
+              query(collection(firestore, 'wbrEntries'), where('wbrDate', '==', cycleDate), limit(200))
+            )
+          : null;
+
+        const nameById: Record<string, string> = {};
+        const clusterById: Record<string, string> = {};
+        const leadById: Record<string, string> = {};
+        clientSnap.forEach((d) => {
+          const c = d.data() as Client;
+          if (c.uniqueId && c.name && !looksLikeClientId(c.name, c.uniqueId)) {
+            nameById[c.uniqueId] = c.name;
+          }
+          if (c.uniqueId) {
+            clusterById[c.uniqueId] = c.cluster || 'Unassigned';
+            leadById[c.uniqueId] = c.clusterLead || '';
+          }
+        });
+
+        const wbrByClient = new Map<string, WbrEntry>();
+        (wbrSnap?.docs || []).forEach((d) => {
+          const w = { id: d.id, ...(d.data() as object) } as WbrEntry;
+          if (!w.clientId) return;
+          wbrByClient.set(w.clientId, w);
+          if (w.clientName && !looksLikeClientId(w.clientName, w.clientId)) {
+            nameById[w.clientId] = w.clientName;
+          }
+          if (w.cluster) clusterById[w.clientId] = w.cluster;
+          if (w.clusterLead) leadById[w.clientId] = w.clusterLead;
+        });
+
+        const primaryByClient = new Map<string, KpiData>();
+        const severity = (s: RagStatus) => (s === 'Red' ? 0 : s === 'Amber' ? 1 : s === 'Green' ? 2 : 3);
+
+        kpiSnap.docs.forEach((d) => {
+          const kpi = { id: d.id, ...(d.data() as object) } as KpiData;
+          if (!kpi.clientId) return;
+          const type = (kpi.kpiType || 'PRIMARY').toUpperCase();
+          if (type !== 'PRIMARY') return;
+          if (kpi.clientName && !looksLikeClientId(kpi.clientName, kpi.clientId)) {
+            nameById[kpi.clientId] = kpi.clientName;
+          }
+          if (kpi.cluster) clusterById[kpi.clientId] = kpi.cluster;
+          if (kpi.cduLead) leadById[kpi.clientId] = kpi.cduLead;
+
+          const status = getMonthlyStatus(
+            kpi.achievedMonthTillYesterday || 0,
+            kpi.targetMonth || 0,
+            kpi.direction || 'ASC'
+          );
+          const existing = primaryByClient.get(kpi.clientId);
+          if (!existing) {
+            primaryByClient.set(kpi.clientId, kpi);
+            return;
+          }
+          const existingStatus = getMonthlyStatus(
+            existing.achievedMonthTillYesterday || 0,
+            existing.targetMonth || 0,
+            existing.direction || 'ASC'
+          );
+          // Prefer the riskiest primary when a client has multiple
+          if (severity(status) < severity(existingStatus)) {
+            primaryByClient.set(kpi.clientId, kpi);
+          }
+        });
+
+        const clientIds = Array.from(
+          new Set([...Array.from(wbrByClient.keys()), ...Array.from(primaryByClient.keys())])
+        );
+
+        const rows: ClientHealthRow[] = clientIds.map((clientId) => {
+          const kpi = primaryByClient.get(clientId);
+          const wbr = wbrByClient.get(clientId);
+          const achieved = kpi?.achievedMonthTillYesterday || 0;
+          const target = kpi?.targetMonth || 0;
+          const direction = kpi?.direction || 'ASC';
+          const pathStatus = kpi
+            ? getMonthlyStatus(achieved, target, direction)
+            : ('N/A' as RagStatus);
+          const path: ClientPath =
+            pathStatus === 'Green' ? 'on-path' : pathStatus === 'Red' ? 'off-path' : 'no-signal';
+
+          return {
+            clientId,
+            clientName: nameById[clientId] || wbr?.clientName || kpi?.clientName || clientId,
+            cluster: clusterById[clientId] || wbr?.cluster || kpi?.cluster || 'Unassigned',
+            lead: leadById[clientId] || wbr?.clusterLead || kpi?.cduLead || '—',
+            kpiName: kpi?.kpi || 'No primary KPI',
+            channel: kpi?.channel || '—',
+            achieved,
+            target,
+            direction,
+            currency: kpi?.currency,
+            pathStatus,
+            path,
+            performanceRag: (wbr?.performanceRag || 'N/A') as RagStatus,
+            engagementRag: (wbr?.engagementRag || 'N/A') as RagStatus,
+            attainment: kpi ? kpiAttainmentPct(achieved, target, direction) : null,
+          };
+        });
+
+        rows.sort((a, b) => {
+          const pathDiff = PATH_RANK[a.path] - PATH_RANK[b.path];
+          if (pathDiff !== 0) return pathDiff;
+          return a.clientName.localeCompare(b.clientName);
+        });
+
+        setClientHealth(rows);
+      } catch (err) {
+        console.error('Client health load failed:', err);
+        setClientHealth([]);
+      } finally {
+        setClientHealthLoading(false);
+      }
+    };
+
+    loadClientHealth();
+  }, [mounted, firestore, stats?.month, snapshotDoc?.stats?.wbrCycleDate]);
+
+  const clientHealthSummary = useMemo(() => {
+    const summary = {
+      onPath: 0,
+      offPath: 0,
+      noSignal: 0,
+      pGreen: 0,
+      pAmber: 0,
+      pRed: 0,
+      eGreen: 0,
+      eAmber: 0,
+      eRed: 0,
+    };
+    clientHealth.forEach((row) => {
+      if (row.path === 'on-path') summary.onPath += 1;
+      else if (row.path === 'off-path') summary.offPath += 1;
+      else summary.noSignal += 1;
+      if (row.performanceRag === 'Green') summary.pGreen += 1;
+      else if (row.performanceRag === 'Amber') summary.pAmber += 1;
+      else if (row.performanceRag === 'Red') summary.pRed += 1;
+      if (row.engagementRag === 'Green') summary.eGreen += 1;
+      else if (row.engagementRag === 'Amber') summary.eAmber += 1;
+      else if (row.engagementRag === 'Red') summary.eRed += 1;
+    });
+    return summary;
+  }, [clientHealth]);
 
   const isAdmin = userProfile?.role === 'Admin' || userProfile?.role === 'Cluster Lead';
 
@@ -720,21 +919,87 @@ export default function BusinessSnapshotPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
-             <div className="xl:col-span-2 bg-white p-12 border border-ink space-y-10">
-                <div className="flex items-center justify-between border-b border-ink/10 pb-8"><div className="space-y-1"><p className="terminal-overline">AI STRATEGIC REVIEW</p><div className="flex items-center gap-2 font-mono text-[11px] font-black text-secondary"><Sparkle className="h-4 w-4 text-brand" />AZTEC_SYNTHESIS_ENGINE_V4</div></div></div>
-                {sLoading ? (<div className="flex items-center gap-3 p-20 justify-center"><CircleNotch className="h-6 w-6 animate-spin text-brand" /><span className="text-[10px] font-black uppercase tracking-widest text-secondary">Updating AI analysis...</span></div>) : (<div className="whitespace-pre-wrap font-body text-[15px] leading-relaxed text-ink/80 border-l-[6px] border-brand pl-12 py-4">{snapshotDoc?.content || "Strategic analysis is being updated. Click 'REGENERATE' to refresh."}</div>)}
-             </div>
-             <div className="bg-cream p-10 border border-ink space-y-10">
-                <div className="space-y-2"><p className="terminal-overline">Portfolio Intelligence</p><h3 className="text-xl font-black tracking-tighter uppercase">Strategic Health</h3>{snapshotDoc?.stats?.wbrCycleDate && (<div className="flex items-center gap-2 text-[9px] font-black text-secondary/60 uppercase tracking-widest bg-white/50 w-fit px-2 py-0.5 border border-ink/5"><Calendar className="h-3 w-3" />WBR Cycle: {snapshotDoc.stats.wbrCycleDate}</div>)}</div>
-                <div className="space-y-10">
-                    <div className="space-y-4"><p className="text-[10px] font-black uppercase tracking-widest text-secondary">Operational Health (P-RAG)</p><HealthGrid green={snapshotDoc?.stats?.performanceRag?.Green || 0} amber={snapshotDoc?.stats?.performanceRag?.Amber || 0} red={snapshotDoc?.stats?.performanceRag?.Red || 0} /></div>
-                    <div className="space-y-4"><p className="text-[10px] font-black uppercase tracking-widest text-secondary">Engagement Health (E-RAG)</p><HealthGrid green={snapshotDoc?.stats?.engagementRag?.Green || 0} amber={snapshotDoc?.stats?.engagementRag?.Amber || 0} red={snapshotDoc?.stats?.engagementRag?.Red || 0} /></div>
-                    <div className="pt-10 border-t border-ink/10 space-y-6"><p className="text-[10px] font-black uppercase tracking-widest text-secondary">Major Shifts Detected</p>
-                        {[...(snapshotDoc?.stats?.ragAdvancements || []), ...(snapshotDoc?.stats?.ragRisks || [])].length > 0 ? (<div className="space-y-5">{[...(snapshotDoc?.stats?.ragAdvancements || []), ...(snapshotDoc?.stats?.ragRisks || [])].slice(0, 8).map((shift, i) => (<div key={i} className="flex flex-col gap-2 p-4 bg-white border border-ink/5 group hover:border-brand/20 transition-colors"><div className="flex items-center justify-between gap-4"><div className="min-w-0"><p className="text-xs font-black uppercase truncate">{shift.brand}</p><p className="text-[8px] font-bold text-secondary uppercase">{shift.team} • {shift.type}</p></div><div className={cn("text-[9px] font-mono font-black px-2 py-0.5 border h-fit", shift.direction === 'recovery' ? "bg-success/5 border-success/20 text-success" : "bg-destructive/5 border-destructive/20 text-destructive")}>{shift.from} → {shift.to}</div></div>{shift.reason && (<p className="text-[10px] leading-relaxed text-secondary italic border-l border-ink/10 pl-3 line-clamp-2">{shift.reason}</p>)}</div>))}</div>) : <p className="text-[10px] italic font-bold text-secondary/70">No significant shifts recorded WoW.</p>}
-                    </div>
-                </div>
-             </div>
+          {/* Portfolio client health — Primary KPI path + weekly WBR RAGs */}
+          <div className="bg-white border border-ink space-y-0 overflow-hidden">
+            <div className="bg-cream px-8 py-8 md:px-10 border-b border-ink flex flex-wrap items-end justify-between gap-6">
+              <div className="space-y-2 min-w-0">
+                <p className="terminal-overline">Portfolio Intelligence</p>
+                <h3 className="text-3xl md:text-4xl font-black tracking-tighter uppercase">Client Health Board</h3>
+                <p className="text-[11px] font-medium text-secondary max-w-xl">
+                  Primary KPI MTD sets the path. Performance &amp; Engagement RAG reflect the current WBR week.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                {clientHealthLoading && (
+                  <div className="flex items-center gap-2 text-[9px] font-black text-secondary uppercase tracking-widest">
+                    <CircleNotch className="h-3.5 w-3.5 animate-spin text-brand" />
+                    Syncing…
+                  </div>
+                )}
+                {healthCycleDate && (
+                  <div className="flex items-center gap-2 text-[9px] font-black text-secondary uppercase tracking-widest bg-white px-3 py-1.5 border border-ink/10">
+                    <Calendar className="h-3.5 w-3.5" />
+                    WBR Cycle:{' '}
+                    {(() => {
+                      try {
+                        const d = parse(healthCycleDate, 'yyyy-MM-dd', new Date());
+                        return isValid(d) ? format(d, 'dd MMM yyyy') : healthCycleDate;
+                      } catch {
+                        return healthCycleDate;
+                      }
+                    })()}
+                  </div>
+                )}
+                {stats?.month && (
+                  <div className="text-[9px] font-black text-secondary uppercase tracking-widest bg-white px-3 py-1.5 border border-ink/10">
+                    KPI Month: {format(parse(stats.month, 'yyyy-MM', new Date()), 'MMM yyyy').toUpperCase()}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-ink border-b border-ink">
+              <PathSummaryTile
+                label="On Path"
+                hint="Primary KPI on target"
+                count={clientHealthSummary.onPath}
+                tone="success"
+                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=on&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=on'}
+              />
+              <PathSummaryTile
+                label="Off Path"
+                hint="Primary KPI behind target"
+                count={clientHealthSummary.offPath}
+                tone="destructive"
+                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=off&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=off'}
+              />
+              <PathSummaryTile
+                label="No Signal"
+                hint="Missing primary KPI / N/A"
+                count={clientHealthSummary.noSignal}
+                tone="secondary"
+                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=none&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=none'}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-ink">
+              <RagSummaryStrip
+                title="Performance RAG · This Week"
+                green={clientHealthSummary.pGreen}
+                amber={clientHealthSummary.pAmber}
+                red={clientHealthSummary.pRed}
+                baseHref={healthCycleDate ? `/dashboard/wbr?date=${healthCycleDate}` : '/dashboard/wbr'}
+                ragParam="perfRag"
+              />
+              <RagSummaryStrip
+                title="Engagement RAG · This Week"
+                green={clientHealthSummary.eGreen}
+                amber={clientHealthSummary.eAmber}
+                red={clientHealthSummary.eRed}
+                baseHref={healthCycleDate ? `/dashboard/wbr?date=${healthCycleDate}` : '/dashboard/wbr'}
+                ragParam="engagementRag"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -742,23 +1007,90 @@ export default function BusinessSnapshotPage() {
   );
 }
 
-function HealthGrid({ green, amber, red }: { green: number, amber: number, red: number }) {
-    return (
-        <div className="grid grid-cols-3 gap-px bg-ink border border-ink shadow-lg">
-            <HealthBox count={green} label="GREEN" color="success" />
-            <HealthBox count={amber} label="AMBER" color="warning" />
-            <HealthBox count={red} label="RED" color="destructive" />
-        </div>
-    );
+function PathSummaryTile({
+  label,
+  hint,
+  count,
+  tone,
+  href,
+}: {
+  label: string;
+  hint: string;
+  count: number;
+  tone: 'success' | 'destructive' | 'secondary';
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="bg-white p-8 space-y-3 group transition-colors hover:bg-cream/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">{label}</p>
+        <ArrowUpRight className="h-4 w-4 text-secondary/40 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
+      </div>
+      <p
+        className={cn(
+          'text-5xl font-black font-headline tracking-tighter',
+          tone === 'success' && 'text-success',
+          tone === 'destructive' && 'text-destructive',
+          tone === 'secondary' && 'text-secondary'
+        )}
+      >
+        {count}
+      </p>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-secondary/70">{hint}</p>
+      <p className="text-[9px] font-black uppercase tracking-widest text-brand/70 opacity-0 group-hover:opacity-100 transition-opacity">
+        Open KPI Tracker →
+      </p>
+    </Link>
+  );
 }
 
-function HealthBox({ count, label, color }: { count: number, label: string, color: 'success' | 'warning' | 'destructive' }) {
-    return (
-        <div className="bg-white p-6 flex flex-col items-center justify-center space-y-4">
-            <div className={cn("h-14 w-10 rounded-full border-[3px] flex items-center justify-center bg-white shadow-sm", color === 'success' ? "border-success text-success" : color === 'warning' ? "border-warning text-warning" : "border-destructive text-destructive")}><span className="text-xl font-black font-mono">{count}</span></div>
-            <span className="text-[9px] font-black uppercase text-secondary tracking-[0.2em]">{label}</span>
-        </div>
-    );
+function RagSummaryStrip({
+  title,
+  green,
+  amber,
+  red,
+  baseHref,
+  ragParam,
+}: {
+  title: string;
+  green: number;
+  amber: number;
+  red: number;
+  baseHref: string;
+  ragParam: 'perfRag' | 'engagementRag';
+}) {
+  const total = Math.max(green + amber + red, 1);
+  const join = baseHref.includes('?') ? '&' : '?';
+  return (
+    <div className="bg-white p-6 md:p-8 space-y-4">
+      <Link
+        href={baseHref}
+        className="flex items-center justify-between gap-3 group focus-visible:outline-none"
+      >
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary group-hover:text-brand transition-colors">{title}</p>
+        <ArrowUpRight className="h-4 w-4 text-secondary/40 group-hover:text-brand transition-colors" weight="bold" />
+      </Link>
+      <Link href={baseHref} className="flex h-3 w-full overflow-hidden bg-foreground/[0.04] hover:opacity-90 transition-opacity">
+        <div className="bg-success h-full" style={{ width: `${(green / total) * 100}%` }} />
+        <div className="bg-warning h-full" style={{ width: `${(amber / total) * 100}%` }} />
+        <div className="bg-destructive h-full" style={{ width: `${(red / total) * 100}%` }} />
+      </Link>
+      <div className="flex flex-wrap gap-4 text-[10px] font-black uppercase tracking-widest">
+        <Link href={`${baseHref}${join}${ragParam}=Green`} className="text-success hover:underline underline-offset-4">
+          {green} Green
+        </Link>
+        <Link href={`${baseHref}${join}${ragParam}=Amber`} className="text-warning hover:underline underline-offset-4">
+          {amber} Amber
+        </Link>
+        <Link href={`${baseHref}${join}${ragParam}=Red`} className="text-destructive hover:underline underline-offset-4">
+          {red} Red
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 function SnapshotWidget({
