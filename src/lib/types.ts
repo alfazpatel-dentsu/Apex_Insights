@@ -11,7 +11,7 @@ export interface UserProfile {
 }
 
 export type ActionSection = "CLIENT ENGAGEMENT" | "SALES" | "OPERATIONS" | "AZTEC" | "HR" | "MANAGEMENT";
-export type ActionStatus = "Pending" | "In Progress" | "Completed" | "Blocked";
+export type ActionStatus = "Work-In Progress" | "Completed" | "Overdue" | "On-Hold";
 export type ActionPriority = "Low" | "Medium" | "High" | "Critical";
 
 export interface ActionItem {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -31,7 +31,6 @@ import {
   AlertTriangle,
   Clock,
   ArrowRight,
-  Filter,
   GripVertical,
 } from 'lucide-react';
 import { format, parseISO, isValid, isPast, isToday } from 'date-fns';
@@ -42,6 +41,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useCollection, useFirestore } from '@/firebase';
 import { ActionItem, ActionStatus, ActionPriority } from '@/lib/types';
 import { deleteActionItem, saveActionItem } from '@/lib/firestore-actions';
+import { canonicalizeActionStatus, resolveActionStatus } from '@/lib/normalize';
 import { useToast } from '@/hooks/use-toast';
 import { PageHeader } from '@/components/page-header';
 import { AddActionItemDialog } from './add-action-item-dialog';
@@ -58,12 +58,17 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
-const KANBAN_COLUMNS: ActionStatus[] = ['Pending', 'In Progress', 'Blocked', 'Completed'];
+const KANBAN_COLUMNS: ActionStatus[] = [
+  'Work-In Progress',
+  'On-Hold',
+  'Overdue',
+  'Completed',
+];
 
 const columnAccent: Record<ActionStatus, string> = {
-  Pending: 'border-t-secondary',
-  'In Progress': 'border-t-brand',
-  Blocked: 'border-t-destructive',
+  'Work-In Progress': 'border-t-brand',
+  'On-Hold': 'border-t-warning',
+  Overdue: 'border-t-destructive',
   Completed: 'border-t-success',
 };
 
@@ -100,6 +105,7 @@ function formatDueLabel(dueDate?: string) {
 
 function dueTone(dueDate?: string, status?: ActionStatus) {
   if (!dueDate || status === 'Completed') return 'text-secondary';
+  if (status === 'Overdue') return 'text-destructive';
   try {
     const d = parseISO(dueDate);
     if (!isValid(d)) return 'text-secondary';
@@ -123,10 +129,37 @@ export default function ActionItemsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [optimisticStatus, setOptimisticStatus] = useState<Record<string, ActionStatus>>({});
+  const overdueSyncRef = useRef<Set<string>>(new Set());
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
+
+  // Persist Overdue when completion/due date has passed (non-completed items).
+  useEffect(() => {
+    if (!actions?.length) return;
+
+    const stale = actions.filter((item) => {
+      const effective = resolveActionStatus(item.status, item.dueDate);
+      const stored = canonicalizeActionStatus(item.status);
+      return effective === 'Overdue' && stored !== 'Overdue' && !overdueSyncRef.current.has(item.id);
+    });
+
+    if (stale.length === 0) return;
+
+    stale.forEach((item) => overdueSyncRef.current.add(item.id));
+
+    (async () => {
+      for (const item of stale) {
+        try {
+          await saveActionItem(firestore, { ...item, status: 'Overdue' }, item.id);
+        } catch (error) {
+          overdueSyncRef.current.delete(item.id);
+          console.error('Failed to auto-mark overdue', item.id, error);
+        }
+      }
+    })();
+  }, [actions, firestore]);
 
   const filteredActions = useMemo(() => {
     if (!actions) return [];
@@ -140,20 +173,23 @@ export default function ActionItemsPage() {
         const matchesSection = sectionFilter === 'all' || a.section === sectionFilter;
         return matchesSearch && matchesSection;
       })
-      .map((a) =>
-        optimisticStatus[a.id] ? { ...a, status: optimisticStatus[a.id] } : a
-      );
+      .map((a) => {
+        const effective = optimisticStatus[a.id]
+          ? optimisticStatus[a.id]
+          : resolveActionStatus(a.status, a.dueDate);
+        return { ...a, status: effective };
+      });
   }, [actions, search, sectionFilter, optimisticStatus]);
 
   const columns = useMemo(() => {
     const map: Record<ActionStatus, ActionItem[]> = {
-      Pending: [],
-      'In Progress': [],
-      Blocked: [],
+      'Work-In Progress': [],
+      'On-Hold': [],
+      Overdue: [],
       Completed: [],
     };
     filteredActions.forEach((item) => {
-      const status = (KANBAN_COLUMNS.includes(item.status) ? item.status : 'Pending') as ActionStatus;
+      const status = KANBAN_COLUMNS.includes(item.status) ? item.status : 'Work-In Progress';
       map[status].push(item);
     });
     KANBAN_COLUMNS.forEach((status) => map[status].sort(sortBoardItems));
@@ -173,18 +209,36 @@ export default function ActionItemsPage() {
 
   const moveItem = async (itemId: string, nextStatus: ActionStatus) => {
     const item = (actions || []).find((a) => a.id === itemId);
-    if (!item || item.status === nextStatus) return;
+    if (!item) return;
 
-    setOptimisticStatus((prev) => ({ ...prev, [itemId]: nextStatus }));
+    const current = resolveActionStatus(
+      optimisticStatus[itemId] || item.status,
+      item.dueDate
+    );
+    if (current === nextStatus) return;
+
+    // Leaving Overdue while still past due snaps back unless marked Completed
+    // or the operator is parking it On-Hold.
+    let statusToSave = nextStatus;
+    if (
+      nextStatus !== 'Completed' &&
+      nextStatus !== 'On-Hold' &&
+      resolveActionStatus(nextStatus, item.dueDate) === 'Overdue'
+    ) {
+      statusToSave = 'Overdue';
+    }
+
+    setOptimisticStatus((prev) => ({ ...prev, [itemId]: statusToSave }));
     try {
-      await saveActionItem(firestore, { ...item, status: nextStatus }, item.id);
-      toast({ title: 'Status updated', description: `${item.taskName} → ${nextStatus}` });
-    } catch (error: any) {
-      setOptimisticStatus((prev) => {
-        const copy = { ...prev };
-        delete copy[itemId];
-        return copy;
+      await saveActionItem(firestore, { ...item, status: statusToSave }, item.id);
+      toast({
+        title: 'Status updated',
+        description:
+          statusToSave === nextStatus
+            ? `${item.taskName} → ${statusToSave}`
+            : `${item.taskName} is past due → Overdue`,
       });
+    } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Could not update status',
@@ -209,7 +263,6 @@ export default function ActionItemsPage() {
     const activeStatus = findStatusForId(String(active.id));
     const overStatus = findStatusForId(String(over.id));
     if (!activeStatus || !overStatus || activeStatus === overStatus) return;
-    // Optimistic column hop while dragging across boards
     setOptimisticStatus((prev) => ({ ...prev, [String(active.id)]: overStatus }));
   };
 
@@ -239,7 +292,7 @@ export default function ActionItemsPage() {
     <div className="flex flex-1 flex-col gap-6 animate-in fade-in duration-700 min-w-0">
       <PageHeader
         title="ACTION ITEMS"
-        description="Kanban board for WoW deliverables — drag cards across status columns."
+        description="Kanban board for WoW deliverables — drag cards across status columns. Past-due tasks move to Overdue automatically."
       >
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
@@ -387,10 +440,7 @@ function KanbanColumn({
       )}
     >
       <div className="flex items-center justify-between gap-3 px-4 py-4 border-b border-ink/10">
-        <div className="flex items-center gap-2 min-w-0">
-          <Filter className="h-3.5 w-3.5 text-secondary shrink-0" />
-          <h3 className="text-[11px] font-black uppercase tracking-[0.15em] truncate">{status}</h3>
-        </div>
+        <h3 className="text-[11px] font-black uppercase tracking-[0.12em] truncate">{status}</h3>
         <Badge variant="outline" className="rounded-none text-[10px] font-black h-6 px-2 border-ink/15">
           {items.length}
         </Badge>
@@ -468,7 +518,8 @@ function ActionCard({
     <div
       className={cn(
         'bg-white border border-ink/15 p-4 space-y-3 text-left whitespace-normal',
-        overlay && 'shadow-xl border-brand/40 rotate-1 scale-[1.02]'
+        overlay && 'shadow-xl border-brand/40 rotate-1 scale-[1.02]',
+        item.status === 'Overdue' && 'border-destructive/30'
       )}
     >
       <div className="flex items-start gap-2">

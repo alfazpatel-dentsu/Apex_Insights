@@ -30,6 +30,7 @@ import { useFirestore, useCollection } from '@/firebase';
 import { saveActionItem } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { resolveActionStatus } from '@/lib/normalize';
 
 const actionSchema = z.object({
   taskName: z.string().min(1, 'Task name is required'),
@@ -39,7 +40,7 @@ const actionSchema = z.object({
   clientId: z.string().optional(),
   clientName: z.string().optional(),
   comment: z.string().optional(),
-  status: z.enum(["Pending", "In Progress", "Completed", "Blocked"]),
+  status: z.enum(["Work-In Progress", "Completed", "Overdue", "On-Hold"]),
   priority: z.enum(["Low", "Medium", "High", "Critical"]),
   dueDate: z.string().optional(),
 });
@@ -55,7 +56,7 @@ interface AddActionItemDialogProps {
 }
 
 const sections: ActionSection[] = ["CLIENT ENGAGEMENT", "SALES", "OPERATIONS", "AZTEC", "HR", "MANAGEMENT"];
-const statuses: ActionStatus[] = ["Pending", "In Progress", "Completed", "Blocked"];
+const statuses: ActionStatus[] = ["Work-In Progress", "On-Hold", "Overdue", "Completed"];
 const priorities: ActionPriority[] = ["Low", "Medium", "High", "Critical"];
 
 export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName, action }: AddActionItemDialogProps) {
@@ -101,7 +102,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       clientId: clientId || '',
       clientName: clientName || '',
       comment: '',
-      status: 'Pending',
+      status: 'Work-In Progress',
       priority: 'Medium',
       dueDate: '',
     }
@@ -123,7 +124,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         clientId: action.clientId || '',
         clientName: action.clientName || '',
         comment: action.comment || '',
-        status: action.status,
+        status: resolveActionStatus(action.status, action.dueDate),
         priority: action.priority,
         dueDate: action.dueDate || '',
       });
@@ -136,7 +137,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         clientId: clientId || '',
         clientName: clientName || '',
         comment: '',
-        status: 'Pending',
+        status: 'Work-In Progress',
         priority: 'Medium',
         dueDate: '',
       });
@@ -153,7 +154,12 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
           if (found) finalClientName = found.name;
       }
 
-      await saveActionItem(firestore, { ...data, clientName: finalClientName }, action?.id);
+      const status = resolveActionStatus(data.status, data.dueDate);
+      await saveActionItem(
+        firestore,
+        { ...data, status, clientName: finalClientName },
+        action?.id
+      );
       toast({ title: action ? "Task updated" : "Task created" });
       handleOpenChange(false);
     } catch (e: any) {

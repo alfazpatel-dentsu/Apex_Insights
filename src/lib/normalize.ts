@@ -3,6 +3,8 @@
  * (e.g. LinkedIN / linkedin / Linked In → LinkedIn) across KPI + Spends data.
  */
 
+import type { ActionStatus } from './types';
+
 const CHANNEL_ALIASES: Record<string, string> = {
   // Meta / Facebook
   meta: 'Meta',
@@ -124,4 +126,75 @@ export function canonicalizeChannel(raw: string | null | undefined): string {
   }
 
   return titleCaseWords(trimmed);
+}
+
+export const ACTION_STATUSES = [
+  'Work-In Progress',
+  'On-Hold',
+  'Overdue',
+  'Completed',
+] as const;
+
+/** Map legacy + alias labels onto the current ActionStatus set. */
+export function canonicalizeActionStatus(raw: string | null | undefined): ActionStatus {
+  if (!raw) return 'Work-In Progress';
+  const key = raw.toString().toLowerCase().replace(/[_/\\|]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  if (key === 'completed' || key === 'done' || key === 'complete') return 'Completed';
+  if (key === 'overdue' || key === 'late') return 'Overdue';
+  if (
+    key === 'on-hold' ||
+    key === 'on hold' ||
+    key === 'hold' ||
+    key === 'blocked' ||
+    key === 'paused'
+  ) {
+    return 'On-Hold';
+  }
+  if (
+    key === 'work-in progress' ||
+    key === 'work in progress' ||
+    key === 'in progress' ||
+    key === 'wip' ||
+    key === 'pending' ||
+    key === 'todo' ||
+    key === 'open'
+  ) {
+    return 'Work-In Progress';
+  }
+
+  return 'Work-In Progress';
+}
+
+/** True when due/completion date is before today (calendar day). */
+export function isActionPastDue(dueDate?: string | null): boolean {
+  if (!dueDate) return false;
+  const raw = dueDate.toString().trim();
+  if (!raw) return false;
+
+  // Prefer ISO / yyyy-MM-dd; fall back to Date parse
+  let d = new Date(raw);
+  if (Number.isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    d = new Date(`${raw.slice(0, 10)}T00:00:00`);
+  }
+  if (Number.isNaN(d.getTime())) return false;
+
+  const dueDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = new Date();
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return dueDay < todayDay;
+}
+
+/**
+ * Effective board status: non-completed items past their completion date
+ * become Overdue automatically.
+ */
+export function resolveActionStatus(
+  status: string | null | undefined,
+  dueDate?: string | null
+): ActionStatus {
+  const base = canonicalizeActionStatus(status);
+  if (base === 'Completed') return 'Completed';
+  if (isActionPastDue(dueDate)) return 'Overdue';
+  return base;
 }
