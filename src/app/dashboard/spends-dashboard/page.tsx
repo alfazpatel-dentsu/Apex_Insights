@@ -367,33 +367,33 @@ export default function SpendsAnalyticsPage() {
   if (!mounted || monthlyLoading || weeklyLoading) return <div className="flex flex-1 items-center justify-center p-20"><Loader2 className="h-8 w-8 animate-spin text-primary/40" /></div>;
 
   const renderGainerLoserList = (gainers: GainerLoser[], losers: GainerLoser[]) => (
-    <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-foreground/5">
-      <div className="space-y-2">
+    <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-foreground/5 min-w-0">
+      <div className="space-y-2 min-w-0">
         <span className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-success">
-          <ArrowUp className="h-2 w-2" /> Top 3 Gainers (Vol)
+          <ArrowUp className="h-2 w-2 shrink-0" /> Top 3 Gainers (Vol)
         </span>
         {gainers.length > 0 ? gainers.map(g => (
-          <div key={g.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1">
-            <span className="text-[10px] font-black truncate max-w-[120px]">{g.brand}</span>
-            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase">{g.type}</span></div>
-            <span className="text-[9px] font-bold text-success leading-none flex items-center justify-between gap-1 mt-0.5">
-                <span>+{formatCurrency(g.diff)}</span>
-                <span className="text-[7px] opacity-60">({g.percentage.toFixed(1)}%)</span>
+          <div key={g.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0">
+            <span className="text-[10px] font-black truncate" title={g.brand}>{g.brand}</span>
+            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate">{g.type}</span></div>
+            <span className="text-[9px] font-bold text-success leading-none flex items-center justify-between gap-1 mt-0.5 min-w-0">
+                <span className="truncate">+{formatCurrency(g.diff)}</span>
+                <span className="text-[7px] opacity-60 shrink-0">({g.percentage.toFixed(1)}%)</span>
             </span>
           </div>
         )) : <span className="text-[9px] italic text-secondary">No gains</span>}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2 min-w-0">
         <span className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-destructive">
-          <ArrowDown className="h-2 w-2" /> Top 3 Losers (Vol)
+          <ArrowDown className="h-2 w-2 shrink-0" /> Top 3 Losers (Vol)
         </span>
         {losers.length > 0 ? losers.map(l => (
-          <div key={l.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1">
-            <span className="text-[10px] font-black truncate max-w-[120px]">{l.brand}</span>
-            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase">{l.type}</span></div>
-            <span className="text-[9px] font-bold text-destructive leading-none flex items-center justify-between gap-1 mt-0.5">
-                <span>{formatCurrency(l.diff)}</span>
-                <span className="text-[7px] opacity-60">({l.percentage.toFixed(1)}%)</span>
+          <div key={l.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0">
+            <span className="text-[10px] font-black truncate" title={l.brand}>{l.brand}</span>
+            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate">{l.type}</span></div>
+            <span className="text-[9px] font-bold text-destructive leading-none flex items-center justify-between gap-1 mt-0.5 min-w-0">
+                <span className="truncate">{formatCurrency(l.diff)}</span>
+                <span className="text-[7px] opacity-60 shrink-0">({l.percentage.toFixed(1)}%)</span>
             </span>
           </div>
         )) : <span className="text-[9px] italic text-secondary">No losses</span>}
@@ -500,41 +500,41 @@ export default function SpendsAnalyticsPage() {
         </div>
       </PageHeader>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="glass-card ">
-          <CardHeader className="pb-2">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-w-0">
+        <Card className="glass-card min-w-0 overflow-hidden">
+          <CardHeader className="pb-2 min-w-0">
             <CardDescription className="text-[10px] font-black uppercase text-primary">Annual Spends ({selectedYear})</CardDescription>
-            <CardTitle className="text-4xl font-black font-headline">₹{((stats?.yearly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
-            <div className={cn("flex items-center gap-1 text-[10px] font-black", (stats?.yearly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
-              {(stats?.yearly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-none">₹{((stats?.yearly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
+            <div className={cn("flex flex-wrap items-center gap-1 text-[10px] font-black", (stats?.yearly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
+              {(stats?.yearly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : <ArrowDownRight className="h-3 w-3 shrink-0" />}
               {Math.abs(stats?.yearly.growth || 0).toFixed(1)}% VS PREV YEAR
             </div>
           </CardHeader>
-          <CardContent>{stats && renderGainerLoserList(stats.yearly.gainers, stats.yearly.losers)}</CardContent>
+          <CardContent className="min-w-0">{stats && renderGainerLoserList(stats.yearly.gainers, stats.yearly.losers)}</CardContent>
         </Card>
         
-        <Card className="glass-card ">
-          <CardHeader className="pb-2">
+        <Card className="glass-card min-w-0 overflow-hidden">
+          <CardHeader className="pb-2 min-w-0">
             <CardDescription className="text-[10px] font-black uppercase text-primary">{stats?.monthly.monthName} Performance</CardDescription>
-            <CardTitle className="text-4xl font-black font-headline">₹{((stats?.monthly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
-            <div className={cn("flex items-center gap-1 text-[10px] font-black", (stats?.monthly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
-              {(stats?.monthly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-none">₹{((stats?.monthly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
+            <div className={cn("flex flex-wrap items-center gap-1 text-[10px] font-black", (stats?.monthly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
+              {(stats?.monthly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : <ArrowDownRight className="h-3 w-3 shrink-0" />}
               {Math.abs(stats?.monthly.growth || 0).toFixed(1)}% MOM
             </div>
           </CardHeader>
-          <CardContent>{stats && renderGainerLoserList(stats.monthly.gainers, stats.monthly.losers)}</CardContent>
+          <CardContent className="min-w-0">{stats && renderGainerLoserList(stats.monthly.gainers, stats.monthly.losers)}</CardContent>
         </Card>
 
-        <Card className="glass-card ">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-[10px] font-black uppercase text-primary">Weekly Pulse ({stats?.weekly.weekDate})</CardDescription>
-            <CardTitle className="text-4xl font-black font-headline">₹{((stats?.weekly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
-            <div className={cn("flex items-center gap-1 text-[10px] font-black", (stats?.weekly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
-              {(stats?.weekly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+        <Card className="glass-card min-w-0 overflow-hidden">
+          <CardHeader className="pb-2 min-w-0">
+            <CardDescription className="text-[10px] font-black uppercase text-primary truncate" title={`Weekly Pulse (${stats?.weekly.weekDate})`}>Weekly Pulse ({stats?.weekly.weekDate})</CardDescription>
+            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-none">₹{((stats?.weekly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
+            <div className={cn("flex flex-wrap items-center gap-1 text-[10px] font-black", (stats?.weekly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
+              {(stats?.weekly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : <ArrowDownRight className="h-3 w-3 shrink-0" />}
               {Math.abs(stats?.weekly.growth || 0).toFixed(1)}% WOW
             </div>
           </CardHeader>
-          <CardContent>{stats && renderGainerLoserList(stats.weekly.gainers, stats.weekly.losers)}</CardContent>
+          <CardContent className="min-w-0">{stats && renderGainerLoserList(stats.weekly.gainers, stats.weekly.losers)}</CardContent>
         </Card>
       </div>
 
