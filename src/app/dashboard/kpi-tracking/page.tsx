@@ -33,7 +33,7 @@ import {
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
 import { KpiDialog } from './kpi-dialog';
-import { format, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInterval } from 'date-fns';
+import { format, parse, isValid, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInterval } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/page-header';
 import { useCollection, useFirestore } from '@/firebase';
@@ -172,16 +172,25 @@ function SearchableFilterContent({ placeholder, options, selected, onToggle }: {
 function KpiTrackingContent() {
   const searchParams = useSearchParams();
   const searchQueryFromUrl = searchParams.get('q') || '';
+  const pathFilter = (searchParams.get('path') || '').toLowerCase(); // on | off | none
+  const primaryOnly = searchParams.get('primary') === '1';
+  const monthFromUrl = searchParams.get('month');
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date())
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    if (monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl)) {
+      const from = parse(monthFromUrl, 'yyyy-MM', new Date());
+      if (isValid(from)) return { from: startOfMonth(from), to: endOfMonth(from) };
+    }
+    return {
+      from: startOfMonth(new Date()),
+      to: endOfMonth(new Date())
+    };
   });
 
   const [mounted, setMounted] = useState(false);
-  const [shouldFetch, setShouldFetch] = useState(false);
+  const [shouldFetch, setShouldFetch] = useState(() => Boolean(monthFromUrl || pathFilter || primaryOnly));
 
   useEffect(() => {
     setMounted(true);
@@ -309,6 +318,7 @@ function KpiTrackingContent() {
           uploadRecordId: item.uploadRecordId || item.id,
           clientName: item.clientName,
           kpi: item.kpi,
+          kpiType: item.kpiType || 'PRIMARY',
           channel,
           lob: item.lob,
           direction: item.direction || 'ASC',
@@ -344,6 +354,7 @@ function KpiTrackingContent() {
         : 'N/A';
       return {
         ...group,
+        kpiType: latestMonthRecord?.kpiType || group.kpiType || 'PRIMARY',
         pacingStatus: mtdStatus,
         rangeWeekly,
         latestId: latestMonthRecord?.id,
@@ -365,8 +376,24 @@ function KpiTrackingContent() {
     if (selectedClients.length > 0) filtered = filtered.filter(item => selectedClients.includes(item.clientName));
     if (selectedLobs.length > 0) filtered = filtered.filter(item => selectedLobs.includes(item.lob));
     if (selectedChannels.length > 0) filtered = filtered.filter(item => selectedChannels.includes(item.channel));
+    if (primaryOnly) {
+      filtered = filtered.filter((item) => {
+        const latest = Object.values(item.monthData || {}).sort((a: any, b: any) =>
+          String(b.month).localeCompare(String(a.month))
+        )[0] as KpiData | undefined;
+        return ((latest?.kpiType || item.kpiType || 'PRIMARY') as string).toUpperCase() === 'PRIMARY';
+      });
+    }
+    if (pathFilter === 'on' || pathFilter === 'off' || pathFilter === 'none') {
+      filtered = filtered.filter((item) => {
+        const status = (item.pacingStatus || 'N/A') as RagStatus;
+        if (pathFilter === 'on') return status === 'Green';
+        if (pathFilter === 'off') return status === 'Red';
+        return status === 'N/A';
+      });
+    }
     return filtered;
-  }, [groupedDisplayData, searchQueryFromUrl, selectedClients, selectedLobs, selectedChannels]);
+  }, [groupedDisplayData, searchQueryFromUrl, selectedClients, selectedLobs, selectedChannels, primaryOnly, pathFilter]);
 
   // Interdependent filter option lists: each dimension is constrained by the others.
   const filterOptions = useMemo(() => {
@@ -659,6 +686,7 @@ function KpiTrackingContent() {
                 <TableHead className="px-2 py-8 text-[11px] font-black uppercase min-w-[120px] cursor-pointer text-foreground" onClick={() => handleSort('lob')}>LOB <SortIcon columnKey="lob" /></TableHead>
                 <TableHead className="px-2 py-8 text-[11px] font-black uppercase min-w-[120px] cursor-pointer text-foreground" onClick={() => handleSort('channel')}>CHANNEL <SortIcon columnKey="channel" /></TableHead>
                 <TableHead className="px-2 py-8 text-[11px] font-black uppercase min-w-[150px] cursor-pointer text-foreground" onClick={() => handleSort('kpi')}>KPI <SortIcon columnKey="kpi" /></TableHead>
+                <TableHead className="px-2 py-8 text-[11px] font-black uppercase min-w-[110px] cursor-pointer text-foreground" onClick={() => handleSort('kpiType')}>KPI Type <SortIcon columnKey="kpiType" /></TableHead>
                 
                 {monthsInRange.map((monthDate, idx) => {
                   const monthName = format(monthDate, 'MMM').toUpperCase();
@@ -705,6 +733,19 @@ function KpiTrackingContent() {
                               <TableCell className="px-2 py-6"><Badge variant="outline" className="text-[9px] font-black uppercase border-foreground/10 bg-foreground/[0.02]">{group.lob}</Badge></TableCell>
                               <TableCell className="text-[11px] font-black px-2 uppercase">{group.channel}</TableCell>
                               <TableCell className="px-2 py-6"><span className="font-black text-[11px] text-primary">{group.kpi}</span></TableCell>
+                              <TableCell className="px-2 py-6">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[8px] font-black uppercase tracking-widest h-5 px-1.5",
+                                    (group.kpiType || 'PRIMARY') === 'PRIMARY'
+                                      ? "border-brand/30 bg-brand/5 text-brand"
+                                      : "border-foreground/10 bg-foreground/[0.03] text-secondary"
+                                  )}
+                                >
+                                  {group.kpiType || 'PRIMARY'}
+                                </Badge>
+                              </TableCell>
                               
                               {monthsInRange.map((monthDate, idx) => {
                                 const monthKey = format(monthDate, 'yyyy-MM');

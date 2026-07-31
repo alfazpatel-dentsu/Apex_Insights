@@ -7,6 +7,7 @@ import {
   BarChart, 
   CartesianGrid, 
   Legend, 
+  LabelList,
   Line, 
   LineChart, 
   ResponsiveContainer, 
@@ -81,9 +82,164 @@ interface GainerLoser {
 
 const formatCurrency = (val: number) => {
     const absVal = Math.abs(val);
-    if (absVal >= 10000000) return `₹${(val / 10000000).toFixed(2)}Cr`;
-    if (absVal >= 100000) return `₹${(val / 100000).toFixed(2)}L`;
-    return `₹${val.toLocaleString()}`;
+    const sign = val < 0 ? '-' : '';
+    if (absVal >= 10000000) return `₹${sign}${(absVal / 10000000).toFixed(2)}Cr`;
+    if (absVal >= 100000) return `₹${sign}${(absVal / 100000).toFixed(2)}L`;
+    return `₹${sign}${absVal.toLocaleString()}`;
+};
+
+const formatChartLabel = (val: number) => {
+  if (val == null || Number.isNaN(val) || val === 0) return '';
+  const absVal = Math.abs(val);
+  const sign = val < 0 ? '-' : '';
+  if (absVal >= 10000000) return `${sign}${(absVal / 10000000).toFixed(1)}Cr`;
+  if (absVal >= 100000) return `${sign}${(absVal / 100000).toFixed(1)}L`;
+  if (absVal >= 1000) return `${sign}${(absVal / 1000).toFixed(0)}K`;
+  return `${sign}${absVal.toFixed(0)}`;
+};
+
+/** Alternate above/below the line so neighboring labels don't collide. */
+const SpendPointLabel = (props: {
+  x?: number | string;
+  y?: number | string;
+  value?: number | string;
+  index?: number;
+  payload?: Record<string, any>;
+}) => {
+  const { x, y, value, index = 0, payload } = props;
+  const numeric = typeof value === 'number' ? value : Number(value);
+  const label = formatChartLabel(numeric);
+  if (!label || x == null || y == null) return null;
+
+  const cx = Number(x);
+  const cy = Number(y);
+  const placeAbove = index % 2 === 0;
+  const dy = placeAbove ? -14 : 20;
+  const delta = payload?.__delta;
+  const deltaLabel =
+    delta != null && !Number.isNaN(delta) && delta !== 0
+      ? `${delta > 0 ? '+' : ''}${formatChartLabel(delta)}`
+      : '';
+
+  return (
+    <text
+      x={cx}
+      y={cy + dy}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fill="hsl(var(--ink))"
+      fontSize={9}
+      fontWeight={700}
+      fontFamily="var(--font-mono), IBM Plex Mono, monospace"
+      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+    >
+      <tspan x={cx} dy="0">{label}</tspan>
+      {deltaLabel ? (
+        <tspan
+          x={cx}
+          dy={placeAbove ? -11 : 11}
+          fill={delta > 0 ? 'hsl(var(--success))' : 'hsl(var(--destructive))'}
+          fontSize={8}
+        >
+          {deltaLabel}
+        </tspan>
+      ) : null}
+    </text>
+  );
+};
+
+/** Bar top labels: total spend + period difference. */
+const SpendBarLabel = (props: {
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  value?: number | string;
+  payload?: Record<string, any>;
+}) => {
+  const { x, y, width, payload } = props;
+  if (x == null || y == null) return null;
+
+  const total = typeof payload?.__total === 'number'
+    ? payload.__total
+    : typeof props.value === 'number'
+      ? props.value
+      : Number(props.value);
+  const label = formatChartLabel(total);
+  if (!label) return null;
+
+  const cx = Number(x) + (Number(width) || 0) / 2;
+  const cy = Number(y);
+  const delta = payload?.__delta;
+  const deltaLabel =
+    delta != null && !Number.isNaN(delta) && delta !== 0
+      ? `${delta > 0 ? '+' : ''}${formatChartLabel(delta)}`
+      : '';
+
+  return (
+    <text
+      x={cx}
+      y={cy - (deltaLabel ? 16 : 8)}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fill="hsl(var(--ink))"
+      fontSize={9}
+      fontWeight={700}
+      fontFamily="var(--font-mono), IBM Plex Mono, monospace"
+      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+    >
+      <tspan x={cx} dy="0">{label}</tspan>
+      {deltaLabel ? (
+        <tspan
+          x={cx}
+          dy="11"
+          fill={delta > 0 ? 'hsl(var(--success))' : 'hsl(var(--destructive))'}
+          fontSize={8}
+        >
+          {deltaLabel}
+        </tspan>
+      ) : null}
+    </text>
+  );
+};
+
+const META_CHART_KEYS = new Set(['week', 'timestamp', 'month', 'label', 'quarter', '__total', '__delta']);
+
+const getSeriesKeys = (row: Record<string, any> | undefined) =>
+  Object.keys(row || {}).filter((k) => !META_CHART_KEYS.has(k) && typeof (row as any)[k] === 'number');
+
+const withPeriodDeltas = (rows: Record<string, any>[]) =>
+  rows.map((row, i) => {
+    const keys = getSeriesKeys(row);
+    const total = keys.reduce((sum, k) => sum + (Number(row[k]) || 0), 0);
+    const prev = i > 0 ? rows[i - 1] : null;
+    const prevTotal = prev
+      ? getSeriesKeys(prev).reduce((sum, k) => sum + (Number(prev[k]) || 0), 0)
+      : null;
+    return {
+      ...row,
+      __total: total,
+      __delta: prevTotal != null ? total - prevTotal : null,
+    };
+  });
+
+const renderVarianceRow = (growth: number, varianceAmount: number | undefined, label: string) => {
+  const isUp = growth > 0 || (varianceAmount != null && varianceAmount > 0);
+  const isDown = growth < 0 || (varianceAmount != null && varianceAmount < 0);
+  const amountPrefix = varianceAmount != null && varianceAmount > 0 ? '+' : '';
+  return (
+    <div className={cn(
+      "flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-black uppercase",
+      isDown ? "text-destructive" : "text-success"
+    )}>
+      {isUp ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : isDown ? <ArrowDownRight className="h-3 w-3 shrink-0" /> : null}
+      {varianceAmount != null && (
+        <span className="break-all">{amountPrefix}{formatCurrency(varianceAmount)}</span>
+      )}
+      {varianceAmount != null && <span className="opacity-40">·</span>}
+      <span>{Math.abs(growth).toFixed(1)}%</span>
+      <span>{label}</span>
+    </div>
+  );
 };
 
 function SearchableFilterContent({ 
@@ -256,18 +412,42 @@ export default function SpendsAnalyticsPage() {
       };
     };
 
-    const yearlyCurrent = getBrandDetails(monthlyData.filter(d => d.month.startsWith(currentYearStr)));
-    const yearlyPrev = getBrandDetails(monthlyData.filter(d => d.month.startsWith(prevYearStr)));
-
-    const yearlySpends = Object.values(yearlyCurrent.spendMap).reduce((a, b) => a + b, 0);
-    const prevYearSpends = Object.values(yearlyPrev.spendMap).reduce((a, b) => a + b, 0);
-
     const monthsInYear = Array.from(new Set(monthlyData.filter(d => d.month.startsWith(currentYearStr)).map(d => d.month))).sort().reverse();
-    const lastMonthKey = monthsInYear[0] || '';
+    // Prefer latest month that actually has spend (same approach as Snapshot)
+    let lastMonthKey = '';
+    for (const m of monthsInYear) {
+      const monthTotal = monthlyData
+        .filter((d) => d.month === m)
+        .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+      if (monthTotal > 0) {
+        lastMonthKey = m;
+        break;
+      }
+    }
+    if (!lastMonthKey) lastMonthKey = monthsInYear[0] || '';
+
     let prevMonthKey = '';
     if (lastMonthKey) {
       prevMonthKey = format(subMonths(parse(lastMonthKey, 'yyyy-MM', new Date()), 1), 'yyyy-MM');
     }
+
+    const throughMonth = lastMonthKey ? parseInt(lastMonthKey.split('-')[1], 10) : 12;
+    const isSamePeriodYtd = (monthKey: string, y: string) => {
+      if (!monthKey.startsWith(`${y}-`)) return false;
+      const m = parseInt(monthKey.split('-')[1], 10);
+      return m >= 1 && m <= throughMonth;
+    };
+    // Fair YoY: YTD through latest uploaded month vs same months last year
+    const ytdCurrRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, currentYearStr));
+    const ytdPrevRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, prevYearStr));
+    const yearlyCurrent = getBrandDetails(ytdCurrRows);
+    const yearlyPrev = getBrandDetails(ytdPrevRows);
+
+    const yearlySpends = Object.values(yearlyCurrent.spendMap).reduce((a, b) => a + b, 0);
+    const prevYearSpends = Object.values(yearlyPrev.spendMap).reduce((a, b) => a + b, 0);
+    const ytdThroughLabel = lastMonthKey
+      ? format(parse(lastMonthKey, 'yyyy-MM', new Date()), 'MMM').toUpperCase()
+      : '';
 
     const lastMonth = getBrandDetails(monthlyData.filter(d => d.month === lastMonthKey));
     const prevMonth = getBrandDetails(monthlyData.filter(d => d.month === prevMonthKey));
@@ -290,9 +470,33 @@ export default function SpendsAnalyticsPage() {
     const prevWeekSpends = Object.values(prevWeek.spendMap).reduce((a, b) => a + b, 0);
 
     return {
-      yearly: { total: yearlySpends, growth: prevYearSpends > 0 ? ((yearlySpends - prevYearSpends) / prevYearSpends) * 100 : 0, gainers: calcGainersLosers(yearlyCurrent, yearlyPrev).gainers, losers: calcGainersLosers(yearlyCurrent, yearlyPrev).losers },
-      monthly: { total: lastMonthSpends, growth: prevMonthSpends > 0 ? ((lastMonthSpends - prevMonthSpends) / prevMonthSpends) * 100 : 0, monthName: lastMonthKey ? format(parse(lastMonthKey, 'yyyy-MM', new Date()), 'MMMM') : 'Latest', gainers: calcGainersLosers(lastMonth, prevMonth).gainers, losers: calcGainersLosers(lastMonth, prevMonth).losers },
-      weekly: { total: lastWeekSpends, growth: prevWeekSpends > 0 ? ((lastWeekSpends - prevWeekSpends) / prevWeekSpends) * 100 : 0, weekDate: lastWeekKey, gainers: calcGainersLosers(lastWeek, prevWeek).gainers, losers: calcGainersLosers(lastWeek, prevWeek).losers }
+      yearly: {
+        total: yearlySpends,
+        prevTotal: prevYearSpends,
+        varianceAmount: prevYearSpends > 0 ? yearlySpends - prevYearSpends : undefined,
+        growth: prevYearSpends > 0 ? ((yearlySpends - prevYearSpends) / prevYearSpends) * 100 : 0,
+        ytdThroughLabel,
+        gainers: calcGainersLosers(yearlyCurrent, yearlyPrev).gainers,
+        losers: calcGainersLosers(yearlyCurrent, yearlyPrev).losers,
+      },
+      monthly: {
+        total: lastMonthSpends,
+        prevTotal: prevMonthSpends,
+        varianceAmount: lastMonthSpends - prevMonthSpends,
+        growth: prevMonthSpends > 0 ? ((lastMonthSpends - prevMonthSpends) / prevMonthSpends) * 100 : 0,
+        monthName: lastMonthKey ? format(parse(lastMonthKey, 'yyyy-MM', new Date()), 'MMMM') : 'Latest',
+        gainers: calcGainersLosers(lastMonth, prevMonth).gainers,
+        losers: calcGainersLosers(lastMonth, prevMonth).losers,
+      },
+      weekly: {
+        total: lastWeekSpends,
+        prevTotal: prevWeekSpends,
+        varianceAmount: lastWeekSpends - prevWeekSpends,
+        growth: prevWeekSpends > 0 ? ((lastWeekSpends - prevWeekSpends) / prevWeekSpends) * 100 : 0,
+        weekDate: lastWeekKey,
+        gainers: calcGainersLosers(lastWeek, prevWeek).gainers,
+        losers: calcGainersLosers(lastWeek, prevWeek).losers,
+      },
     };
   }, [monthlyData, weeklyData, selectedYear, mounted]);
 
@@ -305,7 +509,7 @@ export default function SpendsAnalyticsPage() {
       if (!groups[week]) groups[week] = {};
       groups[week][dimKey] = (groups[week][dimKey] || 0) + item.spendsInr;
     });
-    return Object.entries(groups).map(([week, values]) => {
+    const rows = Object.entries(groups).map(([week, values]) => {
       let label = week;
       try {
         const d = parse(week, 'dd-MM-yyyy', new Date());
@@ -313,6 +517,7 @@ export default function SpendsAnalyticsPage() {
       } catch {}
       return { week: label, timestamp: parse(week, 'dd-MM-yyyy', new Date()).getTime(), ...values };
     }).sort((a, b) => a.timestamp - b.timestamp).slice(-12);
+    return withPeriodDeltas(rows);
   }, [weeklyData, wowDimension]);
 
   const momChartData = useMemo(() => {
@@ -324,7 +529,11 @@ export default function SpendsAnalyticsPage() {
       if (!groups[month]) groups[month] = {};
       groups[month][dimKey] = (groups[month][dimKey] || 0) + item.actualSpendsInr;
     });
-    return Object.entries(groups).map(([month, values]) => ({ month, label: format(parse(month, 'yyyy-MM', new Date()), 'MMM yy'), ...values })).sort((a, b) => a.month.localeCompare(b.month)).slice(-12);
+    const rows = Object.entries(groups)
+      .map(([month, values]) => ({ month, label: format(parse(month, 'yyyy-MM', new Date()), 'MMM yy'), ...values }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-12);
+    return withPeriodDeltas(rows);
   }, [monthlyData, momDimension]);
 
   const qoqChartData = useMemo(() => {
@@ -338,12 +547,19 @@ export default function SpendsAnalyticsPage() {
       if (!groups[qKey]) groups[qKey] = {};
       groups[qKey][dimKey] = (groups[qKey][dimKey] || 0) + item.actualSpendsInr;
     });
-    return Object.entries(groups).map(([quarter, values]) => ({ quarter, ...values })).sort((a, b) => a.quarter.localeCompare(b.quarter));
+    const rows = Object.entries(groups)
+      .map(([quarter, values]) => ({ quarter, ...values }))
+      .sort((a, b) => a.quarter.localeCompare(b.quarter));
+    return withPeriodDeltas(rows);
   }, [monthlyData, qoqDimension]);
+
+  const wowSeriesKeys = useMemo(() => getSeriesKeys(wowChartData[0]), [wowChartData]);
+  const momSeriesKeys = useMemo(() => getSeriesKeys(momChartData[0]), [momChartData]);
+  const qoqSeriesKeys = useMemo(() => getSeriesKeys(qoqChartData[0]), [qoqChartData]);
 
   const handleExportCsv = (data: any[], title: string) => {
     if (data.length === 0) return;
-    const headers = Object.keys(data[0]).filter(k => k !== 'timestamp');
+    const headers = Object.keys(data[0]).filter(k => k !== 'timestamp' && !k.startsWith('__'));
     const rows = data.map(row => headers.map(h => row[h]).join(','));
     const csvContent = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -503,12 +719,19 @@ export default function SpendsAnalyticsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-w-0">
         <Card className="glass-card min-w-0 overflow-hidden">
           <CardHeader className="pb-2 min-w-0">
-            <CardDescription className="text-[10px] font-black uppercase text-primary">Annual Spends ({selectedYear})</CardDescription>
-            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-none">₹{((stats?.yearly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
-            <div className={cn("flex flex-wrap items-center gap-1 text-[10px] font-black", (stats?.yearly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
-              {(stats?.yearly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : <ArrowDownRight className="h-3 w-3 shrink-0" />}
-              {Math.abs(stats?.yearly.growth || 0).toFixed(1)}% VS PREV YEAR
-            </div>
+            <CardDescription className="text-[10px] font-black uppercase text-primary">
+              {stats?.yearly.ytdThroughLabel
+                ? `ANNUAL SPENDS YTD (${selectedYear} · JAN–${stats.yearly.ytdThroughLabel})`
+                : `ANNUAL SPENDS YTD (${selectedYear})`}
+            </CardDescription>
+            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-[1.05] py-0.5">
+              {formatCurrency(stats?.yearly.total || 0)}
+            </CardTitle>
+            {renderVarianceRow(
+              stats?.yearly.growth || 0,
+              stats?.yearly.varianceAmount,
+              (stats?.yearly.prevTotal || 0) > 0 ? 'YTD YOY' : 'YTD TOTAL'
+            )}
           </CardHeader>
           <CardContent className="min-w-0">{stats && renderGainerLoserList(stats.yearly.gainers, stats.yearly.losers)}</CardContent>
         </Card>
@@ -516,11 +739,10 @@ export default function SpendsAnalyticsPage() {
         <Card className="glass-card min-w-0 overflow-hidden">
           <CardHeader className="pb-2 min-w-0">
             <CardDescription className="text-[10px] font-black uppercase text-primary">{stats?.monthly.monthName} Performance</CardDescription>
-            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-none">₹{((stats?.monthly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
-            <div className={cn("flex flex-wrap items-center gap-1 text-[10px] font-black", (stats?.monthly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
-              {(stats?.monthly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : <ArrowDownRight className="h-3 w-3 shrink-0" />}
-              {Math.abs(stats?.monthly.growth || 0).toFixed(1)}% MOM
-            </div>
+            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-[1.05] py-0.5">
+              {formatCurrency(stats?.monthly.total || 0)}
+            </CardTitle>
+            {renderVarianceRow(stats?.monthly.growth || 0, stats?.monthly.varianceAmount, 'MOM')}
           </CardHeader>
           <CardContent className="min-w-0">{stats && renderGainerLoserList(stats.monthly.gainers, stats.monthly.losers)}</CardContent>
         </Card>
@@ -528,11 +750,10 @@ export default function SpendsAnalyticsPage() {
         <Card className="glass-card min-w-0 overflow-hidden">
           <CardHeader className="pb-2 min-w-0">
             <CardDescription className="text-[10px] font-black uppercase text-primary truncate" title={`Weekly Pulse (${stats?.weekly.weekDate})`}>Weekly Pulse ({stats?.weekly.weekDate})</CardDescription>
-            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-none">₹{((stats?.weekly.total || 0) / 10000000).toFixed(2)}Cr</CardTitle>
-            <div className={cn("flex flex-wrap items-center gap-1 text-[10px] font-black", (stats?.weekly.growth || 0) >= 0 ? "text-success" : "text-destructive")}>
-              {(stats?.weekly.growth || 0) >= 0 ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : <ArrowDownRight className="h-3 w-3 shrink-0" />}
-              {Math.abs(stats?.weekly.growth || 0).toFixed(1)}% WOW
-            </div>
+            <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-[1.05] py-0.5">
+              {formatCurrency(stats?.weekly.total || 0)}
+            </CardTitle>
+            {renderVarianceRow(stats?.weekly.growth || 0, stats?.weekly.varianceAmount, 'WOW')}
           </CardHeader>
           <CardContent className="min-w-0">{stats && renderGainerLoserList(stats.weekly.gainers, stats.weekly.losers)}</CardContent>
         </Card>
@@ -547,16 +768,16 @@ export default function SpendsAnalyticsPage() {
           onExport={() => handleExportCsv(wowChartData, 'WoW_Spends')}
         >
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={wowChartData}>
+            <LineChart data={wowChartData} margin={{ top: 28, right: 16, left: 4, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--foreground))" opacity={0.05} />
               <XAxis dataKey="week" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
               <YAxis hide />
               <Tooltip 
-                contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} 
-                formatter={(val: number) => [`₹${(val / 10000000).toFixed(3)}Cr`, 'Spend']} 
+                contentStyle={{ borderRadius: '0', border: '1px solid #000' }} 
+                formatter={(val: number) => [formatCurrency(val), 'Spend']} 
               />
               <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-              {Object.keys(wowChartData[0] || {}).filter(k => k !== 'week' && k !== 'timestamp').map((key, i) => (
+              {wowSeriesKeys.map((key, i) => (
                 <Line 
                   key={key} 
                   type="monotone" 
@@ -564,8 +785,26 @@ export default function SpendsAnalyticsPage() {
                   stroke={CHART_PALETTE[i % CHART_PALETTE.length]} 
                   strokeWidth={3} 
                   dot={{ r: 4, strokeWidth: 2, fill: 'white' }} 
-                />
+                >
+                  {wowSeriesKeys.length === 1 ? (
+                    <LabelList dataKey={key} content={<SpendPointLabel />} />
+                  ) : null}
+                </Line>
               ))}
+              {wowSeriesKeys.length > 1 ? (
+                <Line
+                  type="monotone"
+                  dataKey="__total"
+                  stroke="transparent"
+                  strokeWidth={0}
+                  dot={false}
+                  activeDot={false}
+                  legendType="none"
+                  isAnimationActive={false}
+                >
+                  <LabelList dataKey="__total" content={<SpendPointLabel />} />
+                </Line>
+              ) : null}
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -578,24 +817,29 @@ export default function SpendsAnalyticsPage() {
           onExport={() => handleExportCsv(momChartData, 'MoM_Spends')}
         >
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={momChartData}>
+            <BarChart data={momChartData} margin={{ top: 28, right: 8, left: 4, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--foreground))" opacity={0.05} />
               <XAxis dataKey="label" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
               <YAxis hide />
               <Tooltip 
-                contentStyle={{ borderRadius: '1rem', border: 'none' }} 
-                formatter={(val: number) => [`₹${(val / 10000000).toFixed(2)}Cr`, 'Spend']} 
+                contentStyle={{ borderRadius: '0', border: '1px solid #000' }} 
+                formatter={(val: number) => [formatCurrency(val), 'Spend']} 
               />
               <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-              {Object.keys(momChartData[0] || {}).filter(k => k !== 'month' && k !== 'label').map((key, i) => (
-                <Bar 
-                  key={key} 
-                  dataKey={key} 
-                  stackId="a" 
-                  fill={CHART_PALETTE[i % CHART_PALETTE.length]} 
-                  radius={i === 0 ? [0, 0, 4, 4] : [4, 4, 0, 0]} 
-                />
-              ))}
+              {momSeriesKeys.map((key, i) => {
+                const isLast = i === momSeriesKeys.length - 1;
+                return (
+                  <Bar 
+                    key={key} 
+                    dataKey={key} 
+                    stackId="a" 
+                    fill={CHART_PALETTE[i % CHART_PALETTE.length]} 
+                    radius={i === 0 ? [0, 0, 4, 4] : isLast ? [4, 4, 0, 0] : [0, 0, 0, 0]} 
+                  >
+                    {isLast ? <LabelList dataKey="__total" content={<SpendBarLabel />} /> : null}
+                  </Bar>
+                );
+              })}
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -610,21 +854,26 @@ export default function SpendsAnalyticsPage() {
         height="400px"
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={qoqChartData}>
+          <BarChart data={qoqChartData} margin={{ top: 28, right: 8, left: 4, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--foreground))" opacity={0.05} />
             <XAxis dataKey="quarter" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
             <YAxis hide />
-            <Tooltip contentStyle={{ borderRadius: '1rem', border: 'none' }} formatter={(val: number) => `₹${(val / 10000000).toFixed(2)}Cr`} />
+            <Tooltip contentStyle={{ borderRadius: '0', border: '1px solid #000' }} formatter={(val: number) => [formatCurrency(val), 'Spend']} />
             <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
-            {Object.keys(qoqChartData[0] || {}).filter(k => k !== 'quarter').map((key, i) => (
-              <Bar 
-                key={key} 
-                dataKey={key} 
-                stackId="a" 
-                fill={CHART_PALETTE[i % CHART_PALETTE.length]} 
-                radius={i === 0 ? [0, 0, 4, 4] : [4, 4, 0, 0]} 
-              />
-            ))}
+            {qoqSeriesKeys.map((key, i) => {
+              const isLast = i === qoqSeriesKeys.length - 1;
+              return (
+                <Bar 
+                  key={key} 
+                  dataKey={key} 
+                  stackId="a" 
+                  fill={CHART_PALETTE[i % CHART_PALETTE.length]} 
+                  radius={i === 0 ? [0, 0, 4, 4] : isLast ? [4, 4, 0, 0] : [0, 0, 0, 0]} 
+                >
+                  {isLast ? <LabelList dataKey="__total" content={<SpendBarLabel />} /> : null}
+                </Bar>
+              );
+            })}
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

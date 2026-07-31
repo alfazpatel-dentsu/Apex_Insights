@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { 
   Search, 
   Loader2, 
@@ -14,10 +14,10 @@ import {
   Unlock,
   Zap
 } from 'lucide-react';
-import { format, startOfWeek, addDays, isAfter, isBefore, endOfDay, startOfDay, subWeeks, addWeeks, subMonths } from 'date-fns';
+import { format, startOfWeek, addDays, isAfter, isBefore, endOfDay, startOfDay, subWeeks, addWeeks, subMonths, parse, isValid } from 'date-fns';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useCollection, useUser, useDoc } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData } from '@/lib/types';
@@ -44,19 +44,42 @@ const RAG_COLORS = {
 };
 
 export default function WbrPage() {
+  return (
+    <Suspense fallback={<div className="flex flex-1 items-center justify-center p-20"><Loader2 className="animate-spin h-8 w-8 text-primary/40" /></div>}>
+      <WbrPageContent />
+    </Suspense>
+  );
+}
+
+function WbrPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   
   const [mounted, setMounted] = useState(false);
   const [currentWbrDate, setCurrentWbrDate] = useState<Date | null>(null);
+  const [selectedCluster, setSelectedCluster] = useState<string>('all');
+  const [selectedLead, setSelectedLead] = useState<string>('all');
+  const [selectedManager, setSelectedManager] = useState<string>('all');
+  const [selectedEngagementRag, setSelectedEngagementRag] = useState<string>(() => searchParams.get('engagementRag') || 'all');
+  const [selectedPerfRag, setSelectedPerfRag] = useState<string>(() => searchParams.get('perfRag') || 'all');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     setMounted(true);
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = parse(dateParam, 'yyyy-MM-dd', new Date());
+      if (isValid(parsed)) {
+        setCurrentWbrDate(parsed);
+        return;
+      }
+    }
     const today = new Date();
     const monday = startOfWeek(today, { weekStartsOn: 1 });
     setCurrentWbrDate(addDays(monday, 1));
-  }, []);
+  }, [searchParams]);
 
   const { data: explicitClients, loading: clientsLoading } = useCollection<Client>('clients');
   
@@ -72,13 +95,6 @@ export default function WbrPage() {
   }, [currentWbrDate]);
 
   const { data: wbrEntries, loading: wbrLoading } = useCollection<WbrEntry>('wbrEntries', wbrConstraints);
-
-  const [search, setSearch] = useState('');
-  const [selectedCluster, setSelectedCluster] = useState<string>('all');
-  const [selectedLead, setSelectedLead] = useState<string>('all');
-  const [selectedManager, setSelectedManager] = useState<string>('all');
-  const [selectedEngagementRag, setSelectedEngagementRag] = useState<string>('all');
-  const [selectedPerfRag, setSelectedPerfRag] = useState<string>('all');
 
   const allClients = useMemo(() => {
     const uniqueList: Client[] = [];
