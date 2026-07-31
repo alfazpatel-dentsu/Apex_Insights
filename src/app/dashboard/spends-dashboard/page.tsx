@@ -300,7 +300,14 @@ export default function SpendsAnalyticsPage() {
       if (!groups[week]) groups[week] = {};
       groups[week][dimKey] = (groups[week][dimKey] || 0) + item.spendsInr;
     });
-    return Object.entries(groups).map(([week, values]) => ({ week, timestamp: parse(week, 'dd-MM-yyyy', new Date()).getTime(), ...values })).sort((a, b) => a.timestamp - b.timestamp).slice(-12);
+    return Object.entries(groups).map(([week, values]) => {
+      let label = week;
+      try {
+        const d = parse(week, 'dd-MM-yyyy', new Date());
+        if (isValid(d)) label = format(d, 'dd MMM');
+      } catch {}
+      return { week: label, timestamp: parse(week, 'dd-MM-yyyy', new Date()).getTime(), ...values };
+    }).sort((a, b) => a.timestamp - b.timestamp).slice(-12);
   }, [weeklyData, wowDimension]);
 
   const momChartData = useMemo(() => {

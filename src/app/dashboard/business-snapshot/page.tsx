@@ -21,7 +21,7 @@ import {
   Warning, 
   Clock 
 } from "@phosphor-icons/react";
-import { format, parse, subMonths, subWeeks, startOfWeek, addDays, getWeek, isValid, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
+import { format, parse, subMonths, subWeeks, startOfWeek, addDays, isValid, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
@@ -133,7 +133,7 @@ export default function BusinessSnapshotPage() {
         });
 
         // 3. MOMENTUM & CHANNEL SPENDS
-        const spendByWeekNum: Record<number, number> = {};
+        const spendByWeekStart: Record<string, number> = {};
         const channelTotals: Record<string, number> = {};
         
         const weeksArr = Array.from(new Set(weeklySpends?.map(s => s.week))).sort((a,b) => {
@@ -145,8 +145,8 @@ export default function BusinessSnapshotPage() {
           try {
             const d = parse(s.week, 'dd-MM-yyyy', new Date());
             if (isValid(d)) {
-              const weekNum = getWeek(d, { weekStartsOn: 1 });
-              spendByWeekNum[weekNum] = (spendByWeekNum[weekNum] || 0) + (s.spendsInr || 0);
+              const weekStartKey = format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+              spendByWeekStart[weekStartKey] = (spendByWeekStart[weekStartKey] || 0) + (s.spendsInr || 0);
               
               if (s.week === lastWeekLabel) {
                 channelTotals[s.channelVendor] = (channelTotals[s.channelVendor] || 0) + (s.spendsInr || 0);
@@ -157,9 +157,12 @@ export default function BusinessSnapshotPage() {
 
         const momentum: any[] = [];
         for (let i = 11; i >= 0; i--) {
-          const date = subWeeks(new Date(), i);
-          const weekNum = getWeek(date, { weekStartsOn: 1 });
-          momentum.push({ week: `W${weekNum}`, spend: spendByWeekNum[weekNum] || 0 });
+          const weekStart = startOfWeek(subWeeks(new Date(), i), { weekStartsOn: 1 });
+          const weekStartKey = format(weekStart, 'yyyy-MM-dd');
+          momentum.push({
+            week: format(weekStart, 'dd MMM'),
+            spend: spendByWeekStart[weekStartKey] || 0,
+          });
         }
         setMomentumData(momentum);
         
@@ -210,7 +213,14 @@ export default function BusinessSnapshotPage() {
             pulseFeed.push({
               client: `${nameLookup[cid] || clientWbr.clientName || cid} • ${clientWbr.cluster || 'UNASSIGNED'}`,
               rag: clientWbr.performanceRag,
-              week: `W${getWeek(parse(clientWbr.wbrDate, 'yyyy-MM-dd', new Date()), { weekStartsOn: 1 })}`,
+              week: (() => {
+                try {
+                  const d = parse(clientWbr.wbrDate, 'yyyy-MM-dd', new Date());
+                  return isValid(d) ? format(d, 'dd MMM') : clientWbr.wbrDate;
+                } catch {
+                  return clientWbr.wbrDate;
+                }
+              })(),
               intelligence: clientWbr.summary || clientWbr.financeIssues || 'Monitoring operational stability.'
             });
           }
@@ -351,7 +361,15 @@ export default function BusinessSnapshotPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={momentumData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.05} />
-                    <XAxis dataKey="week" fontSize={10} fontWeight="black" axisLine={false} tickLine={false} />
+                    <XAxis
+                      dataKey="week"
+                      fontSize={10}
+                      fontWeight="black"
+                      axisLine={false}
+                      tickLine={false}
+                      interval="preserveStartEnd"
+                      minTickGap={8}
+                    />
                     <YAxis fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 10000000).toFixed(1)}Cr`} />
                     <RechartsTooltip contentStyle={{ borderRadius: '0', border: '1px solid #000', boxShadow: '12px 12px 0px rgba(0,0,0,0.1)' }} formatter={(v: number) => [formatCurrency(v), 'Spend']} />
                     <Line type="monotone" dataKey="spend" stroke="hsl(var(--destructive))" strokeWidth={4} dot={{ r: 5, fill: 'hsl(var(--destructive))', strokeWidth: 0 }} />
