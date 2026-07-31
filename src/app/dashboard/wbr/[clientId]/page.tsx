@@ -260,23 +260,55 @@ export default function WbrEditPage() {
           setWeeklyKpis(weeklyKpiList);
         }
 
-        const allSpendsSnap = await getDocs(query(
-          collection(firestore, 'monthlySpends'), 
+        // Spends are often uploaded with brandName but a missing/mismatched clientId.
+        // Merge clientId matches with brandName matches so Spends Pulse isn't empty.
+        const brandName = (cData?.name || kpiList[0]?.clientName || '').trim();
+
+        const mergeSpendDocs = <T extends { id: string }>(
+          primary: T[],
+          secondary: T[],
+        ) => {
+          const byId = new Map<string, T>();
+          primary.forEach(item => byId.set(item.id, item));
+          secondary.forEach(item => {
+            if (!byId.has(item.id)) byId.set(item.id, item);
+          });
+          return Array.from(byId.values());
+        };
+
+        const monthlyByClientSnap = await getDocs(query(
+          collection(firestore, 'monthlySpends'),
           where('clientId', '==', actualClientId)
         ));
-        setMonthlySpends(allSpendsSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as MonthlySpend))
-          .filter(s => s.month >= fetchStartStr && s.month <= fetchEndStr)
-        );
+        let monthlyList = monthlyByClientSnap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlySpend));
+        if (brandName) {
+          const monthlyByBrandSnap = await getDocs(query(
+            collection(firestore, 'monthlySpends'),
+            where('brandName', '==', brandName)
+          ));
+          monthlyList = mergeSpendDocs(
+            monthlyList,
+            monthlyByBrandSnap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlySpend))
+          );
+        }
+        setMonthlySpends(monthlyList.filter(s => s.month >= fetchStartStr && s.month <= fetchEndStr));
 
-        const allWeeklySpendsSnap = await getDocs(query(
+        const weeklyByClientSnap = await getDocs(query(
           collection(firestore, 'weeklySpends'),
           where('clientId', '==', actualClientId)
         ));
-        setWeeklySpends(allWeeklySpendsSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as WeeklySpend))
-          .filter(s => s.month && s.month >= fetchStartStr && s.month <= fetchEndStr)
-        );
+        let weeklyList = weeklyByClientSnap.docs.map(d => ({ id: d.id, ...d.data() } as WeeklySpend));
+        if (brandName) {
+          const weeklyByBrandSnap = await getDocs(query(
+            collection(firestore, 'weeklySpends'),
+            where('brandName', '==', brandName)
+          ));
+          weeklyList = mergeSpendDocs(
+            weeklyList,
+            weeklyByBrandSnap.docs.map(d => ({ id: d.id, ...d.data() } as WeeklySpend))
+          );
+        }
+        setWeeklySpends(weeklyList.filter(s => s.month && s.month >= fetchStartStr && s.month <= fetchEndStr));
 
       } catch (err) {
         console.error("WBR review data retrieval failed:", err);

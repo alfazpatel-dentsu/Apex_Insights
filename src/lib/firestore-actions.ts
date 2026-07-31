@@ -416,7 +416,7 @@ export const bulkSaveMonthlySpends = async (db: Firestore, entries: any[], onPro
             if (!month) month = fallbackMonth;
 
             batch.set(docRef, {
-                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'id')?.toString().trim() || 'N/A',
+                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A',
                 brandName: getRowVal(entry, 'Brand Name', 'Brand', 'client')?.toString().trim() || 'Unknown',
                 industry: getRowVal(entry, 'Industry') || 'N/A',
                 type: getRowVal(entry, 'Type') || 'N/A',
@@ -468,7 +468,7 @@ export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProg
             if (!month) month = fallbackMonth;
 
             batch.set(docRef, {
-                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'id')?.toString().trim() || 'N/A',
+                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A',
                 brandName: getRowVal(entry, 'Brand Name', 'Brand', 'client')?.toString().trim() || 'Unknown',
                 industry: getRowVal(entry, 'Industry') || 'N/A',
                 type: getRowVal(entry, 'Type') || 'N/A',
