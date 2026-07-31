@@ -150,14 +150,6 @@ function getWeeklyStatus(
   return 'Amber';
 }
 
-function getTrendStatus(weeklyStatuses: RagStatus[]): RagStatus {
-  if (weeklyStatuses.length === 0) return 'N/A';
-  const badWeeks = weeklyStatuses.filter(s => s === 'Red' || s === 'Amber').length;
-  if (badWeeks >= 2) return 'Red';
-  if (badWeeks === 1) return 'Amber';
-  return 'Green';
-}
-
 function SearchableFilterContent({ placeholder, options, selected, onToggle }: { placeholder: string, options: string[], selected: string[], onToggle: (val: string) => void }) {
   const [search, setSearch] = useState("");
   const filtered = useMemo(() => options.filter(o => o?.toString().toLowerCase().includes(search.toLowerCase())), [options, search]);
