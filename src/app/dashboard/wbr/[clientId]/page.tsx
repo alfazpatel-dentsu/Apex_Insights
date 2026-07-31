@@ -422,14 +422,15 @@ export default function WbrEditPage() {
   const processedMonthlySpends = useMemo(() => {
     const data: Record<string, Record<string, number>> = {};
     monthlySpends.filter(s => {
-      const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
+      const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter || !s.subEntity || s.subEntity === 'N/A';
       const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
       const channel = canonicalizeChannel(s.channelVendor);
+      const amount = Number(s.actualSpendsInr) || 0;
       if (!data[s.month]) data[s.month] = {};
-      data[s.month][channel] = (data[s.month][channel] || 0) + s.actualSpendsInr;
-      data[s.month]['Total'] = (data[s.month]['Total'] || 0) + s.actualSpendsInr;
+      data[s.month][channel] = (data[s.month][channel] || 0) + amount;
+      data[s.month]['Total'] = (data[s.month]['Total'] || 0) + amount;
     });
     return data;
   }, [monthlySpends, selectedLobFilter, selectedChannelFilter]);
@@ -504,11 +505,12 @@ export default function WbrEditPage() {
   const processedWeeklySpends = useMemo(() => {
     const data: Record<string, Record<string, number>> = {};
     weeklySpends.filter(s => {
-      const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
+      const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter || !s.subEntity || s.subEntity === 'N/A';
       const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
       const channel = canonicalizeChannel(s.channelVendor);
+      const amount = Number(s.spendsInr) || 0;
       const d = parse(s.week, 'dd-MM-yyyy', new Date());
       if (isValid(d)) {
           const monday = startOfWeek(d, { weekStartsOn: 1 });
@@ -525,8 +527,8 @@ export default function WbrEditPage() {
           const weekKey = `${monthKey}-W${weekNum}`;
 
           if (!data[weekKey]) data[weekKey] = {};
-          data[weekKey][channel] = (data[weekKey][channel] || 0) + s.spendsInr;
-          data[weekKey]['Total'] = (data[weekKey]['Total'] || 0) + s.spendsInr;
+          data[weekKey][channel] = (data[weekKey][channel] || 0) + amount;
+          data[weekKey]['Total'] = (data[weekKey]['Total'] || 0) + amount;
       }
     });
     return data;
