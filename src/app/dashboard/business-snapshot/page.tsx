@@ -42,7 +42,8 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  Cell
+  Cell,
+  LabelList
 } from 'recharts';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -52,6 +53,16 @@ const formatCurrency = (val: number) => {
     if (absVal >= 10000000) return `₹${sign}${(absVal / 10000000).toFixed(2)}Cr`;
     if (absVal >= 100000) return `₹${sign}${(absVal / 100000).toFixed(2)}L`;
     return `₹${sign}${absVal.toLocaleString()}`;
+};
+
+const formatChartLabel = (val: number) => {
+  if (val == null || Number.isNaN(val) || val === 0) return '';
+  const absVal = Math.abs(val);
+  const sign = val < 0 ? '-' : '';
+  if (absVal >= 10000000) return `${sign}${(absVal / 10000000).toFixed(2)}Cr`;
+  if (absVal >= 100000) return `${sign}${(absVal / 100000).toFixed(1)}L`;
+  if (absVal >= 1000) return `${sign}${(absVal / 1000).toFixed(0)}K`;
+  return `${sign}${absVal.toFixed(0)}`;
 };
 
 const CHART_PALETTE = [
@@ -397,7 +408,7 @@ export default function BusinessSnapshotPage() {
               </div>
               <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={momentumData}>
+                  <LineChart data={momentumData} margin={{ top: 28, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.05} />
                     <XAxis
                       dataKey="week"
@@ -410,7 +421,20 @@ export default function BusinessSnapshotPage() {
                     />
                     <YAxis fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 10000000).toFixed(1)}Cr`} />
                     <RechartsTooltip contentStyle={{ borderRadius: '0', border: '1px solid #000', boxShadow: '12px 12px 0px rgba(0,0,0,0.1)' }} formatter={(v: number) => [formatCurrency(v), 'Spend']} />
-                    <Line type="monotone" dataKey="spend" stroke="hsl(var(--destructive))" strokeWidth={4} dot={{ r: 5, fill: 'hsl(var(--destructive))', strokeWidth: 0 }} />
+                    <Line type="monotone" dataKey="spend" stroke="hsl(var(--destructive))" strokeWidth={4} dot={{ r: 5, fill: 'hsl(var(--destructive))', strokeWidth: 0 }}>
+                      <LabelList
+                        dataKey="spend"
+                        position="top"
+                        offset={10}
+                        formatter={(v: number) => formatChartLabel(v)}
+                        style={{
+                          fill: 'hsl(var(--ink))',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          fontFamily: 'var(--font-mono), IBM Plex Mono, monospace',
+                        }}
+                      />
+                    </Line>
                   </LineChart>
                 </ResponsiveContainer>
               </div>
