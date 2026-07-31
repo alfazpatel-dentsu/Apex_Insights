@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
 import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
-import { formatKpiNumber, getMonthlyStatus, kpiAttainmentPct } from '@/lib/kpi-rag';
+import { getMonthlyStatus, kpiAttainmentPct } from '@/lib/kpi-rag';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -149,20 +149,6 @@ interface ClientHealthRow {
 }
 
 const PATH_RANK: Record<ClientPath, number> = { 'off-path': 0, 'no-signal': 1, 'on-path': 2 };
-
-const ragTone = (rag: RagStatus) => {
-  if (rag === 'Green') return 'text-success border-success/30 bg-success/5';
-  if (rag === 'Amber') return 'text-warning border-warning/30 bg-warning/5';
-  if (rag === 'Red') return 'text-destructive border-destructive/30 bg-destructive/5';
-  return 'text-secondary border-foreground/10 bg-foreground/[0.03]';
-};
-
-const ragDot = (rag: RagStatus) => {
-  if (rag === 'Green') return 'bg-success';
-  if (rag === 'Amber') return 'bg-warning';
-  if (rag === 'Red') return 'bg-destructive';
-  return 'bg-secondary/40';
-};
 
 export default function BusinessSnapshotPage() {
   const firestore = useFirestore();
@@ -972,133 +958,41 @@ export default function BusinessSnapshotPage() {
                 hint="Primary KPI on target"
                 count={clientHealthSummary.onPath}
                 tone="success"
+                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=on&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=on'}
               />
               <PathSummaryTile
                 label="Off Path"
                 hint="Primary KPI behind target"
                 count={clientHealthSummary.offPath}
                 tone="destructive"
+                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=off&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=off'}
               />
               <PathSummaryTile
                 label="No Signal"
                 hint="Missing primary KPI / N/A"
                 count={clientHealthSummary.noSignal}
                 tone="secondary"
+                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=none&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=none'}
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-ink border-b border-ink">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-ink">
               <RagSummaryStrip
                 title="Performance RAG · This Week"
                 green={clientHealthSummary.pGreen}
                 amber={clientHealthSummary.pAmber}
                 red={clientHealthSummary.pRed}
+                baseHref={healthCycleDate ? `/dashboard/wbr?date=${healthCycleDate}` : '/dashboard/wbr'}
+                ragParam="perfRag"
               />
               <RagSummaryStrip
                 title="Engagement RAG · This Week"
                 green={clientHealthSummary.eGreen}
                 amber={clientHealthSummary.eAmber}
                 red={clientHealthSummary.eRed}
+                baseHref={healthCycleDate ? `/dashboard/wbr?date=${healthCycleDate}` : '/dashboard/wbr'}
+                ragParam="engagementRag"
               />
-            </div>
-
-            <div className="overflow-x-auto">
-              {clientHealthLoading ? (
-                <div className="flex items-center justify-center gap-3 py-24 text-[10px] font-black uppercase tracking-widest text-secondary">
-                  <CircleNotch className="h-5 w-5 animate-spin text-brand" />
-                  Loading client health…
-                </div>
-              ) : clientHealth.length === 0 ? (
-                <div className="py-24 text-center text-[10px] font-black uppercase tracking-widest text-secondary/70">
-                  No WBR or primary KPI records for this cycle.
-                </div>
-              ) : (
-                <table className="w-full min-w-[960px] text-left">
-                  <thead className="bg-foreground/[0.02] border-b border-ink/10">
-                    <tr>
-                      <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-secondary">Client</th>
-                      <th className="px-4 py-4 text-[9px] font-black uppercase tracking-widest text-secondary">Primary KPI</th>
-                      <th className="px-4 py-4 text-[9px] font-black uppercase tracking-widest text-secondary min-w-[180px]">MTD Attainment</th>
-                      <th className="px-4 py-4 text-[9px] font-black uppercase tracking-widest text-secondary">Path</th>
-                      <th className="px-4 py-4 text-[9px] font-black uppercase tracking-widest text-secondary">P-RAG</th>
-                      <th className="px-4 py-4 text-[9px] font-black uppercase tracking-widest text-secondary">E-RAG</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clientHealth.map((row) => (
-                      <tr
-                        key={row.clientId}
-                        className="border-b border-ink/5 hover:bg-cream/40 transition-colors group"
-                      >
-                        <td className="px-6 py-5 align-top">
-                          <div
-                            className={cn(
-                              'border-l-[4px] pl-3 space-y-1',
-                              row.path === 'on-path' && 'border-success',
-                              row.path === 'off-path' && 'border-destructive',
-                              row.path === 'no-signal' && 'border-secondary/30'
-                            )}
-                          >
-                            <p className="text-sm font-black uppercase tracking-tight text-ink truncate max-w-[220px]" title={row.clientName}>
-                              {row.clientName}
-                            </p>
-                            <p className="text-[9px] font-bold uppercase text-secondary tracking-widest truncate">
-                              {row.cluster} · {row.lead}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-5 align-top">
-                          <p className="text-[12px] font-black uppercase tracking-tight">{row.kpiName}</p>
-                          <p className="text-[9px] font-bold uppercase text-secondary mt-1">{row.channel}</p>
-                        </td>
-                        <td className="px-4 py-5 align-top">
-                          {row.path === 'no-signal' && row.kpiName === 'No primary KPI' ? (
-                            <span className="text-[10px] font-bold uppercase text-secondary/50 italic">No primary KPI mapped</span>
-                          ) : (
-                            <div className="space-y-2 min-w-[160px]">
-                              <div className="flex items-baseline justify-between gap-2 font-mono text-[11px] font-black">
-                                <span>{formatKpiNumber(row.achieved, row.currency)}</span>
-                                <span className="text-secondary font-bold text-[9px]">/ {formatKpiNumber(row.target, row.currency)}</span>
-                              </div>
-                              <div className="h-1.5 bg-foreground/[0.06] overflow-hidden">
-                                <div
-                                  className={cn(
-                                    'h-full transition-all',
-                                    row.path === 'on-path' ? 'bg-success' : row.path === 'off-path' ? 'bg-destructive' : 'bg-secondary/40'
-                                  )}
-                                  style={{ width: `${Math.max(4, Math.min(100, row.attainment ?? 0))}%` }}
-                                />
-                              </div>
-                              <p className="text-[9px] font-mono font-bold text-secondary">
-                                {row.attainment != null ? `${row.attainment.toFixed(0)}%` : '—'}
-                                {row.direction === 'DESC' ? ' · LOWER BETTER' : ''}
-                              </p>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-5 align-top">
-                          <span className={cn('inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 border', ragTone(row.pathStatus))}>
-                            <span className={cn('h-1.5 w-1.5 rounded-full', ragDot(row.pathStatus))} />
-                            {row.path === 'on-path' ? 'On Path' : row.path === 'off-path' ? 'Off Path' : 'No Signal'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-5 align-top">
-                          <span className={cn('inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 border', ragTone(row.performanceRag))}>
-                            <span className={cn('h-1.5 w-1.5 rounded-full', ragDot(row.performanceRag))} />
-                            {row.performanceRag}
-                          </span>
-                        </td>
-                        <td className="px-4 py-5 align-top">
-                          <span className={cn('inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 border', ragTone(row.engagementRag))}>
-                            <span className={cn('h-1.5 w-1.5 rounded-full', ragDot(row.engagementRag))} />
-                            {row.engagementRag}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
             </div>
           </div>
         </div>
@@ -1112,15 +1006,23 @@ function PathSummaryTile({
   hint,
   count,
   tone,
+  href,
 }: {
   label: string;
   hint: string;
   count: number;
   tone: 'success' | 'destructive' | 'secondary';
+  href: string;
 }) {
   return (
-    <div className="bg-white p-8 space-y-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">{label}</p>
+    <Link
+      href={href}
+      className="bg-white p-8 space-y-3 group transition-colors hover:bg-cream/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">{label}</p>
+        <ArrowUpRight className="h-4 w-4 text-secondary/40 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
+      </div>
       <p
         className={cn(
           'text-5xl font-black font-headline tracking-tighter',
@@ -1132,7 +1034,10 @@ function PathSummaryTile({
         {count}
       </p>
       <p className="text-[10px] font-bold uppercase tracking-widest text-secondary/70">{hint}</p>
-    </div>
+      <p className="text-[9px] font-black uppercase tracking-widest text-brand/70 opacity-0 group-hover:opacity-100 transition-opacity">
+        Open KPI Tracker →
+      </p>
+    </Link>
   );
 }
 
@@ -1141,25 +1046,42 @@ function RagSummaryStrip({
   green,
   amber,
   red,
+  baseHref,
+  ragParam,
 }: {
   title: string;
   green: number;
   amber: number;
   red: number;
+  baseHref: string;
+  ragParam: 'perfRag' | 'engagementRag';
 }) {
   const total = Math.max(green + amber + red, 1);
+  const join = baseHref.includes('?') ? '&' : '?';
   return (
     <div className="bg-white p-6 md:p-8 space-y-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">{title}</p>
-      <div className="flex h-3 w-full overflow-hidden bg-foreground/[0.04]">
+      <Link
+        href={baseHref}
+        className="flex items-center justify-between gap-3 group focus-visible:outline-none"
+      >
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary group-hover:text-brand transition-colors">{title}</p>
+        <ArrowUpRight className="h-4 w-4 text-secondary/40 group-hover:text-brand transition-colors" weight="bold" />
+      </Link>
+      <Link href={baseHref} className="flex h-3 w-full overflow-hidden bg-foreground/[0.04] hover:opacity-90 transition-opacity">
         <div className="bg-success h-full" style={{ width: `${(green / total) * 100}%` }} />
         <div className="bg-warning h-full" style={{ width: `${(amber / total) * 100}%` }} />
         <div className="bg-destructive h-full" style={{ width: `${(red / total) * 100}%` }} />
-      </div>
+      </Link>
       <div className="flex flex-wrap gap-4 text-[10px] font-black uppercase tracking-widest">
-        <span className="text-success">{green} Green</span>
-        <span className="text-warning">{amber} Amber</span>
-        <span className="text-destructive">{red} Red</span>
+        <Link href={`${baseHref}${join}${ragParam}=Green`} className="text-success hover:underline underline-offset-4">
+          {green} Green
+        </Link>
+        <Link href={`${baseHref}${join}${ragParam}=Amber`} className="text-warning hover:underline underline-offset-4">
+          {amber} Amber
+        </Link>
+        <Link href={`${baseHref}${join}${ragParam}=Red`} className="text-destructive hover:underline underline-offset-4">
+          {red} Red
+        </Link>
       </div>
     </div>
   );

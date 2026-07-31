@@ -33,7 +33,7 @@ import {
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
 import { KpiDialog } from './kpi-dialog';
-import { format, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInterval } from 'date-fns';
+import { format, parse, isValid, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInterval } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/page-header';
 import { useCollection, useFirestore } from '@/firebase';
@@ -172,16 +172,25 @@ function SearchableFilterContent({ placeholder, options, selected, onToggle }: {
 function KpiTrackingContent() {
   const searchParams = useSearchParams();
   const searchQueryFromUrl = searchParams.get('q') || '';
+  const pathFilter = (searchParams.get('path') || '').toLowerCase(); // on | off | none
+  const primaryOnly = searchParams.get('primary') === '1';
+  const monthFromUrl = searchParams.get('month');
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date())
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    if (monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl)) {
+      const from = parse(monthFromUrl, 'yyyy-MM', new Date());
+      if (isValid(from)) return { from: startOfMonth(from), to: endOfMonth(from) };
+    }
+    return {
+      from: startOfMonth(new Date()),
+      to: endOfMonth(new Date())
+    };
   });
 
   const [mounted, setMounted] = useState(false);
-  const [shouldFetch, setShouldFetch] = useState(false);
+  const [shouldFetch, setShouldFetch] = useState(() => Boolean(monthFromUrl || pathFilter || primaryOnly));
 
   useEffect(() => {
     setMounted(true);
@@ -365,8 +374,24 @@ function KpiTrackingContent() {
     if (selectedClients.length > 0) filtered = filtered.filter(item => selectedClients.includes(item.clientName));
     if (selectedLobs.length > 0) filtered = filtered.filter(item => selectedLobs.includes(item.lob));
     if (selectedChannels.length > 0) filtered = filtered.filter(item => selectedChannels.includes(item.channel));
+    if (primaryOnly) {
+      filtered = filtered.filter((item) => {
+        const latest = Object.values(item.monthData || {}).sort((a: any, b: any) =>
+          String(b.month).localeCompare(String(a.month))
+        )[0] as KpiData | undefined;
+        return ((latest?.kpiType || item.kpiType || 'PRIMARY') as string).toUpperCase() === 'PRIMARY';
+      });
+    }
+    if (pathFilter === 'on' || pathFilter === 'off' || pathFilter === 'none') {
+      filtered = filtered.filter((item) => {
+        const status = (item.pacingStatus || 'N/A') as RagStatus;
+        if (pathFilter === 'on') return status === 'Green';
+        if (pathFilter === 'off') return status === 'Red';
+        return status === 'N/A';
+      });
+    }
     return filtered;
-  }, [groupedDisplayData, searchQueryFromUrl, selectedClients, selectedLobs, selectedChannels]);
+  }, [groupedDisplayData, searchQueryFromUrl, selectedClients, selectedLobs, selectedChannels, primaryOnly, pathFilter]);
 
   // Interdependent filter option lists: each dimension is constrained by the others.
   const filterOptions = useMemo(() => {
