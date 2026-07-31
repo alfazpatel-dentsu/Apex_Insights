@@ -98,7 +98,7 @@ export function DateRangePicker({
             id="date"
             variant={"outline"}
             className={cn(
-              "w-[260px] justify-start text-left font-black text-[10px] uppercase tracking-widest rounded-none glass  h-10 shadow-lg",
+              "w-[260px] justify-start text-left font-black text-[10px] uppercase tracking-widest rounded-none border border-ink bg-surface h-12",
               !date && "text-muted-foreground"
             )}
           >
