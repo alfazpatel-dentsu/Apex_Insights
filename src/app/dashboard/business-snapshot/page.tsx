@@ -119,6 +119,7 @@ export default function BusinessSnapshotPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [statsWindow, setStatsWindow] = useState<any[]>([]);
+  const [monthlyWindow, setMonthlyWindow] = useState<any[]>([]);
   const snapshotRef = useRef<HTMLDivElement>(null);
 
   // INTELLIGENCE STATE
@@ -131,11 +132,15 @@ export default function BusinessSnapshotPage() {
 
   useEffect(() => {
     setMounted(true);
-    const start = format(subMonths(new Date(), 6), 'yyyy-MM');
-    setStatsWindow([where('month', '>=', start)]);
+    // Weekly/momentum: recent window
+    const weeklyStart = format(subMonths(new Date(), 6), 'yyyy-MM');
+    setStatsWindow([where('month', '>=', weeklyStart)]);
+    // Monthly: include prior-year YTD so Annual can compare same months YoY
+    const ytdCompareStart = format(new Date(new Date().getFullYear() - 1, 0, 1), 'yyyy-MM');
+    setMonthlyWindow([where('month', '>=', ytdCompareStart)]);
   }, []);
 
-  const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', statsWindow);
+  const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', monthlyWindow);
   const { data: weeklySpends, loading: wLoading } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
 
   useEffect(() => {
@@ -384,12 +389,20 @@ export default function BusinessSnapshotPage() {
 
     const year = targetMonth.split('-')[0];
     const prevYear = String(Number(year) - 1);
+    const throughMonth = parseInt(targetMonth.split('-')[1], 10); // e.g. 6 for June
+    const isSamePeriodYtd = (monthKey: string, y: string) => {
+      if (!monthKey.startsWith(`${y}-`)) return false;
+      const m = parseInt(monthKey.split('-')[1], 10);
+      return m >= 1 && m <= throughMonth;
+    };
+    // Compare YTD through the latest uploaded month vs the same months last year
     const yearlyTotal = monthlySpends
-      .filter(d => d.month.startsWith(year))
+      .filter(d => isSamePeriodYtd(d.month, year))
       .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
     const prevYearlyTotal = monthlySpends
-      .filter(d => d.month.startsWith(prevYear))
+      .filter(d => isSamePeriodYtd(d.month, prevYear))
       .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+    const ytdThroughLabel = format(parse(targetMonth, 'yyyy-MM', new Date()), 'MMM');
 
     return {
       month: targetMonth,
@@ -405,6 +418,7 @@ export default function BusinessSnapshotPage() {
       weeklyDate: lastW,
       yearlyTotal,
       prevYearlyTotal,
+      ytdThroughLabel,
     };
   }, [monthlySpends, weeklySpends, mounted]);
 
