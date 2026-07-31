@@ -125,6 +125,7 @@ export default function BusinessSnapshotPage() {
   const [newsFeed, setNewsFeed] = useState<any[]>([]);
   const [momentumData, setMomentumData] = useState<any[]>([]);
   const [channelSpends, setChannelSpends] = useState<any[]>([]);
+  const [channelSpendWeekLabel, setChannelSpendWeekLabel] = useState<string | null>(null);
   const [pipelineData, setPipelineData] = useState<any[]>([]);
   const [accountabilityPulse, setAccountabilityPulse] = useState<any[]>([]);
 
@@ -247,6 +248,20 @@ export default function BusinessSnapshotPage() {
         setMomentumData(momentum);
         
         setChannelSpends(Object.entries(channelTotals).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value));
+        if (lastWeekLabel) {
+          try {
+            const weekDate = parse(lastWeekLabel, 'dd-MM-yyyy', new Date());
+            setChannelSpendWeekLabel(
+              isValid(weekDate)
+                ? `Week of ${format(startOfWeek(weekDate, { weekStartsOn: 1 }), 'dd MMM yyyy')}`
+                : `Week of ${lastWeekLabel}`
+            );
+          } catch {
+            setChannelSpendWeekLabel(`Week of ${lastWeekLabel}`);
+          }
+        } else {
+          setChannelSpendWeekLabel(null);
+        }
 
         // 4. SALES PIPELINE (FUNNEL)
         const statusOrder = ['Qualified', 'Pitch', 'Negotiation', 'Contract', 'Won'];
