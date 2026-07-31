@@ -260,55 +260,24 @@ export default function WbrEditPage() {
           setWeeklyKpis(weeklyKpiList);
         }
 
-        // Spends are often uploaded with brandName but a missing/mismatched clientId.
-        // Merge clientId matches with brandName matches so Spends Pulse isn't empty.
-        const brandName = (cData?.name || kpiList[0]?.clientName || '').trim();
-
-        const mergeSpendDocs = <T extends { id: string }>(
-          primary: T[],
-          secondary: T[],
-        ) => {
-          const byId = new Map<string, T>();
-          primary.forEach(item => byId.set(item.id, item));
-          secondary.forEach(item => {
-            if (!byId.has(item.id)) byId.set(item.id, item);
-          });
-          return Array.from(byId.values());
-        };
-
-        const monthlyByClientSnap = await getDocs(query(
-          collection(firestore, 'monthlySpends'),
+        // Join key is CLID (clientId) — brandName is display only.
+        const allSpendsSnap = await getDocs(query(
+          collection(firestore, 'monthlySpends'), 
           where('clientId', '==', actualClientId)
         ));
-        let monthlyList = monthlyByClientSnap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlySpend));
-        if (brandName) {
-          const monthlyByBrandSnap = await getDocs(query(
-            collection(firestore, 'monthlySpends'),
-            where('brandName', '==', brandName)
-          ));
-          monthlyList = mergeSpendDocs(
-            monthlyList,
-            monthlyByBrandSnap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlySpend))
-          );
-        }
-        setMonthlySpends(monthlyList.filter(s => s.month >= fetchStartStr && s.month <= fetchEndStr));
+        setMonthlySpends(allSpendsSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as MonthlySpend))
+          .filter(s => s.month >= fetchStartStr && s.month <= fetchEndStr)
+        );
 
-        const weeklyByClientSnap = await getDocs(query(
+        const allWeeklySpendsSnap = await getDocs(query(
           collection(firestore, 'weeklySpends'),
           where('clientId', '==', actualClientId)
         ));
-        let weeklyList = weeklyByClientSnap.docs.map(d => ({ id: d.id, ...d.data() } as WeeklySpend));
-        if (brandName) {
-          const weeklyByBrandSnap = await getDocs(query(
-            collection(firestore, 'weeklySpends'),
-            where('brandName', '==', brandName)
-          ));
-          weeklyList = mergeSpendDocs(
-            weeklyList,
-            weeklyByBrandSnap.docs.map(d => ({ id: d.id, ...d.data() } as WeeklySpend))
-          );
-        }
-        setWeeklySpends(weeklyList.filter(s => s.month && s.month >= fetchStartStr && s.month <= fetchEndStr));
+        setWeeklySpends(allWeeklySpendsSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as WeeklySpend))
+          .filter(s => s.month && s.month >= fetchStartStr && s.month <= fetchEndStr)
+        );
 
       } catch (err) {
         console.error("WBR review data retrieval failed:", err);
@@ -422,7 +391,7 @@ export default function WbrEditPage() {
   const processedMonthlySpends = useMemo(() => {
     const data: Record<string, Record<string, number>> = {};
     monthlySpends.filter(s => {
-      const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter || !s.subEntity || s.subEntity === 'N/A';
+      const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
       const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
@@ -505,7 +474,7 @@ export default function WbrEditPage() {
   const processedWeeklySpends = useMemo(() => {
     const data: Record<string, Record<string, number>> = {};
     weeklySpends.filter(s => {
-      const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter || !s.subEntity || s.subEntity === 'N/A';
+      const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
       const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
