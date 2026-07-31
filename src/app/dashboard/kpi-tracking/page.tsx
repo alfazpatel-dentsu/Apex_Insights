@@ -340,7 +340,6 @@ function KpiTrackingContent() {
     });
 
     return Object.values(groups).map(group => {
-      const activeStatuses: RagStatus[] = [];
       const rangeWeekly: (KpiWeeklyData & { weekId: string; monthKey: string })[] = [];
       const weeksPerMonth: Record<string, number> = {};
       weekDates.forEach(w => {
@@ -354,27 +353,22 @@ function KpiTrackingContent() {
           if (wd) rangeWeekly.push({ ...wd, weekId: w.id, monthKey: w.monthKey });
         }
       });
-      rangeWeekly.forEach((wd, idx) => {
-        const prevWd = idx > 0 ? rangeWeekly[idx - 1] : null;
-        const monthRecord = group.monthData[wd.monthKey];
-        const weeklyPacingTarget = getEffectiveWeeklyTarget({
-          kpiName: group.kpi,
-          direction: group.direction,
-          monthlyTarget: monthRecord?.targetMonth ?? null,
-          weekTarget: wd.target,
-          weeksInMonth: weeksPerMonth[wd.monthKey] || 4,
-        });
-        activeStatuses.push(
-          getWeeklyStatus(
-            wd.achieved,
-            weeklyPacingTarget,
-            prevWd ? prevWd.achieved : null,
+      const latestMonthRecord = Object.values(group.monthData).sort((a: any, b: any) => b.month.localeCompare(a.month))[0] as KpiData | undefined;
+      // RAG column = MTD status (latest month achieved vs monthly target, Direction-aware)
+      const mtdStatus: RagStatus = latestMonthRecord
+        ? getMonthlyStatus(
+            latestMonthRecord.achievedMonthTillYesterday,
+            latestMonthRecord.targetMonth,
             group.direction
           )
-        );
-      });
-      const latestMonthRecord = Object.values(group.monthData).sort((a: any, b: any) => b.month.localeCompare(a.month))[0];
-      return { ...group, pacingStatus: getTrendStatus(activeStatuses), rangeWeekly, latestId: latestMonthRecord.id, weeksPerMonth };
+        : 'N/A';
+      return {
+        ...group,
+        pacingStatus: mtdStatus,
+        rangeWeekly,
+        latestId: latestMonthRecord?.id,
+        weeksPerMonth,
+      };
     });
   }, [kpiData, weeklyMap, mounted, weekDates]);
 
@@ -601,7 +595,12 @@ function KpiTrackingContent() {
                     </React.Fragment>
                   );
                 })}
-                <TableHead className="text-center px-4 text-[11px] font-black uppercase bg-primary/[0.03] min-w-[90px]">Status</TableHead>
+                <TableHead className="text-center px-4 text-[11px] font-black uppercase bg-primary/[0.03] min-w-[100px] leading-tight">
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>MTD Status</span>
+                    <span className="text-[8px] font-bold text-secondary normal-case tracking-wide">vs monthly tgt</span>
+                  </div>
+                </TableHead>
                 {weekDates.map((w) => (
                   <TableHead key={`header-${w.id}`} className="text-center text-[10px] px-2 py-4 font-black leading-tight uppercase text-muted-foreground/60 bg-foreground/[0.03] min-w-[110px]"><div className="flex flex-col items-center"><span>W{w.num}</span><span className="text-[8px] text-secondary font-bold whitespace-nowrap">{w.range}</span></div></TableHead>
                 ))}
