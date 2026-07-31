@@ -68,18 +68,50 @@ const ragVariantMap: { [key: string]: 'success' | 'warning' | 'destructive' | 'o
     'N/A': 'outline',
 };
 
-function getWeeklyStatus(current: number, last: number | null, direction: 'ASC' | 'DESC'): RagStatus {
-  if (last === null || last === 0) return 'Green';
-  if (direction === 'DESC') {
-    if (current <= last * 1.1) return 'Green';
-    if (current <= last * 1.25) return 'Amber';
-    return 'Red';
-  } else {
-    const ratio = current / last;
-    if (ratio > 0.75) return 'Green';
-    if (ratio > 0.5) return 'Amber';
-    return 'Red';
-  }
+/** ASC = higher is better; DESC = lower is better. */
+function meetsTarget(achieved: number, target: number, direction: 'ASC' | 'DESC'): boolean {
+  if (direction === 'DESC') return achieved <= target;
+  return achieved >= target;
+}
+
+function improvedVsPrevious(current: number, previous: number, direction: 'ASC' | 'DESC'): boolean {
+  if (direction === 'DESC') return current <= previous;
+  return current >= previous;
+}
+
+/** Monthly RAG: achieved vs monthly target, direction-aware. */
+function getMonthlyStatus(achieved: number, target: number, direction: 'ASC' | 'DESC'): RagStatus {
+  if (target === 0 && achieved === 0) return 'N/A';
+  return meetsTarget(achieved, target, direction) ? 'Green' : 'Red';
+}
+
+/**
+ * Weekly RAG: compare against monthly target AND previous week's achieved.
+ * Green = both good (or only available check is good)
+ * Amber = mixed (one good, one bad)
+ * Red = both bad (or only available check is bad)
+ */
+function getWeeklyStatus(
+  achieved: number,
+  monthlyTarget: number | null,
+  prevAchieved: number | null,
+  direction: 'ASC' | 'DESC'
+): RagStatus {
+  const vsTarget =
+    monthlyTarget != null && monthlyTarget > 0
+      ? meetsTarget(achieved, monthlyTarget, direction)
+      : null;
+  const vsPrev =
+    prevAchieved != null
+      ? improvedVsPrevious(achieved, prevAchieved, direction)
+      : null;
+
+  if (vsTarget === null && vsPrev === null) return 'N/A';
+  if (vsTarget === null) return vsPrev ? 'Green' : 'Red';
+  if (vsPrev === null) return vsTarget ? 'Green' : 'Red';
+  if (vsTarget && vsPrev) return 'Green';
+  if (!vsTarget && !vsPrev) return 'Red';
+  return 'Amber';
 }
 
 function getTrendStatus(weeklyStatuses: RagStatus[]): RagStatus {
@@ -283,10 +315,17 @@ function KpiTrackingContent() {
         }
       });
       rangeWeekly.forEach((wd, idx) => {
-        if (wd.achieved > 0) {
-          const prevWd = idx > 0 ? rangeWeekly[idx - 1] : null;
-          activeStatuses.push(getWeeklyStatus(wd.achieved, prevWd ? prevWd.achieved : null, group.direction));
-        }
+        const prevWd = idx > 0 ? rangeWeekly[idx - 1] : null;
+        const monthKey = weekDates.find(w => w.id === wd.weekId)?.monthKey || '';
+        const monthlyTarget = group.monthData[monthKey]?.targetMonth ?? null;
+        activeStatuses.push(
+          getWeeklyStatus(
+            wd.achieved,
+            monthlyTarget,
+            prevWd ? prevWd.achieved : null,
+            group.direction
+          )
+        );
       });
       const latestMonthRecord = Object.values(group.monthData).sort((a: any, b: any) => b.month.localeCompare(a.month))[0];
       return { ...group, pacingStatus: getTrendStatus(activeStatuses), rangeWeekly, latestId: latestMonthRecord.id };
@@ -539,10 +578,19 @@ function KpiTrackingContent() {
                               {monthsInRange.map((monthDate, idx) => {
                                 const monthKey = format(monthDate, 'yyyy-MM');
                                 const data = group.monthData[monthKey];
+                                const monthlyStatus = data
+                                  ? getMonthlyStatus(data.achievedMonthTillYesterday, data.targetMonth, group.direction)
+                                  : 'N/A';
+                                const monthlyColor =
+                                  monthlyStatus === 'Green'
+                                    ? 'text-success'
+                                    : monthlyStatus === 'Red'
+                                      ? 'text-destructive'
+                                      : '';
                                 return (
                                   <React.Fragment key={monthKey}>
                                     <TableCell className={cn("text-center text-[11px] font-mono font-black px-4", idx % 2 === 0 ? "bg-primary/[0.01]" : "bg-primary/[0.03]")}>{data ? data.targetMonth.toLocaleString() : '—'}</TableCell>
-                                    <TableCell className={cn("text-center text-[11px] font-mono font-black px-4 border-r border-foreground/5", idx % 2 === 0 ? "bg-primary/[0.01]" : "bg-primary/[0.03]", data && (data.achievedMonthTillYesterday >= data.targetMonth ? "text-success" : "text-destructive"))}>{data ? data.achievedMonthTillYesterday.toLocaleString() : '—'}</TableCell>
+                                    <TableCell className={cn("text-center text-[11px] font-mono font-black px-4 border-r border-foreground/5", idx % 2 === 0 ? "bg-primary/[0.01]" : "bg-primary/[0.03]", monthlyColor)}>{data ? data.achievedMonthTillYesterday.toLocaleString() : '—'}</TableCell>
                                   </React.Fragment>
                                 );
                               })}
@@ -552,8 +600,15 @@ function KpiTrackingContent() {
                                   if (!wd) return <TableCell key={`cell-${group.id}-${w.id}`} className="text-center text-secondary/70">—</TableCell>;
                                   const wdIdx = group.rangeWeekly.findIndex((d: any) => d.weekId === w.id);
                                   const prevWd = wdIdx > 0 ? group.rangeWeekly[wdIdx - 1] : null;
-                                  const weeklyStatus = getWeeklyStatus(wd.achieved, prevWd ? prevWd.achieved : null, group.direction);
-                                  const weeklyColor = weeklyStatus === 'Green' ? 'text-success' : (weeklyStatus === 'Amber' ? 'text-warning' : 'text-destructive');
+                                  const monthRecord = group.monthData[w.monthKey];
+                                  const monthlyTarget = monthRecord?.targetMonth ?? null;
+                                  const weeklyStatus = getWeeklyStatus(
+                                    wd.achieved,
+                                    monthlyTarget,
+                                    prevWd ? prevWd.achieved : null,
+                                    group.direction
+                                  );
+                                  const weeklyColor = weeklyStatus === 'Green' ? 'text-success' : (weeklyStatus === 'Amber' ? 'text-warning' : weeklyStatus === 'Red' ? 'text-destructive' : 'text-secondary');
                                   return (
                                       <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} /></div></TooltipTrigger><TooltipContent className="rounded-none glass p-3 max-w-[200px]">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}</TooltipContent></Tooltip></TooltipProvider></TableCell>
                                   );
