@@ -683,8 +683,8 @@ export default function BusinessSnapshotPage() {
                   variance={stats.prevYearlyTotal > 0 ? ((stats.yearlyTotal - stats.prevYearlyTotal) / stats.prevYearlyTotal) * 100 : 0}
                   varianceAmount={stats.prevYearlyTotal > 0 ? stats.yearlyTotal - stats.prevYearlyTotal : undefined}
                   varianceLabel={stats.prevYearlyTotal > 0 ? "YTD YOY" : "YTD TOTAL"}
-                  gainers={[]}
-                  losers={[]}
+                  gainers={stats.yGainers}
+                  losers={stats.yLosers}
                 />
                 <SnapshotWidget
                   title={`${stats.monthName} SPENDS`}
