@@ -45,6 +45,13 @@ const parseDirection = (dirStr: any): 'ASC' | 'DESC' => {
     return 'ASC';
 };
 
+const parseKpiType = (raw: any): 'PRIMARY' | 'NON-PRIMARY' => {
+    if (!raw) return 'PRIMARY';
+    const s = raw.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (s.includes('nonprimary') || s === 'secondary' || s === 'non') return 'NON-PRIMARY';
+    return 'PRIMARY';
+};
+
 const parseMonthStr = (monthStr: any, isWeeklyDate: boolean = false): string => {
   if (!monthStr) return "";
   const s = monthStr.toString().trim();
@@ -151,6 +158,7 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
             kpiPayload.cduLead = getRowVal(entry, 'CDU Lead', 'Lead')?.toString().trim() || 'N/A';
             kpiPayload.emCsm = getRowVal(entry, 'EM/CSM', 'CSM', 'Manager')?.toString().trim() || 'N/A';
             kpiPayload.direction = parseDirection(getRowVal(entry, 'direction', 'Direction'));
+            kpiPayload.kpiType = parseKpiType(getRowVal(entry, 'KPI Type', 'kpiType', 'Kpi Type'));
             kpiPayload.currency = getRowVal(entry, 'currency', 'Currency') || 'INR';
             kpiPayload.targetMonth = sanitizeNumber(getRowVal(entry, 'Monthly Target', 'Target'));
             kpiPayload.achievedMonthTillYesterday = sanitizeNumber(getRowVal(entry, 'Monthly Achieved', 'Monthly Achived', 'Achieved'));
