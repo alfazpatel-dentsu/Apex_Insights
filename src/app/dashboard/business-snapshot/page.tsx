@@ -677,11 +677,11 @@ export default function BusinessSnapshotPage() {
             <div className="flex items-center gap-3 px-1"><Globe className="h-5 w-5 text-brand" /><h2 className="text-sm font-black uppercase tracking-[0.2em] text-secondary">Spends Insights</h2></div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-ink border border-ink ">
                 <SnapshotWidget
-                  title={`ANNUAL SPENDS (${stats.month.split('-')[0]})`}
+                  title={`ANNUAL SPENDS YTD (${stats.month.split('-')[0]} · JAN–${stats.ytdThroughLabel.toUpperCase()})`}
                   value={formatCurrency(stats.yearlyTotal)}
                   variance={stats.prevYearlyTotal > 0 ? ((stats.yearlyTotal - stats.prevYearlyTotal) / stats.prevYearlyTotal) * 100 : 0}
                   varianceAmount={stats.prevYearlyTotal > 0 ? stats.yearlyTotal - stats.prevYearlyTotal : undefined}
-                  varianceLabel={stats.prevYearlyTotal > 0 ? "YOY" : "ANNUAL TOTAL"}
+                  varianceLabel={stats.prevYearlyTotal > 0 ? "YTD YOY" : "YTD TOTAL"}
                   gainers={[]}
                   losers={[]}
                 />
