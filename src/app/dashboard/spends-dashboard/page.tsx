@@ -412,18 +412,42 @@ export default function SpendsAnalyticsPage() {
       };
     };
 
-    const yearlyCurrent = getBrandDetails(monthlyData.filter(d => d.month.startsWith(currentYearStr)));
-    const yearlyPrev = getBrandDetails(monthlyData.filter(d => d.month.startsWith(prevYearStr)));
-
-    const yearlySpends = Object.values(yearlyCurrent.spendMap).reduce((a, b) => a + b, 0);
-    const prevYearSpends = Object.values(yearlyPrev.spendMap).reduce((a, b) => a + b, 0);
-
     const monthsInYear = Array.from(new Set(monthlyData.filter(d => d.month.startsWith(currentYearStr)).map(d => d.month))).sort().reverse();
-    const lastMonthKey = monthsInYear[0] || '';
+    // Prefer latest month that actually has spend (same approach as Snapshot)
+    let lastMonthKey = '';
+    for (const m of monthsInYear) {
+      const monthTotal = monthlyData
+        .filter((d) => d.month === m)
+        .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+      if (monthTotal > 0) {
+        lastMonthKey = m;
+        break;
+      }
+    }
+    if (!lastMonthKey) lastMonthKey = monthsInYear[0] || '';
+
     let prevMonthKey = '';
     if (lastMonthKey) {
       prevMonthKey = format(subMonths(parse(lastMonthKey, 'yyyy-MM', new Date()), 1), 'yyyy-MM');
     }
+
+    const throughMonth = lastMonthKey ? parseInt(lastMonthKey.split('-')[1], 10) : 12;
+    const isSamePeriodYtd = (monthKey: string, y: string) => {
+      if (!monthKey.startsWith(`${y}-`)) return false;
+      const m = parseInt(monthKey.split('-')[1], 10);
+      return m >= 1 && m <= throughMonth;
+    };
+    // Fair YoY: YTD through latest uploaded month vs same months last year
+    const ytdCurrRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, currentYearStr));
+    const ytdPrevRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, prevYearStr));
+    const yearlyCurrent = getBrandDetails(ytdCurrRows);
+    const yearlyPrev = getBrandDetails(ytdPrevRows);
+
+    const yearlySpends = Object.values(yearlyCurrent.spendMap).reduce((a, b) => a + b, 0);
+    const prevYearSpends = Object.values(yearlyPrev.spendMap).reduce((a, b) => a + b, 0);
+    const ytdThroughLabel = lastMonthKey
+      ? format(parse(lastMonthKey, 'yyyy-MM', new Date()), 'MMM').toUpperCase()
+      : '';
 
     const lastMonth = getBrandDetails(monthlyData.filter(d => d.month === lastMonthKey));
     const prevMonth = getBrandDetails(monthlyData.filter(d => d.month === prevMonthKey));
@@ -449,8 +473,9 @@ export default function SpendsAnalyticsPage() {
       yearly: {
         total: yearlySpends,
         prevTotal: prevYearSpends,
-        varianceAmount: yearlySpends - prevYearSpends,
+        varianceAmount: prevYearSpends > 0 ? yearlySpends - prevYearSpends : undefined,
         growth: prevYearSpends > 0 ? ((yearlySpends - prevYearSpends) / prevYearSpends) * 100 : 0,
+        ytdThroughLabel,
         gainers: calcGainersLosers(yearlyCurrent, yearlyPrev).gainers,
         losers: calcGainersLosers(yearlyCurrent, yearlyPrev).losers,
       },
@@ -694,7 +719,11 @@ export default function SpendsAnalyticsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-w-0">
         <Card className="glass-card min-w-0 overflow-hidden">
           <CardHeader className="pb-2 min-w-0">
-            <CardDescription className="text-[10px] font-black uppercase text-primary">Annual Spends ({selectedYear})</CardDescription>
+            <CardDescription className="text-[10px] font-black uppercase text-primary">
+              {stats?.yearly.ytdThroughLabel
+                ? `ANNUAL SPENDS YTD (${selectedYear} · JAN–${stats.yearly.ytdThroughLabel})`
+                : `ANNUAL SPENDS YTD (${selectedYear})`}
+            </CardDescription>
             <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-[1.05] py-0.5">
               {formatCurrency(stats?.yearly.total || 0)}
             </CardTitle>
