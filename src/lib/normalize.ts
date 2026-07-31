@@ -131,6 +131,7 @@ export function canonicalizeChannel(raw: string | null | undefined): string {
 export const ACTION_STATUSES = [
   'Work-In Progress',
   'On-Hold',
+  'Observation',
   'Overdue',
   'Completed',
 ] as const;
@@ -142,6 +143,14 @@ export function canonicalizeActionStatus(raw: string | null | undefined): Action
 
   if (key === 'completed' || key === 'done' || key === 'complete') return 'Completed';
   if (key === 'overdue' || key === 'late') return 'Overdue';
+  if (
+    key === 'observation' ||
+    key === 'observe' ||
+    key === 'monitoring' ||
+    key === 'watch'
+  ) {
+    return 'Observation';
+  }
   if (
     key === 'on-hold' ||
     key === 'on hold' ||
@@ -186,15 +195,15 @@ export function isActionPastDue(dueDate?: string | null): boolean {
 }
 
 /**
- * Effective board status: non-completed items past their completion date
- * become Overdue automatically.
+ * Effective board status: non-completed, non-observation items past their
+ * completion date become Overdue automatically. Observation stays put.
  */
 export function resolveActionStatus(
   status: string | null | undefined,
   dueDate?: string | null
 ): ActionStatus {
   const base = canonicalizeActionStatus(status);
-  if (base === 'Completed') return 'Completed';
+  if (base === 'Completed' || base === 'Observation') return base;
   if (isActionPastDue(dueDate)) return 'Overdue';
   return base;
 }

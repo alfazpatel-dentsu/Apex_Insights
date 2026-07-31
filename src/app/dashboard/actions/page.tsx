@@ -61,6 +61,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 const KANBAN_COLUMNS: ActionStatus[] = [
   'Work-In Progress',
   'On-Hold',
+  'Observation',
   'Overdue',
   'Completed',
 ];
@@ -68,6 +69,7 @@ const KANBAN_COLUMNS: ActionStatus[] = [
 const columnAccent: Record<ActionStatus, string> = {
   'Work-In Progress': 'border-t-brand',
   'On-Hold': 'border-t-warning',
+  Observation: 'border-t-secondary',
   Overdue: 'border-t-destructive',
   Completed: 'border-t-success',
 };
@@ -185,6 +187,7 @@ export default function ActionItemsPage() {
     const map: Record<ActionStatus, ActionItem[]> = {
       'Work-In Progress': [],
       'On-Hold': [],
+      Observation: [],
       Overdue: [],
       Completed: [],
     };
@@ -217,12 +220,13 @@ export default function ActionItemsPage() {
     );
     if (current === nextStatus) return;
 
-    // Leaving Overdue while still past due snaps back unless marked Completed
-    // or the operator is parking it On-Hold.
+    // Leaving Overdue while still past due snaps back unless marked Completed,
+    // Observation (open-ended), or On-Hold.
     let statusToSave = nextStatus;
     if (
       nextStatus !== 'Completed' &&
       nextStatus !== 'On-Hold' &&
+      nextStatus !== 'Observation' &&
       resolveActionStatus(nextStatus, item.dueDate) === 'Overdue'
     ) {
       statusToSave = 'Overdue';
@@ -292,7 +296,7 @@ export default function ActionItemsPage() {
     <div className="flex flex-1 flex-col gap-6 animate-in fade-in duration-700 min-w-0">
       <PageHeader
         title="ACTION ITEMS"
-        description="Kanban board for WoW deliverables — drag cards across status columns. Past-due tasks move to Overdue automatically."
+        description="Kanban board for WoW deliverables — drag cards across status columns. Past-due tasks move to Overdue automatically (except Observation)."
       >
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">

@@ -893,6 +893,7 @@ export default function WbrEditPage() {
                               status === 'Completed' ? 'bg-success text-success-foreground'
                                 : status === 'Overdue' ? 'bg-destructive/10 text-destructive'
                                 : status === 'On-Hold' ? 'bg-warning/15 text-warning'
+                                : status === 'Observation' ? 'bg-secondary/15 text-secondary'
                                 : 'bg-primary/10 text-primary'
                             )}>
                               {status}

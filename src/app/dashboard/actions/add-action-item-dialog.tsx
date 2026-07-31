@@ -40,7 +40,7 @@ const actionSchema = z.object({
   clientId: z.string().optional(),
   clientName: z.string().optional(),
   comment: z.string().optional(),
-  status: z.enum(["Work-In Progress", "Completed", "Overdue", "On-Hold"]),
+  status: z.enum(["Work-In Progress", "Completed", "Overdue", "On-Hold", "Observation"]),
   priority: z.enum(["Low", "Medium", "High", "Critical"]),
   dueDate: z.string().optional(),
 });
@@ -56,7 +56,7 @@ interface AddActionItemDialogProps {
 }
 
 const sections: ActionSection[] = ["CLIENT ENGAGEMENT", "SALES", "OPERATIONS", "AZTEC", "HR", "MANAGEMENT"];
-const statuses: ActionStatus[] = ["Work-In Progress", "On-Hold", "Overdue", "Completed"];
+const statuses: ActionStatus[] = ["Work-In Progress", "On-Hold", "Observation", "Overdue", "Completed"];
 const priorities: ActionPriority[] = ["Low", "Medium", "High", "Critical"];
 
 export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName, action }: AddActionItemDialogProps) {
