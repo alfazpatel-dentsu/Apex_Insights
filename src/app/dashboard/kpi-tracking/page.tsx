@@ -20,8 +20,6 @@ import {
   ArrowDown,
   Filter,
   Download,
-  Trash,
-  AlertTriangle,
   Fingerprint,
   FileSpreadsheet,
   Database
@@ -32,16 +30,6 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { 
-  AlertDialog, 
-  AlertDialogAction, 
-  AlertDialogCancel, 
-  AlertDialogContent, 
-  AlertDialogDescription, 
-  AlertDialogFooter, 
-  AlertDialogHeader, 
-  AlertDialogTitle 
-} from '@/components/ui/alert-dialog';
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
 import { KpiDialog } from './kpi-dialog';
@@ -49,7 +37,7 @@ import { format, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInte
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/page-header';
 import { useCollection, useFirestore } from '@/firebase';
-import { saveKpiData, bulkSaveKpiData, updateWeeklyComment, clearAllKpiData } from '@/lib/firestore-actions';
+import { saveKpiData, bulkSaveKpiData, updateWeeklyComment } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, openDialogFromMenu } from '@/lib/utils';
@@ -231,9 +219,6 @@ function KpiTrackingContent() {
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedLobs, setSelectedLobs] = useState<string[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
-
-  const [isClearAllAlertOpen, setIsClearAllAlertOpen] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
 
   const weekDates = useMemo(() => {
     if (!dateRange?.from || !dateRange?.to) return [];
@@ -527,19 +512,6 @@ function KpiTrackingContent() {
     toast({ title: "Export Complete" });
   };
 
-  const handleClearAll = async () => {
-    setIsClearing(true);
-    try {
-      await clearAllKpiData(firestore);
-      toast({ title: "Data Deleted" });
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Operation Failed", description: error.message });
-    } finally {
-      setIsClearing(false);
-      setIsClearAllAlertOpen(false);
-    }
-  };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -588,12 +560,6 @@ function KpiTrackingContent() {
               </DropdownMenuItem>
               <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={handleExportExcel}>
                 <FileSpreadsheet className="h-4 w-4" />Export to Excel
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                className="rounded-none flex items-center gap-2 text-destructive focus:text-destructive focus:bg-destructive/10" 
-                onClick={() => setIsClearAllAlertOpen(true)}
-              >
-                <Trash className="h-4 w-4" />Clear All Data
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -809,30 +775,6 @@ function KpiTrackingContent() {
         }, weeklyT.map((t, i) => ({ weekOfMonth: i + 1, target: t, achieved: weeklyA[i], comment: weeklyC[i] || "" })), selectedKpiId);
         setIsDialogOpen(false);
       }} kpi={selectedKpi} weeklyData={selectedWeeklyData} currentMonth={format(dateRange?.to || new Date(), "MMMM yyyy")} weekDates={weekDates.filter(w => w.monthKey === format(dateRange?.to || new Date(), 'yyyy-MM')) as any} clients={clients || []} kpis={kpiDefinitions || []} channels={channels || []} />
-
-      <AlertDialog open={isClearAllAlertOpen} onOpenChange={setIsClearAllAlertOpen}>
-        <AlertDialogContent className="rounded-none glass ">
-          <AlertDialogHeader>
-            <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="h-8 w-8" />
-              <AlertDialogTitle className="font-headline text-2xl">Purge All KPI Data?</AlertDialogTitle>
-            </div>
-            <AlertDialogDescription className="text-foreground/70 font-bold leading-relaxed">
-              This will permanently delete <strong>ALL</strong> performance records and weekly data within your view. This action is irreversible.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="pt-8">
-            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold" disabled={isClearing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              className="rounded-none bg-destructive hover:bg-destructive/90 h-12 px-10 font-black" 
-              onClick={handleClearAll}
-              disabled={isClearing}
-            >
-              {isClearing ? "Clearing..." : "Yes, Purge Everything"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

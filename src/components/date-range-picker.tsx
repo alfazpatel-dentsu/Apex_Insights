@@ -91,39 +91,48 @@ export function DateRangePicker({
   ];
 
   return (
-    <div className={cn("grid gap-2", className)}>
+    <div className={cn("grid gap-2 min-w-0", className)}>
       <Popover>
         <PopoverTrigger asChild>
           <Button
             id="date"
             variant={"outline"}
             className={cn(
-              "w-[260px] justify-start text-left font-black text-[10px] uppercase tracking-widest rounded-none glass  h-10 shadow-lg",
+              "w-full sm:w-auto min-w-0 sm:min-w-[220px] max-w-full justify-start text-left font-black text-[10px] uppercase tracking-widest rounded-none glass h-10 shadow-lg",
               !date && "text-muted-foreground"
             )}
           >
-            <CalendarIcon className="mr-2 h-3.5 w-3.5 text-primary" />
-            {date?.from ? (
-              date.to ? (
-                <>
-                  {format(date.from, "LLL dd, y")} -{" "}
-                  {format(date.to, "LLL dd, y")}
-                </>
+            <CalendarIcon className="mr-2 h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="truncate">
+              {date?.from ? (
+                date.to ? (
+                  <>
+                    {format(date.from, "LLL dd, y")} -{" "}
+                    {format(date.to, "LLL dd, y")}
+                  </>
+                ) : (
+                  format(date.from, "LLL dd, y")
+                )
               ) : (
-                format(date.from, "LLL dd, y")
-              )
-            ) : (
-              <span>Select Date Range</span>
-            )}
+                <span>Select Date Range</span>
+              )}
+            </span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0 rounded-none glass overflow-hidden" align="end">
-          <div className="flex flex-col lg:flex-row h-auto max-h-[85vh] lg:h-[450px]">
-            <div className="w-full lg:w-[180px] border-r border-foreground/5 bg-foreground/[0.02] flex flex-col">
+        <PopoverContent
+          className="w-[calc(100vw-2rem)] sm:w-auto max-w-[min(720px,calc(100vw-2rem))] p-0 rounded-none glass overflow-hidden z-[80]"
+          align="start"
+          side="bottom"
+          sideOffset={8}
+          collisionPadding={16}
+          avoidCollisions
+        >
+          <div className="flex flex-col lg:flex-row h-auto max-h-[min(85vh,560px)]">
+            <div className="w-full lg:w-[180px] border-b lg:border-b-0 lg:border-r border-foreground/5 bg-foreground/[0.02] flex flex-col shrink-0">
               <div className="p-4 border-b border-foreground/5 shrink-0">
                 <span className="text-[10px] font-black uppercase tracking-widest text-secondary">Quick Filters</span>
               </div>
-              <ScrollArea className="flex-1">
+              <ScrollArea className="flex-1 max-h-[160px] lg:max-h-none">
                 <div className="p-2 space-y-1">
                   {presets.map((preset) => {
                     const isActive = 
@@ -149,7 +158,7 @@ export function DateRangePicker({
                 </div>
               </ScrollArea>
             </div>
-            <div className="p-4 overflow-auto">
+            <div className="p-3 sm:p-4 overflow-auto min-w-0">
               <Calendar
                 initialFocus
                 mode="range"
@@ -159,7 +168,7 @@ export function DateRangePicker({
                 numberOfMonths={2}
                 captionLayout="dropdown"
                 fromYear={2020}
-                toYear={today.getFullYear() + 10} // Expanded to support future planning (e.g. 2026)
+                toYear={today.getFullYear() + 10}
               />
             </div>
           </div>

@@ -5,7 +5,7 @@ import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, Auth }
 import { firebaseConfig } from '@/firebase/config';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, ActionItem } from './types';
+import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem } from './types';
 import { format, parse, isValid, startOfWeek, addDays, subMonths, subYears, startOfYear, subWeeks, endOfMonth, startOfMonth } from 'date-fns';
 import { generateBusinessSnapshot } from '@/ai/flows/business-snapshot-flow';
 import { canonicalizeChannel } from './normalize';
@@ -387,6 +387,109 @@ export const deleteLead = async (db: Firestore, id: string) => {
     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/leads/${id}`, operation: 'delete' }));
     throw e;
   }
+};
+
+const LEAD_STATUSES: LeadStatus[] = ['Unqualified', 'Qualified', 'Pitch', 'Negotiation', 'Contract', 'Won', 'Lost'];
+const LEAD_SERVICES: ServiceType[] = ['Performance', 'SEO', 'Affiliates', 'Branding', 'Marketplace', 'Creatives', 'Social'];
+
+const parseLeadStatus = (raw: any): LeadStatus => {
+  const value = (raw ?? '').toString().trim();
+  const match = LEAD_STATUSES.find((s) => s.toLowerCase() === value.toLowerCase());
+  return match || 'Unqualified';
+};
+
+const parseLeadServices = (raw: any): ServiceType[] => {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((s) => LEAD_SERVICES.find((opt) => opt.toLowerCase() === String(s).trim().toLowerCase()))
+      .filter(Boolean) as ServiceType[];
+  }
+  const parts = String(raw ?? '')
+    .split(/[|,;/]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts
+    .map((s) => LEAD_SERVICES.find((opt) => opt.toLowerCase() === s.toLowerCase()))
+    .filter(Boolean) as ServiceType[];
+};
+
+const parseLeadDate = (raw: any): string => {
+  if (raw == null || raw === '') return '';
+  if (raw instanceof Date && isValid(raw)) return format(raw, 'yyyy-MM-dd');
+  const str = String(raw).trim();
+  if (!str) return '';
+  // Excel serial date
+  if (/^\d+(\.\d+)?$/.test(str) && Number(str) > 20000) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const d = new Date(excelEpoch.getTime() + Number(str) * 86400000);
+    return isValid(d) ? format(d, 'yyyy-MM-dd') : '';
+  }
+  for (const pattern of ['yyyy-MM-dd', 'dd-MM-yyyy', 'dd/MM/yyyy', 'MM/dd/yyyy', 'yyyy/MM/dd']) {
+    const d = parse(str, pattern, new Date());
+    if (isValid(d)) return format(d, 'yyyy-MM-dd');
+  }
+  const fallback = new Date(str);
+  return isValid(fallback) ? format(fallback, 'yyyy-MM-dd') : str;
+};
+
+export const bulkSaveLeads = async (
+  db: Firestore,
+  entries: any[],
+  onProgress?: (progress: number) => void
+) => {
+  let processedCount = 0;
+  const CHUNK_SIZE = 100;
+  const totalEntries = entries.length;
+  const col = collection(db, 'leads');
+
+  for (let i = 0; i < totalEntries; i += CHUNK_SIZE) {
+    const chunk = entries.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    let batchCount = 0;
+
+    chunk.forEach((entry) => {
+      if (!entry || Object.keys(entry).length < 2) return;
+
+      const companyName = getRowVal(entry, 'Entity Name', 'Company Name', 'Company', 'companyName')?.toString().trim();
+      if (!companyName) return;
+
+      const providedRid = getRowVal(entry, 'Record ID', 'Upload Record ID', 'id')?.toString().trim();
+      const docRef = providedRid ? doc(col, providedRid) : doc(col);
+
+      const services = parseLeadServices(getRowVal(entry, 'Services', 'Service Portfolio', 'services'));
+      const payload = {
+        companyName,
+        phone: getRowVal(entry, 'Phone', 'Phone Number', 'phone')?.toString().trim() || '',
+        status: parseLeadStatus(getRowVal(entry, 'Status', 'Sales Status', 'Lead Stage', 'status')),
+        services: services.length > 0 ? services : (['Performance'] as ServiceType[]),
+        estimatedValue: sanitizeNumber(getRowVal(entry, 'Estimated Value', 'Estimated Value (INR)', 'estimatedValue')),
+        notes: getRowVal(entry, 'Notes', 'Strategic Intelligence Notes', 'notes')?.toString().trim() || '',
+        opportunityOwner: getRowVal(entry, 'Opportunity Owner', 'opportunityOwner', 'Owner')?.toString().trim() || '',
+        expectedSpends: sanitizeNumber(getRowVal(entry, 'Expected Spends', 'Expected spends', 'expectedSpends')),
+        retainerDetails: getRowVal(entry, 'Retainer Details', 'Retainer details', 'retainerDetails')?.toString().trim() || '',
+        expectedGoLiveDate: parseLeadDate(getRowVal(entry, 'Expected Go Live Date', 'Go Live Date', 'expectedGoLiveDate')),
+        pitchDate: parseLeadDate(getRowVal(entry, 'Pitch Date', 'pitchDate')),
+        teamAssigned: getRowVal(entry, 'Team Assigned', 'Team', 'teamAssigned')?.toString().trim() || '',
+        updatedAt: new Date().toISOString(),
+        uploadRecordId: docRef.id,
+      };
+
+      batch.set(docRef, payload, { merge: true });
+      batchCount++;
+    });
+
+    if (batchCount > 0) {
+      await batch.commit().catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/leads', operation: 'write' }));
+        throw err;
+      });
+      processedCount += batchCount;
+      onProgress?.(Math.min(100, Math.round((processedCount / Math.max(totalEntries, 1)) * 100)));
+      await throttle();
+    }
+  }
+
+  return { processedCount };
 };
 
 export const clearAllSpendsData = async (db: Firestore) => {

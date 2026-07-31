@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { 
   Sparkle, 
   ArrowsClockwise, 
@@ -25,8 +26,8 @@ import { format, parse, subMonths, subWeeks, startOfWeek, addDays, isValid, isBe
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
-import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, Client, Lead } from '@/lib/types';
-import { canonicalizeChannel } from '@/lib/normalize';
+import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead } from '@/lib/types';
+import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -109,6 +110,23 @@ const CHART_PALETTE = [
   '#EC4899', // Pink
   '#8B5CF6', // Purple
 ];
+
+/** Mirror Action Items Kanban columns on Snapshot Accountability Pulse. */
+const ACTION_BOARD_STATUSES: ActionStatus[] = [
+  'Work-In Progress',
+  'On-Hold',
+  'Observation',
+  'Overdue',
+  'Completed',
+];
+
+const actionBoardAccent: Record<ActionStatus, string> = {
+  'Work-In Progress': 'bg-brand',
+  'On-Hold': 'bg-warning',
+  Observation: 'bg-secondary',
+  Overdue: 'bg-destructive',
+  Completed: 'bg-success',
+};
 
 export default function BusinessSnapshotPage() {
   const firestore = useFirestore();
@@ -284,27 +302,24 @@ export default function BusinessSnapshotPage() {
           percent: ((leadCounts[status] || 0) / maxLead) * 100
         })));
 
-        // 5. ACCOUNTABILITY PULSE
-        const sections = ["OPERATIONS", "CLIENT ENGAGEMENT", "SALES", "MANAGEMENT", "HR", "AZTEC"];
-        const today = startOfDay(new Date());
-        const thresholdDate = addDays(today, 3);
-
-        const pulse = sections.map(section => {
-          const sectionActions = actions.filter(a => a.section === section && a.status !== 'Completed');
-          let overdueCount = 0;
-          let nearOverdueCount = 0;
-          sectionActions.forEach(a => {
-            if (!a.dueDate) return;
-            try {
-              const due = parse(a.dueDate, 'yyyy-MM-dd', new Date());
-              if (!isValid(due)) return;
-              if (isBefore(due, today)) overdueCount++;
-              else if (isBefore(due, endOfDay(thresholdDate))) nearOverdueCount++;
-            } catch(e) {}
-          });
-          return { section, overdue: overdueCount, soon: nearOverdueCount };
-        }).filter(s => s.overdue > 0 || s.soon > 0).sort((a, b) => b.overdue - a.overdue);
-        
+        // 5. ACCOUNTABILITY PULSE — Kanban status board counts
+        const statusCounts: Record<ActionStatus, number> = {
+          'Work-In Progress': 0,
+          'On-Hold': 0,
+          Observation: 0,
+          Overdue: 0,
+          Completed: 0,
+        };
+        actions.forEach((a) => {
+          const status = resolveActionStatus(a.status, a.dueDate);
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+        const totalActions = Object.values(statusCounts).reduce((sum, n) => sum + n, 0) || 1;
+        const pulse = ACTION_BOARD_STATUSES.map((status) => ({
+          status,
+          count: statusCounts[status] || 0,
+          percent: ((statusCounts[status] || 0) / totalActions) * 100,
+        }));
         setAccountabilityPulse(pulse);
 
         // 6. NEWS FEED (Utilizing resolved names)
@@ -609,7 +624,7 @@ export default function BusinessSnapshotPage() {
                         <div key={i} className="space-y-2">
                            <div className="flex items-center justify-between text-[10px] font-black uppercase">
                               <span className="tracking-widest">{stage.name}</span>
-                              <span className="text-secondary">{stage.value} RECORDS</span>
+                              <span className="text-secondary">{stage.value} OPPORTUNITIES</span>
                            </div>
                            <div className="h-6 bg-foreground/[0.03] relative overflow-hidden">
                               <div className="absolute inset-0 bg-brand/10" style={{ width: `${stage.percent}%` }} />
@@ -622,63 +637,59 @@ export default function BusinessSnapshotPage() {
                   </div>
               </div>
 
-              {/* Card 3: Accountability Pulse (Overdue Actions) */}
-              <div className="bg-white p-10 flex flex-col space-y-8 min-h-[500px]">
-                  <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">ACCOUNTABILITY PULSE</p>
-                      <h3 className="text-2xl font-black tracking-tighter uppercase">Overdue & Critical</h3>
+              {/* Card 3: Accountability Pulse (Action Kanban Status) */}
+              <Link
+                href="/dashboard/actions"
+                aria-label="Open Action Items Kanban Board"
+                className="bg-white p-10 flex flex-col space-y-8 min-h-[500px] group cursor-pointer transition-colors hover:bg-cream/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+              >
+                  <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">ACCOUNTABILITY PULSE</p>
+                          <h3 className="text-2xl font-black tracking-tighter uppercase">Action Board</h3>
+                      </div>
+                      <ArrowUpRight className="h-5 w-5 text-secondary shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
                   </div>
-                  <div className="flex-1 space-y-4 pt-4 overflow-y-auto custom-scrollbar">
-                      {accountabilityPulse.length > 0 ? accountabilityPulse.map((item, i) => (
-                        <div key={i} className="group p-4 bg-foreground/[0.02] border border-foreground/5 hover:bg-foreground/[0.04] transition-colors">
-                           <div className="flex items-center justify-between mb-3">
-                              <span className="text-11px font-black uppercase tracking-tight">{item.section}</span>
-                              <div className="flex gap-2">
-                                 {item.overdue > 0 && (
-                                   <Badge variant="destructive" className="h-5 px-1.5 text-[9px] font-black rounded-sm shadow-sm flex gap-1">
-                                      <Warning className="h-2.5 w-2.5" /> {item.overdue}
-                                   </Badge>
-                                 )}
-                                 {item.soon > 0 && (
-                                   <Badge variant="warning" className="h-5 px-1.5 text-[9px] font-black rounded-sm shadow-sm flex gap-1">
-                                      <Clock className="h-2.5 w-2.5" /> {item.soon}
-                                   </Badge>
-                                 )}
-                              </div>
+                  <div className="flex-1 space-y-5 pt-2">
+                      {accountabilityPulse.some((item: any) => item.count > 0) ? accountabilityPulse.map((item: any) => (
+                        <div key={item.status} className="space-y-2">
+                           <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase">
+                              <span className="tracking-widest truncate">{item.status}</span>
+                              <span className={cn(
+                                "shrink-0 tabular-nums",
+                                item.status === 'Overdue' && item.count > 0 ? "text-destructive" : "text-secondary"
+                              )}>
+                                {item.count}
+                              </span>
                            </div>
-                           <div className="flex items-center gap-4">
-                              <div className="flex-1 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
-                                 <div 
-                                    className="h-full bg-destructive" 
-                                    style={{ width: `${(item.overdue / (item.overdue + item.soon || 1)) * 100}%` }} 
-                                  />
-                              </div>
-                              <span className="text-[8px] font-black opacity-30 uppercase">Risk Level</span>
+                           <div className="h-2 bg-foreground/[0.04] overflow-hidden">
+                              <div
+                                className={cn("h-full transition-all", actionBoardAccent[item.status as ActionStatus] || 'bg-brand')}
+                                style={{ width: `${Math.max(item.percent, item.count > 0 ? 4 : 0)}%` }}
+                              />
                            </div>
                         </div>
                       )) : (
                         <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
                           <CheckCircle2 className="h-10 w-10 text-success/20" weight="bold" />
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-30">Tasks Clear<br/>No overdue task data</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-30">No action items yet</p>
                         </div>
                       )}
                   </div>
-                  <div className="pt-6 border-t border-foreground/5 flex items-center justify-between">
-                     <div className="flex items-center gap-1.5">
-                        <div className="h-2 w-2 rounded-full bg-destructive" />
-                        <span className="text-[8px] font-black uppercase text-secondary tracking-widest">Overdue</span>
-                     </div>
-                     <div className="flex items-center gap-1.5">
-                        <div className="h-2 w-2 rounded-full bg-warning" />
-                        <span className="text-[8px] font-black uppercase text-secondary tracking-widest">Due Soon (72h)</span>
-                     </div>
+                  <div className="pt-6 border-t border-foreground/5 grid grid-cols-2 gap-x-3 gap-y-2">
+                     {ACTION_BOARD_STATUSES.map((status) => (
+                       <div key={status} className="flex items-center gap-1.5 min-w-0">
+                          <div className={cn("h-2 w-2 shrink-0", actionBoardAccent[status])} />
+                          <span className="text-[8px] font-black uppercase text-secondary tracking-widest truncate">{status}</span>
+                       </div>
+                     ))}
                   </div>
-              </div>
+              </Link>
           </div>
 
           <div className="space-y-6">
             <div className="flex items-center gap-3 px-1"><Globe className="h-5 w-5 text-brand" /><h2 className="text-sm font-black uppercase tracking-[0.2em] text-secondary">Spends Insights</h2></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-ink border border-ink ">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-ink border border-ink min-w-0">
                 <SnapshotWidget
                   title={`ANNUAL SPENDS YTD (${stats.month.split('-')[0]} · JAN–${stats.ytdThroughLabel.toUpperCase()})`}
                   value={formatCurrency(stats.yearlyTotal)}
@@ -772,18 +783,25 @@ function SnapshotWidget({
   const amountPrefix = varianceAmount != null && varianceAmount > 0 ? '+' : '';
 
   return (
-    <div className="bg-white p-10 flex flex-col h-full relative overflow-hidden">
-      <div className="space-y-4 mb-8">
-        <p className="text-[11px] font-black uppercase tracking-widest text-brand">{title}</p>
-        <div className="space-y-2">
-            <div className="text-6xl font-black font-headline tracking-tighter text-ink">{value}</div>
+    <div className="bg-white p-5 md:p-6 xl:p-8 flex flex-col h-full min-w-0 overflow-hidden">
+      <div className="space-y-3 mb-6 min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-widest text-brand leading-snug break-words">
+          {title}
+        </p>
+        <div className="space-y-2 min-w-0">
+            <div
+              className="text-3xl md:text-4xl xl:text-[2.75rem] font-black font-headline tracking-tighter text-ink leading-[1.05] py-0.5 break-all"
+              title={value}
+            >
+              {value}
+            </div>
             <div className={cn(
-              "flex flex-wrap items-center gap-1.5 font-mono text-[11px] font-black uppercase",
+              "flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-black uppercase relative z-10",
               isDown ? "text-destructive" : "text-success"
             )}>
-              {isUp ? <ArrowUpRight className="h-3 w-3" /> : isDown ? <ArrowDownRight className="h-3 w-3" /> : null}
+              {isUp ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : isDown ? <ArrowDownRight className="h-3 w-3 shrink-0" /> : null}
               {varianceAmount != null && (
-                <span>{amountPrefix}{formatCurrency(varianceAmount)}</span>
+                <span className="break-all">{amountPrefix}{formatCurrency(varianceAmount)}</span>
               )}
               {varianceAmount != null && <span className="opacity-40">·</span>}
               <span>{Math.abs(variance).toFixed(1)}%</span>
@@ -791,10 +809,42 @@ function SnapshotWidget({
             </div>
         </div>
       </div>
-      <Separator className="bg-ink/5 mb-8" />
-      <div className="flex-1 grid grid-cols-2 gap-10">
-            <div className="space-y-4"><span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-success"><ArrowUp className="h-3 w-3" /> TOP 3 GAINERS</span><div className="space-y-5">{gainers && gainers.length > 0 ? gainers.map((g, i) => (<div key={i} className="space-y-1"><p className="text-[14px] font-black text-ink leading-none truncate uppercase tracking-tight">{g.brand}</p><p className="text-[9px] font-bold text-secondary uppercase text-secondary">{g.type}</p><p className="text-[11px] font-black leading-none flex items-center justify-between text-success"><span>+{formatCurrency(g.amount || 0)}</span><span className="opacity-60 text-[9px]">({g.variance.toFixed(1)}%)</span></p></div>)) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant gains</p>}</div></div>
-            <div className="space-y-4"><span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-destructive"><ArrowDown className="h-3 w-3" /> TOP 3 LOSERS</span><div className="space-y-5">{losers && losers.length > 0 ? losers.map((l, i) => (<div key={i} className="space-y-1"><p className="text-[14px] font-black text-ink leading-none truncate uppercase tracking-tight">{l.brand}</p><p className="text-[9px] font-bold text-secondary uppercase text-secondary">{l.type}</p><p className="text-[11px] font-black leading-none flex items-center justify-between text-destructive"><span>{formatCurrency(l.amount || 0)}</span><span className="opacity-60 text-[9px]">({l.variance.toFixed(1)}%)</span></p></div>)) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant losses</p>}</div></div>
+      <Separator className="bg-ink/5 mb-6" />
+      <div className="flex-1 grid grid-cols-2 gap-4 min-w-0">
+            <div className="space-y-3 min-w-0">
+              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-success">
+                <ArrowUp className="h-3 w-3 shrink-0" /> TOP 3 GAINERS
+              </span>
+              <div className="space-y-4">
+                {gainers && gainers.length > 0 ? gainers.map((g, i) => (
+                  <div key={i} className="space-y-1 min-w-0">
+                    <p className="text-[12px] font-black text-ink leading-tight truncate uppercase tracking-tight" title={g.brand}>{g.brand}</p>
+                    <p className="text-[8px] font-bold text-secondary uppercase truncate">{g.type}</p>
+                    <p className="text-[10px] font-black leading-none flex items-center justify-between gap-1 text-success min-w-0">
+                      <span className="truncate">+{formatCurrency(g.amount || 0)}</span>
+                      <span className="opacity-60 text-[8px] shrink-0">({g.variance.toFixed(1)}%)</span>
+                    </p>
+                  </div>
+                )) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant gains</p>}
+              </div>
+            </div>
+            <div className="space-y-3 min-w-0">
+              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-destructive">
+                <ArrowDown className="h-3 w-3 shrink-0" /> TOP 3 LOSERS
+              </span>
+              <div className="space-y-4">
+                {losers && losers.length > 0 ? losers.map((l, i) => (
+                  <div key={i} className="space-y-1 min-w-0">
+                    <p className="text-[12px] font-black text-ink leading-tight truncate uppercase tracking-tight" title={l.brand}>{l.brand}</p>
+                    <p className="text-[8px] font-bold text-secondary uppercase truncate">{l.type}</p>
+                    <p className="text-[10px] font-black leading-none flex items-center justify-between gap-1 text-destructive min-w-0">
+                      <span className="truncate">{formatCurrency(l.amount || 0)}</span>
+                      <span className="opacity-60 text-[8px] shrink-0">({l.variance.toFixed(1)}%)</span>
+                    </p>
+                  </div>
+                )) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant losses</p>}
+              </div>
+            </div>
       </div>
     </div>
   );

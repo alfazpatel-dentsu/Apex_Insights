@@ -6,11 +6,15 @@ type PageHeaderProps = {
   children?: ReactNode;
 };
 
+/**
+ * Stacked header layout: title always on its own row, actions wrap below.
+ * Prevents toolbars (date pickers, filters, buttons) from overlapping the title.
+ */
 export function PageHeader({ title, description, children }: PageHeaderProps) {
   return (
-    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-      <div className="grid gap-1.5 min-w-0">
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl font-headline uppercase">
+    <div className="flex w-full min-w-0 flex-col gap-4">
+      <div className="grid min-w-0 gap-1.5">
+        <h1 className="text-2xl font-bold tracking-tight md:text-3xl font-headline uppercase break-words">
           {title}
         </h1>
         {description && (
@@ -18,7 +22,7 @@ export function PageHeader({ title, description, children }: PageHeaderProps) {
         )}
       </div>
       {children && (
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
           {children}
         </div>
       )}
