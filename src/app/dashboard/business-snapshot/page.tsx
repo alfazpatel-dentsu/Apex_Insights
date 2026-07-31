@@ -382,7 +382,30 @@ export default function BusinessSnapshotPage() {
     const prevWData = getDetails(weeklySpends.filter(d => d.week === prevW));
     const wShifts = calcShifts(currWData, prevWData);
 
-    return { month: targetMonth, monthName: format(parse(targetMonth, 'yyyy-MM', new Date()), 'MMMM').toUpperCase(), monthlyTotal: Object.values(currMonthData.spendMap).reduce((a, b) => a + b, 0), prevMonthTotal: Object.values(prevMonthData.spendMap).reduce((a, b) => a + b, 0), mGainers: mShifts.gainers, mLosers: mShifts.losers, weeklyTotal: Object.values(currWData.spendMap).reduce((a, b) => a + b, 0), prevWeeklyTotal: Object.values(prevWData.spendMap).reduce((a, b) => a + b, 0), wGainers: wShifts.gainers, wLosers: wShifts.losers, weeklyDate: lastW, yearlyTotal: monthlySpends.filter(d => d.month.startsWith(targetMonth.split('-')[0])).reduce((a, b) => a + (b.actualSpendsInr || 0), 0) };
+    const year = targetMonth.split('-')[0];
+    const prevYear = String(Number(year) - 1);
+    const yearlyTotal = monthlySpends
+      .filter(d => d.month.startsWith(year))
+      .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+    const prevYearlyTotal = monthlySpends
+      .filter(d => d.month.startsWith(prevYear))
+      .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+
+    return {
+      month: targetMonth,
+      monthName: format(parse(targetMonth, 'yyyy-MM', new Date()), 'MMMM').toUpperCase(),
+      monthlyTotal: Object.values(currMonthData.spendMap).reduce((a, b) => a + b, 0),
+      prevMonthTotal: Object.values(prevMonthData.spendMap).reduce((a, b) => a + b, 0),
+      mGainers: mShifts.gainers,
+      mLosers: mShifts.losers,
+      weeklyTotal: Object.values(currWData.spendMap).reduce((a, b) => a + b, 0),
+      prevWeeklyTotal: Object.values(prevWData.spendMap).reduce((a, b) => a + b, 0),
+      wGainers: wShifts.gainers,
+      wLosers: wShifts.losers,
+      weeklyDate: lastW,
+      yearlyTotal,
+      prevYearlyTotal,
+    };
   }, [monthlySpends, weeklySpends, mounted]);
 
   const { data: snapshotDoc, loading: sLoading } = useDoc<BusinessSnapshot>(stats ? `businessSnapshots/${stats.month}` : null);
@@ -639,9 +662,33 @@ export default function BusinessSnapshotPage() {
           <div className="space-y-6">
             <div className="flex items-center gap-3 px-1"><Globe className="h-5 w-5 text-brand" /><h2 className="text-sm font-black uppercase tracking-[0.2em] text-secondary">Spends Insights</h2></div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-ink border border-ink ">
-                <SnapshotWidget title={`ANNUAL SPENDS (${stats.month.split('-')[0]})`} value={formatCurrency(stats.yearlyTotal)} variance={0} varianceLabel="ANNUAL TOTAL" gainers={[]} losers={[]} />
-                <SnapshotWidget title={`${stats.monthName} SPENDS`} value={formatCurrency(stats.monthlyTotal)} variance={stats.prevMonthTotal > 0 ? ((stats.monthlyTotal - stats.prevMonthTotal) / stats.prevMonthTotal) * 100 : 0} varianceLabel="MOM" gainers={stats.mGainers} losers={stats.mLosers} />
-                <SnapshotWidget title={`WEEKLY PULSE (${stats.weeklyDate})`} value={formatCurrency(stats.weeklyTotal)} variance={stats.prevWeeklyTotal > 0 ? ((stats.weeklyTotal - stats.prevWeeklyTotal) / stats.prevWeeklyTotal) * 100 : 0} varianceLabel="WOW" gainers={stats.wGainers} losers={stats.wLosers} />
+                <SnapshotWidget
+                  title={`ANNUAL SPENDS (${stats.month.split('-')[0]})`}
+                  value={formatCurrency(stats.yearlyTotal)}
+                  variance={stats.prevYearlyTotal > 0 ? ((stats.yearlyTotal - stats.prevYearlyTotal) / stats.prevYearlyTotal) * 100 : 0}
+                  varianceAmount={stats.prevYearlyTotal > 0 ? stats.yearlyTotal - stats.prevYearlyTotal : undefined}
+                  varianceLabel={stats.prevYearlyTotal > 0 ? "YOY" : "ANNUAL TOTAL"}
+                  gainers={[]}
+                  losers={[]}
+                />
+                <SnapshotWidget
+                  title={`${stats.monthName} SPENDS`}
+                  value={formatCurrency(stats.monthlyTotal)}
+                  variance={stats.prevMonthTotal > 0 ? ((stats.monthlyTotal - stats.prevMonthTotal) / stats.prevMonthTotal) * 100 : 0}
+                  varianceAmount={stats.monthlyTotal - stats.prevMonthTotal}
+                  varianceLabel="MOM"
+                  gainers={stats.mGainers}
+                  losers={stats.mLosers}
+                />
+                <SnapshotWidget
+                  title={`WEEKLY PULSE (${stats.weeklyDate})`}
+                  value={formatCurrency(stats.weeklyTotal)}
+                  variance={stats.prevWeeklyTotal > 0 ? ((stats.weeklyTotal - stats.prevWeeklyTotal) / stats.prevWeeklyTotal) * 100 : 0}
+                  varianceAmount={stats.weeklyTotal - stats.prevWeeklyTotal}
+                  varianceLabel="WOW"
+                  gainers={stats.wGainers}
+                  losers={stats.wLosers}
+                />
             </div>
           </div>
 
@@ -686,14 +733,45 @@ function HealthBox({ count, label, color }: { count: number, label: string, colo
     );
 }
 
-function SnapshotWidget({ title, value, variance, varianceLabel, gainers, losers }: { title: string; value: string; variance: number; varianceLabel: string; gainers: PerformanceShift[]; losers: PerformanceShift[]; }) {
+function SnapshotWidget({
+  title,
+  value,
+  variance,
+  varianceAmount,
+  varianceLabel,
+  gainers,
+  losers,
+}: {
+  title: string;
+  value: string;
+  variance: number;
+  varianceAmount?: number;
+  varianceLabel: string;
+  gainers: PerformanceShift[];
+  losers: PerformanceShift[];
+}) {
+  const isUp = variance > 0 || (varianceAmount != null && varianceAmount > 0);
+  const isDown = variance < 0 || (varianceAmount != null && varianceAmount < 0);
+  const amountPrefix = varianceAmount != null && varianceAmount > 0 ? '+' : '';
+
   return (
     <div className="bg-white p-10 flex flex-col h-full relative overflow-hidden">
       <div className="space-y-4 mb-8">
         <p className="text-[11px] font-black uppercase tracking-widest text-brand">{title}</p>
         <div className="space-y-2">
             <div className="text-6xl font-black font-headline tracking-tighter text-ink">{value}</div>
-            <div className={cn("flex items-center gap-1.5 font-mono text-[11px] font-black uppercase", variance >= 0 ? "text-success" : "text-destructive")}>{variance > 0 ? <ArrowUpRight className="h-3 w-3" /> : variance < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}{Math.abs(variance).toFixed(1)}% {varianceLabel}</div>
+            <div className={cn(
+              "flex flex-wrap items-center gap-1.5 font-mono text-[11px] font-black uppercase",
+              isDown ? "text-destructive" : "text-success"
+            )}>
+              {isUp ? <ArrowUpRight className="h-3 w-3" /> : isDown ? <ArrowDownRight className="h-3 w-3" /> : null}
+              {varianceAmount != null && (
+                <span>{amountPrefix}{formatCurrency(varianceAmount)}</span>
+              )}
+              {varianceAmount != null && <span className="opacity-40">·</span>}
+              <span>{Math.abs(variance).toFixed(1)}%</span>
+              <span>{varianceLabel}</span>
+            </div>
         </div>
       </div>
       <Separator className="bg-ink/5 mb-8" />
