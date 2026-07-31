@@ -442,7 +442,7 @@ function KpiTrackingContent() {
   const handleDownloadTemplate = () => {
     const headers = [
       'Record ID', 'Month', 'Client ID', 'Client Name', 'Cluster', 'LOB', 'CDU Lead', 'EM/CSM', 
-      'Channel', 'KPI', 'Direction', 'Currency', 'Monthly Target', 'Monthly Achieved',
+      'Channel', 'KPI', 'KPI Type', 'Direction', 'Currency', 'Monthly Target', 'Monthly Achieved',
       'W1 Achieved', 'W1 Comment', 'W2 Achieved', 'W2 Comment', 'W3 Achieved', 'W3 Comment', 
       'W4 Achieved', 'W4 Comment', 'W5 Achieved', 'W5 Comment'
     ];
@@ -470,6 +470,7 @@ function KpiTrackingContent() {
       { header: 'EM/CSM', key: 'emCsm', width: 15 },
       { header: 'Channel', key: 'channel', width: 15 },
       { header: 'KPI', key: 'kpi', width: 15 },
+      { header: 'KPI Type', key: 'kpiType', width: 14 },
       { header: 'Direction', key: 'direction', width: 10 },
       { header: 'Currency', key: 'currency', width: 10 },
       { header: 'Monthly Target', key: 'targetMonth', width: 15 },
@@ -503,6 +504,7 @@ function KpiTrackingContent() {
           emCsm: kpi.emCsm,
           channel: kpi.channel,
           kpi: kpi.kpi,
+          kpiType: kpi.kpiType || 'PRIMARY',
           direction: kpi.direction,
           currency: kpi.currency,
           targetMonth: kpi.targetMonth,
