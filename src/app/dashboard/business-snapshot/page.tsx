@@ -396,12 +396,11 @@ export default function BusinessSnapshotPage() {
       return m >= 1 && m <= throughMonth;
     };
     // Compare YTD through the latest uploaded month vs the same months last year
-    const yearlyTotal = monthlySpends
-      .filter(d => isSamePeriodYtd(d.month, year))
-      .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
-    const prevYearlyTotal = monthlySpends
-      .filter(d => isSamePeriodYtd(d.month, prevYear))
-      .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+    const ytdCurrRows = monthlySpends.filter(d => isSamePeriodYtd(d.month, year));
+    const ytdPrevRows = monthlySpends.filter(d => isSamePeriodYtd(d.month, prevYear));
+    const yearlyTotal = ytdCurrRows.reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+    const prevYearlyTotal = ytdPrevRows.reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+    const yShifts = calcShifts(getDetails(ytdCurrRows), getDetails(ytdPrevRows));
     const ytdThroughLabel = format(parse(targetMonth, 'yyyy-MM', new Date()), 'MMM');
 
     return {
@@ -418,6 +417,8 @@ export default function BusinessSnapshotPage() {
       weeklyDate: lastW,
       yearlyTotal,
       prevYearlyTotal,
+      yGainers: yShifts.gainers,
+      yLosers: yShifts.losers,
       ytdThroughLabel,
     };
   }, [monthlySpends, weeklySpends, mounted]);
