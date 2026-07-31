@@ -790,21 +790,13 @@ function SnapshotWidget({
         </p>
         <div className="space-y-2 min-w-0">
             <div
-<<<<<<< HEAD
-              className="text-3xl md:text-4xl xl:text-[2.75rem] font-black font-headline tracking-tighter text-ink leading-none break-all"
-=======
               className="text-3xl md:text-4xl xl:text-[2.75rem] font-black font-headline tracking-tighter text-ink leading-[1.05] py-0.5 break-all"
->>>>>>> origin/cursor/action-items-kanban-690f
               title={value}
             >
               {value}
             </div>
             <div className={cn(
-<<<<<<< HEAD
-              "flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-black uppercase",
-=======
               "flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-black uppercase relative z-10",
->>>>>>> origin/cursor/action-items-kanban-690f
               isDown ? "text-destructive" : "text-success"
             )}>
               {isUp ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : isDown ? <ArrowDownRight className="h-3 w-3 shrink-0" /> : null}
