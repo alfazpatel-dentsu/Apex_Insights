@@ -378,12 +378,15 @@ export default function WbrEditPage() {
         groups[key] = {
           channel,
           kpi: k.kpi,
+          kpiType: k.kpiType || 'PRIMARY',
           lob: k.lob,
           direction: k.direction || 'ASC',
           months: {} as Record<string, KpiData>
         };
       }
       groups[key].months[k.month] = k;
+      // Prefer latest month's type if present
+      if (k.kpiType) groups[key].kpiType = k.kpiType;
     });
     return Object.values(groups);
   }, [filteredKpis]);
@@ -461,12 +464,14 @@ export default function WbrEditPage() {
         groups[key] = {
           channel,
           kpi: k.kpi,
+          kpiType: k.kpiType || 'PRIMARY',
           lob: k.lob,
           direction: k.direction || 'ASC',
           months: {} as Record<string, KpiData>
         };
       }
       groups[key].months[k.month] = k;
+      if (k.kpiType) groups[key].kpiType = k.kpiType;
     });
     return Object.values(groups);
   }, [filteredWeeklyKpisForGrid]);
@@ -677,9 +682,20 @@ export default function WbrEditPage() {
                                  <Target className="h-3 w-3 text-primary/40" />
                                  <span className="text-xs font-black uppercase text-primary/80">{group.channel}</span>
                               </div>
-                              <div className="flex items-center gap-1.5 mt-1">
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                                 <span className="text-[10px] font-black uppercase tracking-tight">{group.kpi}</span>
                                 <Badge variant="outline" className="text-[7px] font-black h-3.5 px-1 leading-none border-foreground/10 bg-foreground/5 uppercase">{group.lob}</Badge>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[7px] font-black h-3.5 px-1 leading-none uppercase tracking-widest",
+                                    (group.kpiType || 'PRIMARY') === 'PRIMARY'
+                                      ? "border-brand/30 bg-brand/5 text-brand"
+                                      : "border-foreground/10 bg-foreground/5 text-secondary"
+                                  )}
+                                >
+                                  {group.kpiType || 'PRIMARY'}
+                                </Badge>
                               </div>
                             </div>
                           </td>
@@ -797,7 +813,20 @@ export default function WbrEditPage() {
                         <td className="sticky left-0 z-20 bg-background/95 backdrop-blur-md px-8 py-6 border-r border-foreground/5">
                           <div className="flex flex-col">
                             <span className="text-[10px] font-black uppercase text-foreground/70">{group.channel} Achieved</span>
-                            <span className="text-[8px] font-bold text-secondary uppercase tracking-tighter mt-0.5">{group.kpi} • {group.lob}</span>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-[8px] font-bold text-secondary uppercase tracking-tighter">{group.kpi} • {group.lob}</span>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[7px] font-black h-3.5 px-1 leading-none uppercase tracking-widest",
+                                  (group.kpiType || 'PRIMARY') === 'PRIMARY'
+                                    ? "border-brand/30 bg-brand/5 text-brand"
+                                    : "border-foreground/10 bg-foreground/5 text-secondary"
+                                )}
+                              >
+                                {group.kpiType || 'PRIMARY'}
+                              </Badge>
+                            </div>
                           </div>
                         </td>
                         {weeksInRange.map((w, idx) => { 
