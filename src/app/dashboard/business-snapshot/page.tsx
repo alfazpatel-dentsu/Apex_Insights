@@ -509,13 +509,18 @@ export default function BusinessSnapshotPage() {
                   <div className="space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">CHANNEL PERFORMANCE</p>
                       <h3 className="text-2xl font-black tracking-tighter uppercase">Depletion Pulse</h3>
+                      <p className="text-[11px] font-medium text-secondary pt-1">
+                        {channelSpendWeekLabel
+                          ? `Spend by channel · ${channelSpendWeekLabel}`
+                          : 'Spend by channel · latest available week'}
+                      </p>
                   </div>
                   <div className="flex-1 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart 
                           data={channelSpends} 
                           layout="vertical"
-                          margin={{ left: -10, right: 30 }}
+                          margin={{ left: -10, right: 56 }}
                         >
                            <CartesianGrid strokeDasharray="3 3" horizontal={false} strokeOpacity={0.05} />
                            <XAxis type="number" hide />
@@ -533,8 +538,20 @@ export default function BusinessSnapshotPage() {
                              contentStyle={{ borderRadius: '0', border: '1px solid #000' }}
                              formatter={(v: number) => [formatCurrency(v), 'Spend']}
                            />
-                           <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={24}>
+                           <Bar dataKey="value" radius={[0, 0, 0, 0]} barSize={24}>
                               {channelSpends.map((_, i) => <Cell key={i} fill={CHART_PALETTE[i % CHART_PALETTE.length]} />)}
+                              <LabelList
+                                dataKey="value"
+                                position="right"
+                                offset={8}
+                                formatter={(v: number) => formatChartLabel(v)}
+                                style={{
+                                  fill: 'hsl(var(--ink))',
+                                  fontSize: 9,
+                                  fontWeight: 700,
+                                  fontFamily: 'var(--font-mono), IBM Plex Mono, monospace',
+                                }}
+                              />
                            </Bar>
                         </BarChart>
                       </ResponsiveContainer>
