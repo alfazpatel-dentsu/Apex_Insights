@@ -27,11 +27,11 @@ import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
 import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
-import { getMonthlyStatus, kpiAttainmentPct } from '@/lib/kpi-rag';
+import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, type ClientPath } from '@/lib/kpi-rag';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { where, query, collection, getDocs, orderBy, limit } from 'firebase/firestore';
+import { where, query, collection, getDocs, orderBy, limit, startAfter, documentId, type Firestore, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { exportToPdf } from '@/lib/pdf-export';
 import { 
@@ -128,8 +128,6 @@ const actionBoardAccent: Record<ActionStatus, string> = {
   Completed: 'bg-success',
 };
 
-type ClientPath = 'on-path' | 'off-path' | 'no-signal';
-
 interface ClientHealthRow {
   clientId: string;
   clientName: string;
@@ -149,6 +147,48 @@ interface ClientHealthRow {
 }
 
 const PATH_RANK: Record<ClientPath, number> = { 'off-path': 0, 'no-signal': 1, 'on-path': 2 };
+
+const KPI_PAGE_SIZE = 500;
+
+/** Load every KPI row for a month (Firestore queries are capped; paginate past the first page). */
+async function fetchAllKpisForMonth(db: Firestore, month: string): Promise<KpiData[]> {
+  const results: KpiData[] = [];
+  let cursor: QueryDocumentSnapshot<DocumentData> | undefined;
+
+  while (true) {
+    const constraints = [
+      where('month', '==', month),
+      orderBy(documentId()),
+      ...(cursor ? [startAfter(cursor)] : []),
+      limit(KPI_PAGE_SIZE),
+    ];
+    const snap = await getDocs(query(collection(db, 'kpis'), ...constraints));
+    if (snap.empty) break;
+    for (const d of snap.docs) {
+      results.push({ id: d.id, ...(d.data() as object) } as KpiData);
+    }
+    if (snap.size < KPI_PAGE_SIZE) break;
+    cursor = snap.docs[snap.docs.length - 1];
+  }
+
+  return results;
+}
+
+/**
+ * Path MTD month should follow KPI Tracker (current month when data exists),
+ * not lag behind the latest spends month.
+ */
+async function resolveHealthKpiMonth(db: Firestore, spendsMonth: string): Promise<string> {
+  const calendarMonth = format(new Date(), 'yyyy-MM');
+  const calSnap = await getDocs(query(collection(db, 'kpis'), where('month', '==', calendarMonth), limit(1)));
+  if (!calSnap.empty) return calendarMonth;
+
+  const latestSnap = await getDocs(query(collection(db, 'kpis'), orderBy('month', 'desc'), limit(1)));
+  const latestMonth = latestSnap.docs[0]?.data()?.month as string | undefined;
+  if (latestMonth && /^\d{4}-\d{2}$/.test(latestMonth)) return latestMonth;
+
+  return spendsMonth;
+}
 
 export default function BusinessSnapshotPage() {
   const firestore = useFirestore();
@@ -173,6 +213,15 @@ export default function BusinessSnapshotPage() {
   const [clientHealth, setClientHealth] = useState<ClientHealthRow[]>([]);
   const [clientHealthLoading, setClientHealthLoading] = useState(false);
   const [healthCycleDate, setHealthCycleDate] = useState<string | null>(null);
+  const [healthKpiMonth, setHealthKpiMonth] = useState<string | null>(null);
+  const [wbrRagSummary, setWbrRagSummary] = useState({
+    pGreen: 0,
+    pAmber: 0,
+    pRed: 0,
+    eGreen: 0,
+    eAmber: 0,
+    eRed: 0,
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -491,15 +540,18 @@ export default function BusinessSnapshotPage() {
         }
         setHealthCycleDate(cycleDate || null);
 
-        const kpiSnap = await getDocs(
-          query(collection(firestore, 'kpis'), where('month', '==', stats.month), limit(500))
-        );
-        const clientSnap = await getDocs(collection(firestore, 'clients'));
-        const wbrSnap = cycleDate
-          ? await getDocs(
-              query(collection(firestore, 'wbrEntries'), where('wbrDate', '==', cycleDate), limit(200))
-            )
-          : null;
+        const kpiMonth = await resolveHealthKpiMonth(firestore, stats.month);
+        setHealthKpiMonth(kpiMonth);
+
+        const [kpiRows, clientSnap, wbrSnap] = await Promise.all([
+          fetchAllKpisForMonth(firestore, kpiMonth),
+          getDocs(collection(firestore, 'clients')),
+          cycleDate
+            ? getDocs(
+                query(collection(firestore, 'wbrEntries'), where('wbrDate', '==', cycleDate), limit(500))
+              )
+            : Promise.resolve(null),
+        ]);
 
         const nameById: Record<string, string> = {};
         const clusterById: Record<string, string> = {};
@@ -516,6 +568,7 @@ export default function BusinessSnapshotPage() {
         });
 
         const wbrByClient = new Map<string, WbrEntry>();
+        const rag = { pGreen: 0, pAmber: 0, pRed: 0, eGreen: 0, eAmber: 0, eRed: 0 };
         (wbrSnap?.docs || []).forEach((d) => {
           const w = { id: d.id, ...(d.data() as object) } as WbrEntry;
           if (!w.clientId) return;
@@ -525,60 +578,40 @@ export default function BusinessSnapshotPage() {
           }
           if (w.cluster) clusterById[w.clientId] = w.cluster;
           if (w.clusterLead) leadById[w.clientId] = w.clusterLead;
+
+          if (w.performanceRag === 'Green') rag.pGreen += 1;
+          else if (w.performanceRag === 'Amber') rag.pAmber += 1;
+          else if (w.performanceRag === 'Red') rag.pRed += 1;
+          if (w.engagementRag === 'Green') rag.eGreen += 1;
+          else if (w.engagementRag === 'Amber') rag.eAmber += 1;
+          else if (w.engagementRag === 'Red') rag.eRed += 1;
         });
+        setWbrRagSummary(rag);
 
-        const primaryByClient = new Map<string, KpiData>();
-        const severity = (s: RagStatus) => (s === 'Red' ? 0 : s === 'Amber' ? 1 : s === 'Green' ? 2 : 3);
-
-        kpiSnap.docs.forEach((d) => {
-          const kpi = { id: d.id, ...(d.data() as object) } as KpiData;
+        // Group all KPI rows for the month by client, then roll up Primary MTD path
+        const kpisByClient = new Map<string, KpiData[]>();
+        kpiRows.forEach((kpi) => {
           if (!kpi.clientId) return;
-          const type = (kpi.kpiType || 'PRIMARY').toUpperCase();
-          if (type !== 'PRIMARY') return;
           if (kpi.clientName && !looksLikeClientId(kpi.clientName, kpi.clientId)) {
             nameById[kpi.clientId] = kpi.clientName;
           }
           if (kpi.cluster) clusterById[kpi.clientId] = kpi.cluster;
           if (kpi.cduLead) leadById[kpi.clientId] = kpi.cduLead;
-
-          const status = getMonthlyStatus(
-            kpi.achievedMonthTillYesterday || 0,
-            kpi.targetMonth || 0,
-            kpi.direction || 'ASC'
-          );
-          const existing = primaryByClient.get(kpi.clientId);
-          if (!existing) {
-            primaryByClient.set(kpi.clientId, kpi);
-            return;
-          }
-          const existingStatus = getMonthlyStatus(
-            existing.achievedMonthTillYesterday || 0,
-            existing.targetMonth || 0,
-            existing.direction || 'ASC'
-          );
-          // Prefer the riskiest primary when a client has multiple
-          if (severity(status) < severity(existingStatus)) {
-            primaryByClient.set(kpi.clientId, kpi);
-          }
+          const list = kpisByClient.get(kpi.clientId) || [];
+          list.push(kpi);
+          kpisByClient.set(kpi.clientId, list);
         });
 
-        const clientIds = Array.from(
-          new Set([...Array.from(wbrByClient.keys()), ...Array.from(primaryByClient.keys())])
-        );
+        // Path tiles are Primary-KPI clients only (WBR-only accounts must not inflate No Signal)
+        const rows: ClientHealthRow[] = Array.from(kpisByClient.entries()).flatMap(([clientId, clientKpis]) => {
+          if (!selectPrimaryKpisForPath(clientKpis).length) return [];
 
-        const rows: ClientHealthRow[] = clientIds.map((clientId) => {
-          const kpi = primaryByClient.get(clientId);
+          const rolled = clientPathFromPrimaryKpis(clientKpis);
+          const kpi = rolled.representative;
           const wbr = wbrByClient.get(clientId);
-          const achieved = kpi?.achievedMonthTillYesterday || 0;
-          const target = kpi?.targetMonth || 0;
-          const direction = kpi?.direction || 'ASC';
-          const pathStatus = kpi
-            ? getMonthlyStatus(achieved, target, direction)
-            : ('N/A' as RagStatus);
-          const path: ClientPath =
-            pathStatus === 'Green' ? 'on-path' : pathStatus === 'Red' ? 'off-path' : 'no-signal';
+          const { achieved, target, direction, pathStatus, path } = rolled;
 
-          return {
+          return [{
             clientId,
             clientName: nameById[clientId] || wbr?.clientName || kpi?.clientName || clientId,
             cluster: clusterById[clientId] || wbr?.cluster || kpi?.cluster || 'Unassigned',
@@ -594,7 +627,7 @@ export default function BusinessSnapshotPage() {
             performanceRag: (wbr?.performanceRag || 'N/A') as RagStatus,
             engagementRag: (wbr?.engagementRag || 'N/A') as RagStatus,
             attainment: kpi ? kpiAttainmentPct(achieved, target, direction) : null,
-          };
+          }];
         });
 
         rows.sort((a, b) => {
@@ -607,6 +640,8 @@ export default function BusinessSnapshotPage() {
       } catch (err) {
         console.error('Client health load failed:', err);
         setClientHealth([]);
+        setWbrRagSummary({ pGreen: 0, pAmber: 0, pRed: 0, eGreen: 0, eAmber: 0, eRed: 0 });
+        setHealthKpiMonth(null);
       } finally {
         setClientHealthLoading(false);
       }
@@ -620,26 +655,15 @@ export default function BusinessSnapshotPage() {
       onPath: 0,
       offPath: 0,
       noSignal: 0,
-      pGreen: 0,
-      pAmber: 0,
-      pRed: 0,
-      eGreen: 0,
-      eAmber: 0,
-      eRed: 0,
+      ...wbrRagSummary,
     };
     clientHealth.forEach((row) => {
       if (row.path === 'on-path') summary.onPath += 1;
       else if (row.path === 'off-path') summary.offPath += 1;
       else summary.noSignal += 1;
-      if (row.performanceRag === 'Green') summary.pGreen += 1;
-      else if (row.performanceRag === 'Amber') summary.pAmber += 1;
-      else if (row.performanceRag === 'Red') summary.pRed += 1;
-      if (row.engagementRag === 'Green') summary.eGreen += 1;
-      else if (row.engagementRag === 'Amber') summary.eAmber += 1;
-      else if (row.engagementRag === 'Red') summary.eRed += 1;
     });
     return summary;
-  }, [clientHealth]);
+  }, [clientHealth, wbrRagSummary]);
 
   const isAdmin = userProfile?.role === 'Admin' || userProfile?.role === 'Cluster Lead';
 
@@ -926,7 +950,7 @@ export default function BusinessSnapshotPage() {
                 <p className="terminal-overline">Portfolio Intelligence</p>
                 <h3 className="text-3xl md:text-4xl font-black tracking-tighter uppercase">Client Health Board</h3>
                 <p className="text-[11px] font-medium text-secondary max-w-xl">
-                  Primary KPI MTD sets the path. Performance &amp; Engagement RAG reflect the current WBR week.
+                  Designated Primary KPI MTD sets the path (same formula as KPI Tracker). Performance &amp; Engagement RAG reflect the current WBR week.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -950,9 +974,9 @@ export default function BusinessSnapshotPage() {
                     })()}
                   </div>
                 )}
-                {stats?.month && (
+                {healthKpiMonth && (
                   <div className="text-[9px] font-black text-secondary uppercase tracking-widest bg-white px-3 py-1.5 border border-ink/10">
-                    KPI Month: {format(parse(stats.month, 'yyyy-MM', new Date()), 'MMM yyyy').toUpperCase()}
+                    KPI Month: {format(parse(healthKpiMonth, 'yyyy-MM', new Date()), 'MMM yyyy').toUpperCase()}
                   </div>
                 )}
               </div>
@@ -964,21 +988,21 @@ export default function BusinessSnapshotPage() {
                 hint="Primary KPI on target"
                 count={clientHealthSummary.onPath}
                 tone="success"
-                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=on&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=on'}
+                href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=on&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=on'}
               />
               <PathSummaryTile
                 label="Off Path"
                 hint="Primary KPI behind target"
                 count={clientHealthSummary.offPath}
                 tone="destructive"
-                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=off&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=off'}
+                href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=off&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=off'}
               />
               <PathSummaryTile
                 label="No Signal"
-                hint="Missing primary KPI / N/A"
+                hint="Primary KPI MTD N/A"
                 count={clientHealthSummary.noSignal}
                 tone="secondary"
-                href={stats?.month ? `/dashboard/kpi-tracking?primary=1&path=none&month=${stats.month}` : '/dashboard/kpi-tracking?primary=1&path=none'}
+                href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=none&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=none'}
               />
             </div>
 
