@@ -108,29 +108,63 @@ export default function BusinessSnapshotPage() {
         const leadsSnap = await getDocs(query(collection(firestore, 'leads'), limit(100)));
         const leads = leadsSnap.docs.map(d => d.data() as Lead);
 
-        // 2. NAME RESOLUTION RITUAL (Temporal Constraint to prevent massive sync)
+        // 2. NAME RESOLUTION — registry + KPI discovery, then targeted lookup for WBR clients
         const nameLookup: Record<string, string> = {};
-        
-        // Source A: Registry
-        const clientSnap = await getDocs(query(collection(firestore, 'clients'), limit(100)));
+        const looksLikeClientId = (value?: string | null, cid?: string) => {
+          if (!value?.trim()) return true;
+          const v = value.trim();
+          if (cid && v === cid) return true;
+          return /^CLID\d+$/i.test(v);
+        };
+        const rememberName = (cid?: string, name?: string) => {
+          if (!cid || !name || looksLikeClientId(name, cid)) return;
+          if (!nameLookup[cid] || looksLikeClientId(nameLookup[cid], cid)) {
+            nameLookup[cid] = name;
+          }
+        };
+
+        // Source A: Client registry (no low cap — pulse clients often sit outside first 100)
+        const clientSnap = await getDocs(collection(firestore, 'clients'));
         clientSnap.forEach(d => {
           const data = d.data() as Client;
-          if (data.uniqueId && data.name) nameLookup[data.uniqueId] = data.name;
+          rememberName(data.uniqueId, data.name);
         });
 
-        // Source B: Recent KPI Records (Captures discovered clients within sliding window)
+        // Source B: Recent KPI records
         const recentKpiQ = query(
           collection(firestore, 'kpis'), 
           where('month', '>=', format(subMonths(new Date(), 3), 'yyyy-MM')),
-          limit(200)
+          limit(500)
         );
         const kpiRefSnap = await getDocs(recentKpiQ);
         kpiRefSnap.forEach(d => {
           const data = d.data() as KpiData;
-          if (data.clientId && data.clientName) {
-            if (!nameLookup[data.clientId]) nameLookup[data.clientId] = data.clientName;
-          }
+          rememberName(data.clientId, data.clientName);
         });
+
+        // Source C: Targeted resolve for WBR feed IDs still missing a real name
+        const wbrClientIds = Array.from(new Set(wbrs.map(w => w.clientId).filter(Boolean)));
+        const unresolvedIds = wbrClientIds.filter(cid => looksLikeClientId(nameLookup[cid], cid));
+        await Promise.all(unresolvedIds.map(async (cid) => {
+          if (!looksLikeClientId(nameLookup[cid], cid)) return;
+
+          const byUniqueId = await getDocs(
+            query(collection(firestore, 'clients'), where('uniqueId', '==', cid), limit(1))
+          );
+          if (!byUniqueId.empty) {
+            const data = byUniqueId.docs[0].data() as Client;
+            rememberName(cid, data.name);
+            if (!looksLikeClientId(nameLookup[cid], cid)) return;
+          }
+
+          const byKpi = await getDocs(
+            query(collection(firestore, 'kpis'), where('clientId', '==', cid), limit(1))
+          );
+          if (!byKpi.empty) {
+            const data = byKpi.docs[0].data() as KpiData;
+            rememberName(cid, data.clientName);
+          }
+        }));
 
         // 3. MOMENTUM & CHANNEL SPENDS
         const spendByWeekStart: Record<string, number> = {};
@@ -210,8 +244,12 @@ export default function BusinessSnapshotPage() {
         Array.from(new Set(wbrs.map(w => w.clientId))).forEach(cid => {
           const clientWbr = wbrs.find(w => w.clientId === cid);
           if (clientWbr) {
+            const displayName =
+              (!looksLikeClientId(nameLookup[cid], cid) && nameLookup[cid]) ||
+              (!looksLikeClientId(clientWbr.clientName, cid) && clientWbr.clientName) ||
+              cid;
             pulseFeed.push({
-              client: `${nameLookup[cid] || clientWbr.clientName || cid} • ${clientWbr.cluster || 'UNASSIGNED'}`,
+              client: `${displayName} • ${clientWbr.cluster || 'UNASSIGNED'}`,
               rag: clientWbr.performanceRag,
               week: (() => {
                 try {

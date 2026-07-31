@@ -113,6 +113,17 @@ export interface Lead {
   updatedAt: string;
 }
 
+export interface Client {
+  id: string;
+  uniqueId: string;
+  name: string;
+  cluster?: string;
+  clusterLead?: string;
+  emcsm?: string;
+  subEntity?: string;
+  clientPartner?: string;
+}
+
 export interface WbrEntry {
   id: string;
   clientId: string;
