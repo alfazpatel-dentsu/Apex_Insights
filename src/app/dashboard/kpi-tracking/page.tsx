@@ -587,14 +587,26 @@ function KpiTrackingContent() {
                     </React.Fragment>
                   );
                 })}
-                <TableHead className="text-center px-4 text-[11px] font-black uppercase bg-primary/[0.03] min-w-[100px] leading-tight">
-                  <div className="flex flex-col items-center gap-0.5">
-                    <span>MTD Status</span>
-                    <span className="text-[8px] font-bold text-secondary normal-case tracking-wide">vs monthly tgt</span>
+                <TableHead className="text-center px-4 text-[11px] font-black uppercase bg-muted/60 min-w-[100px] leading-tight border-l border-ink/5">
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-ink tracking-widest">MTD Status</span>
+                    <span className="text-[10px] font-semibold text-secondary normal-case tracking-normal">vs monthly tgt</span>
                   </div>
                 </TableHead>
                 {weekDates.map((w) => (
-                  <TableHead key={`header-${w.id}`} className="text-center text-[10px] px-2 py-4 font-black leading-tight uppercase text-muted-foreground/60 bg-foreground/[0.03] min-w-[110px]"><div className="flex flex-col items-center"><span>W{w.num}</span><span className="text-[8px] text-secondary font-bold whitespace-nowrap">{w.range}</span></div></TableHead>
+                  <TableHead
+                    key={`header-${w.id}`}
+                    className="text-center px-2 py-4 bg-muted/60 border-l border-ink/5 min-w-[120px]"
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-[12px] font-black uppercase tracking-widest text-ink">
+                        W{w.num}
+                      </span>
+                      <span className="text-[10px] font-semibold text-secondary whitespace-nowrap tracking-normal normal-case">
+                        {w.range}
+                      </span>
+                    </div>
+                  </TableHead>
                 ))}
                 <TableHead className="w-10 px-4 bg-primary/[0.03]"></TableHead>
               </TableRow></TableHeader>
