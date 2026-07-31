@@ -609,7 +609,7 @@ export default function BusinessSnapshotPage() {
                         <div key={i} className="space-y-2">
                            <div className="flex items-center justify-between text-[10px] font-black uppercase">
                               <span className="tracking-widest">{stage.name}</span>
-                              <span className="text-secondary">{stage.value} RECORDS</span>
+                              <span className="text-secondary">{stage.value} OPPORTUNITIES</span>
                            </div>
                            <div className="h-6 bg-foreground/[0.03] relative overflow-hidden">
                               <div className="absolute inset-0 bg-brand/10" style={{ width: `${stage.percent}%` }} />
