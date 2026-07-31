@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { 
   Sparkle, 
   ArrowsClockwise, 
@@ -637,10 +638,17 @@ export default function BusinessSnapshotPage() {
               </div>
 
               {/* Card 3: Accountability Pulse (Action Kanban Status) */}
-              <div className="bg-white p-10 flex flex-col space-y-8 min-h-[500px]">
-                  <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">ACCOUNTABILITY PULSE</p>
-                      <h3 className="text-2xl font-black tracking-tighter uppercase">Action Board</h3>
+              <Link
+                href="/dashboard/actions"
+                aria-label="Open Action Items Kanban Board"
+                className="bg-white p-10 flex flex-col space-y-8 min-h-[500px] group cursor-pointer transition-colors hover:bg-cream/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+              >
+                  <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">ACCOUNTABILITY PULSE</p>
+                          <h3 className="text-2xl font-black tracking-tighter uppercase">Action Board</h3>
+                      </div>
+                      <ArrowUpRight className="h-5 w-5 text-secondary shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
                   </div>
                   <div className="flex-1 space-y-5 pt-2">
                       {accountabilityPulse.some((item: any) => item.count > 0) ? accountabilityPulse.map((item: any) => (
@@ -676,7 +684,7 @@ export default function BusinessSnapshotPage() {
                        </div>
                      ))}
                   </div>
-              </div>
+              </Link>
           </div>
 
           <div className="space-y-6">
