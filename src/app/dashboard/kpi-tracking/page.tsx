@@ -68,6 +68,43 @@ const ragVariantMap: { [key: string]: 'success' | 'warning' | 'destructive' | 'o
     'N/A': 'outline',
 };
 
+/** Rate/efficiency KPIs — weekly value is comparable to the full monthly target. */
+const RATE_KPI_PATTERN =
+  /(^|[^a-z])(cpa|cpc|cpm|cpl|cpi|cps|ctr|cvr|roas|aov|rpc|rpi|arpu|cac|rpm|ecpm)([^a-z]|$)|rate|ratio|percent|%|bounce|margin|frequency/i;
+
+/** Volume/cumulative KPIs — monthly target is hit by consolidating weeks. */
+const VOLUME_KPI_PATTERN =
+  /(lead|revenue|sale|gmv|order|conversion|install|signup|sign[\s-]?up|registrat|click|impression|spend|budget|session|user|traffic|booking|enquir|inquir|download|applicant|application|volume|units?|qty|quantity|visits?)/i;
+
+/**
+ * Cumulative KPIs (Leads, Revenue, …) need a weekly share of the monthly target.
+ * Rate KPIs (CPA, ROAS, CTR, …) keep the same target scale every week.
+ */
+function usesProRatedWeeklyTarget(kpiName: string, direction: 'ASC' | 'DESC'): boolean {
+  const name = (kpiName || '').trim();
+  if (!name) return direction === 'ASC';
+  if (RATE_KPI_PATTERN.test(name)) return false;
+  if (VOLUME_KPI_PATTERN.test(name)) return true;
+  // Fallback: ASC tends to be cumulative volume; DESC tends to be efficiency/rate
+  return direction === 'ASC';
+}
+
+function getEffectiveWeeklyTarget(opts: {
+  kpiName: string;
+  direction: 'ASC' | 'DESC';
+  monthlyTarget: number | null | undefined;
+  weekTarget: number | null | undefined;
+  weeksInMonth: number;
+}): number | null {
+  const { kpiName, direction, monthlyTarget, weekTarget, weeksInMonth } = opts;
+  if (weekTarget != null && weekTarget > 0) return weekTarget;
+  if (monthlyTarget == null || monthlyTarget <= 0) return null;
+  if (usesProRatedWeeklyTarget(kpiName, direction) && weeksInMonth > 0) {
+    return monthlyTarget / weeksInMonth;
+  }
+  return monthlyTarget;
+}
+
 /** ASC = higher is better; DESC = lower is better. */
 function meetsTarget(achieved: number, target: number, direction: 'ASC' | 'DESC'): boolean {
   if (direction === 'DESC') return achieved <= target;
@@ -86,20 +123,19 @@ function getMonthlyStatus(achieved: number, target: number, direction: 'ASC' | '
 }
 
 /**
- * Weekly RAG: compare against monthly target AND previous week's achieved.
- * Green = both good (or only available check is good)
- * Amber = mixed (one good, one bad)
- * Red = both bad (or only available check is bad)
+ * Weekly RAG: compare against effective weekly target (pro-rated monthly for
+ * cumulative KPIs, or full monthly target for rate KPIs) AND previous week.
+ * Green = both good · Amber = mixed · Red = both bad
  */
 function getWeeklyStatus(
   achieved: number,
-  monthlyTarget: number | null,
+  weeklyPacingTarget: number | null,
   prevAchieved: number | null,
   direction: 'ASC' | 'DESC'
 ): RagStatus {
   const vsTarget =
-    monthlyTarget != null && monthlyTarget > 0
-      ? meetsTarget(achieved, monthlyTarget, direction)
+    weeklyPacingTarget != null && weeklyPacingTarget > 0
+      ? meetsTarget(achieved, weeklyPacingTarget, direction)
       : null;
   const vsPrev =
     prevAchieved != null
@@ -305,30 +341,40 @@ function KpiTrackingContent() {
 
     return Object.values(groups).map(group => {
       const activeStatuses: RagStatus[] = [];
-      const rangeWeekly: (KpiWeeklyData & { weekId: string })[] = [];
+      const rangeWeekly: (KpiWeeklyData & { weekId: string; monthKey: string })[] = [];
+      const weeksPerMonth: Record<string, number> = {};
+      weekDates.forEach(w => {
+        weeksPerMonth[w.monthKey] = (weeksPerMonth[w.monthKey] || 0) + 1;
+      });
       weekDates.forEach(w => {
         const kpi = group.monthData[w.monthKey];
         if (kpi) {
           const kpiWeeks = weeklyMap.get(kpi.id) || [];
           const wd = kpiWeeks.find(d => d.weekOfMonth === w.num);
-          if (wd) rangeWeekly.push({ ...wd, weekId: w.id });
+          if (wd) rangeWeekly.push({ ...wd, weekId: w.id, monthKey: w.monthKey });
         }
       });
       rangeWeekly.forEach((wd, idx) => {
         const prevWd = idx > 0 ? rangeWeekly[idx - 1] : null;
-        const monthKey = weekDates.find(w => w.id === wd.weekId)?.monthKey || '';
-        const monthlyTarget = group.monthData[monthKey]?.targetMonth ?? null;
+        const monthRecord = group.monthData[wd.monthKey];
+        const weeklyPacingTarget = getEffectiveWeeklyTarget({
+          kpiName: group.kpi,
+          direction: group.direction,
+          monthlyTarget: monthRecord?.targetMonth ?? null,
+          weekTarget: wd.target,
+          weeksInMonth: weeksPerMonth[wd.monthKey] || 4,
+        });
         activeStatuses.push(
           getWeeklyStatus(
             wd.achieved,
-            monthlyTarget,
+            weeklyPacingTarget,
             prevWd ? prevWd.achieved : null,
             group.direction
           )
         );
       });
       const latestMonthRecord = Object.values(group.monthData).sort((a: any, b: any) => b.month.localeCompare(a.month))[0];
-      return { ...group, pacingStatus: getTrendStatus(activeStatuses), rangeWeekly, latestId: latestMonthRecord.id };
+      return { ...group, pacingStatus: getTrendStatus(activeStatuses), rangeWeekly, latestId: latestMonthRecord.id, weeksPerMonth };
     });
   }, [kpiData, weeklyMap, mounted, weekDates]);
 
@@ -601,16 +647,22 @@ function KpiTrackingContent() {
                                   const wdIdx = group.rangeWeekly.findIndex((d: any) => d.weekId === w.id);
                                   const prevWd = wdIdx > 0 ? group.rangeWeekly[wdIdx - 1] : null;
                                   const monthRecord = group.monthData[w.monthKey];
-                                  const monthlyTarget = monthRecord?.targetMonth ?? null;
+                                  const weeklyPacingTarget = getEffectiveWeeklyTarget({
+                                    kpiName: group.kpi,
+                                    direction: group.direction,
+                                    monthlyTarget: monthRecord?.targetMonth ?? null,
+                                    weekTarget: wd.target,
+                                    weeksInMonth: group.weeksPerMonth?.[w.monthKey] || weekDates.filter((x) => x.monthKey === w.monthKey).length || 4,
+                                  });
                                   const weeklyStatus = getWeeklyStatus(
                                     wd.achieved,
-                                    monthlyTarget,
+                                    weeklyPacingTarget,
                                     prevWd ? prevWd.achieved : null,
                                     group.direction
                                   );
                                   const weeklyColor = weeklyStatus === 'Green' ? 'text-success' : (weeklyStatus === 'Amber' ? 'text-warning' : weeklyStatus === 'Red' ? 'text-destructive' : 'text-secondary');
                                   return (
-                                      <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} /></div></TooltipTrigger><TooltipContent className="rounded-none glass p-3 max-w-[200px]">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}</TooltipContent></Tooltip></TooltipProvider></TableCell>
+                                      <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} /></div></TooltipTrigger><TooltipContent className="rounded-none glass p-3 max-w-[220px]"><div className="space-y-1">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}{weeklyPacingTarget != null && <div className="text-[10px] font-mono text-secondary">Week target: {Math.round(weeklyPacingTarget).toLocaleString()}</div>}</div></TooltipContent></Tooltip></TooltipProvider></TableCell>
                                   );
                               })}
                               <TableCell className="px-4 text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-none glass p-2"><DropdownMenuItem className="rounded-lg text-xs font-bold" onSelect={openDialogFromMenu(() => { setSelectedKpiId(group.latestId); setIsDialogOpen(true); })}>Edit Latest Month</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
