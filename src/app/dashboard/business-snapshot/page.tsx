@@ -4,7 +4,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { 
-  Sparkle, 
   ArrowsClockwise, 
   CircleNotch, 
   FileText, 
@@ -440,7 +439,7 @@ export default function BusinessSnapshotPage() {
     };
   }, [monthlySpends, weeklySpends, mounted]);
 
-  const { data: snapshotDoc, loading: sLoading } = useDoc<BusinessSnapshot>(stats ? `businessSnapshots/${stats.month}` : null);
+  const { data: snapshotDoc } = useDoc<BusinessSnapshot>(stats ? `businessSnapshots/${stats.month}` : null);
 
   const isAdmin = userProfile?.role === 'Admin' || userProfile?.role === 'Cluster Lead';
 
@@ -720,21 +719,16 @@ export default function BusinessSnapshotPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
-             <div className="xl:col-span-2 bg-white p-12 border border-ink space-y-10">
-                <div className="flex items-center justify-between border-b border-ink/10 pb-8"><div className="space-y-1"><p className="terminal-overline">AI STRATEGIC REVIEW</p><div className="flex items-center gap-2 font-mono text-[11px] font-black text-secondary"><Sparkle className="h-4 w-4 text-brand" />AZTEC_SYNTHESIS_ENGINE_V4</div></div></div>
-                {sLoading ? (<div className="flex items-center gap-3 p-20 justify-center"><CircleNotch className="h-6 w-6 animate-spin text-brand" /><span className="text-[10px] font-black uppercase tracking-widest text-secondary">Updating AI analysis...</span></div>) : (<div className="whitespace-pre-wrap font-body text-[15px] leading-relaxed text-ink/80 border-l-[6px] border-brand pl-12 py-4">{snapshotDoc?.content || "Strategic analysis is being updated. Click 'REGENERATE' to refresh."}</div>)}
-             </div>
-             <div className="bg-cream p-10 border border-ink space-y-10">
+          {/* AI Strategic Review deprecated until synthesis insights are reworked */}
+          <div className="bg-cream p-10 border border-ink space-y-10">
                 <div className="space-y-2"><p className="terminal-overline">Portfolio Intelligence</p><h3 className="text-xl font-black tracking-tighter uppercase">Strategic Health</h3>{snapshotDoc?.stats?.wbrCycleDate && (<div className="flex items-center gap-2 text-[9px] font-black text-secondary/60 uppercase tracking-widest bg-white/50 w-fit px-2 py-0.5 border border-ink/5"><Calendar className="h-3 w-3" />WBR Cycle: {snapshotDoc.stats.wbrCycleDate}</div>)}</div>
-                <div className="space-y-10">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-10">
                     <div className="space-y-4"><p className="text-[10px] font-black uppercase tracking-widest text-secondary">Operational Health (P-RAG)</p><HealthGrid green={snapshotDoc?.stats?.performanceRag?.Green || 0} amber={snapshotDoc?.stats?.performanceRag?.Amber || 0} red={snapshotDoc?.stats?.performanceRag?.Red || 0} /></div>
                     <div className="space-y-4"><p className="text-[10px] font-black uppercase tracking-widest text-secondary">Engagement Health (E-RAG)</p><HealthGrid green={snapshotDoc?.stats?.engagementRag?.Green || 0} amber={snapshotDoc?.stats?.engagementRag?.Amber || 0} red={snapshotDoc?.stats?.engagementRag?.Red || 0} /></div>
-                    <div className="pt-10 border-t border-ink/10 space-y-6"><p className="text-[10px] font-black uppercase tracking-widest text-secondary">Major Shifts Detected</p>
+                    <div className="space-y-6 md:col-span-2 xl:col-span-1"><p className="text-[10px] font-black uppercase tracking-widest text-secondary">Major Shifts Detected</p>
                         {[...(snapshotDoc?.stats?.ragAdvancements || []), ...(snapshotDoc?.stats?.ragRisks || [])].length > 0 ? (<div className="space-y-5">{[...(snapshotDoc?.stats?.ragAdvancements || []), ...(snapshotDoc?.stats?.ragRisks || [])].slice(0, 8).map((shift, i) => (<div key={i} className="flex flex-col gap-2 p-4 bg-white border border-ink/5 group hover:border-brand/20 transition-colors"><div className="flex items-center justify-between gap-4"><div className="min-w-0"><p className="text-xs font-black uppercase truncate">{shift.brand}</p><p className="text-[8px] font-bold text-secondary uppercase">{shift.team} • {shift.type}</p></div><div className={cn("text-[9px] font-mono font-black px-2 py-0.5 border h-fit", shift.direction === 'recovery' ? "bg-success/5 border-success/20 text-success" : "bg-destructive/5 border-destructive/20 text-destructive")}>{shift.from} → {shift.to}</div></div>{shift.reason && (<p className="text-[10px] leading-relaxed text-secondary italic border-l border-ink/10 pl-3 line-clamp-2">{shift.reason}</p>)}</div>))}</div>) : <p className="text-[10px] italic font-bold text-secondary/70">No significant shifts recorded WoW.</p>}
                     </div>
                 </div>
-             </div>
           </div>
         </div>
       )}
