@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
 import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, Client, Lead } from '@/lib/types';
+import { canonicalizeChannel } from '@/lib/normalize';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -235,7 +236,8 @@ export default function BusinessSnapshotPage() {
               spendByWeekStart[weekStartKey] = (spendByWeekStart[weekStartKey] || 0) + (s.spendsInr || 0);
               
               if (s.week === lastWeekLabel) {
-                channelTotals[s.channelVendor] = (channelTotals[s.channelVendor] || 0) + (s.spendsInr || 0);
+                const channel = canonicalizeChannel(s.channelVendor);
+                channelTotals[channel] = (channelTotals[channel] || 0) + (s.spendsInr || 0);
               }
             }
           } catch(e) {}

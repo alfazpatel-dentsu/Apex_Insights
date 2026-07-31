@@ -25,6 +25,7 @@ import {
   Fingerprint,
   Database
 } from 'lucide-react';
+import { canonicalizeChannel } from '@/lib/normalize';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
@@ -189,14 +190,18 @@ function SpendsContent() {
   const filteredMonthly = useMemo(() => {
     if (!monthlySpends) return [];
     const q = searchQuery.toLowerCase();
-    return monthlySpends.filter(s => 
-      s.brandName.toLowerCase().includes(q) ||
-      s.channelVendor.toLowerCase().includes(q) ||
-      s.clientId?.toLowerCase().includes(q) ||
-      s.uploadRecordId?.toLowerCase().includes(q) ||
-      s.industry?.toLowerCase().includes(q) ||
-      s.type?.toLowerCase().includes(q)
-    );
+    return monthlySpends.filter(s => {
+      const channel = canonicalizeChannel(s.channelVendor).toLowerCase();
+      return (
+        s.brandName.toLowerCase().includes(q) ||
+        channel.includes(q) ||
+        s.channelVendor.toLowerCase().includes(q) ||
+        s.clientId?.toLowerCase().includes(q) ||
+        s.uploadRecordId?.toLowerCase().includes(q) ||
+        s.industry?.toLowerCase().includes(q) ||
+        s.type?.toLowerCase().includes(q)
+      );
+    });
   }, [monthlySpends, searchQuery]);
 
   const filteredWeekly = useMemo(() => {
@@ -206,9 +211,11 @@ function SpendsContent() {
       const q = searchQuery.toLowerCase();
       const isInRange = s.month && s.month >= format(dateRange.from!, 'yyyy-MM') && s.month <= format(dateRange.to!, 'yyyy-MM');
       if (!isInRange) return false;
+      const channel = canonicalizeChannel(s.channelVendor).toLowerCase();
 
       return (
         s.brandName.toLowerCase().includes(q) ||
+        channel.includes(q) ||
         s.channelVendor.toLowerCase().includes(q) ||
         s.clientId?.toLowerCase().includes(q) ||
         s.uploadRecordId?.toLowerCase().includes(q) ||
@@ -306,7 +313,7 @@ function SpendsContent() {
         industry: item.industry,
         type: item.type,
         subEntity: item.subEntity,
-        channelVendor: item.channelVendor,
+        channelVendor: canonicalizeChannel(item.channelVendor),
         creditLine: item.creditLine,
         currency: item.currency,
         team: item.team,
@@ -486,7 +493,7 @@ function SpendsContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-[11px] font-black">{spend.channelVendor}</div>
+                        <div className="text-[11px] font-black">{canonicalizeChannel(spend.channelVendor)}</div>
                         <div className="text-[9px] font-mono font-bold opacity-60">{spend.month}</div>
                       </TableCell>
                       <TableCell>
@@ -552,7 +559,7 @@ function SpendsContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-[11px] font-black">{spend.channelVendor}</div>
+                        <div className="text-[11px] font-black">{canonicalizeChannel(spend.channelVendor)}</div>
                         <Badge variant="outline" className="text-[9px] h-4 rounded-sm px-1 font-bold">{spend.week}</Badge>
                       </TableCell>
                       <TableCell>

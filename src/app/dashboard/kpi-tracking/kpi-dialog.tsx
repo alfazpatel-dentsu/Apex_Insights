@@ -24,7 +24,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel } from '@/lib/types';
-import { useEffect } from 'react';
+import { canonicalizeChannel } from '@/lib/normalize';
+import { useEffect, useMemo } from 'react';
 import { Separator } from '@/components/ui/separator';
 
 const kpiSchema = z.object({
@@ -79,6 +80,15 @@ interface KpiDialogProps {
 }
 
 export function KpiDialog({ isOpen, onOpenChange, onSave, kpi, weeklyData, currentMonth, weekDates, clients, kpis, channels }: KpiDialogProps) {
+  const channelOptions = useMemo(() => {
+    const byName = new Map<string, Channel>();
+    channels.forEach(c => {
+      const name = canonicalizeChannel(c.name);
+      if (!byName.has(name)) byName.set(name, { ...c, name });
+    });
+    return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [channels]);
+
   const form = useForm<KpiFormValues>({
     resolver: zodResolver(kpiSchema),
     defaultValues: {
@@ -123,7 +133,7 @@ export function KpiDialog({ isOpen, onOpenChange, onSave, kpi, weeklyData, curre
                 lob: kpi.lob || '',
                 cduLead: kpi.cduLead || '',
                 emCsm: kpi.emCsm || '',
-                channel: kpi.channel,
+                channel: canonicalizeChannel(kpi.channel),
                 kpi: kpi.kpi,
                 kpiType: kpi.kpiType,
                 currency: kpi.currency || 'INR',
@@ -317,7 +327,7 @@ export function KpiDialog({ isOpen, onOpenChange, onSave, kpi, weeklyData, curre
                         </SelectTrigger>
                         </FormControl>
                         <SelectContent className="rounded-none glass ">
-                        {channels.map(c => (
+                        {channelOptions.map(c => (
                             <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                         ))}
                         </SelectContent>

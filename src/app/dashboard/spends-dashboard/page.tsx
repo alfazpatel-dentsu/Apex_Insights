@@ -31,6 +31,7 @@ import { where } from 'firebase/firestore';
 
 import { useCollection } from '@/firebase';
 import { MonthlySpend, WeeklySpend } from '@/lib/types';
+import { canonicalizeChannel } from '@/lib/normalize';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -177,34 +178,38 @@ export default function SpendsAnalyticsPage() {
     }
   }, [rawMonthlyData]);
 
-  // Filtered Datasets
+  // Filtered Datasets (channel names normalized so Meta/LinkedIn variants collapse)
   const monthlyData = useMemo(() => {
     if (!rawMonthlyData) return [];
-    return rawMonthlyData.filter(item => {
-      const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
-      const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.brandName);
-      const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
-      const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-      return channelMatch && clientMatch && teamMatch && typeMatch;
-    });
+    return rawMonthlyData
+      .map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }))
+      .filter(item => {
+        const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
+        const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.brandName);
+        const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
+        const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
+        return channelMatch && clientMatch && teamMatch && typeMatch;
+      });
   }, [rawMonthlyData, selectedChannels, selectedClients, selectedTeams, selectedTypes]);
 
   const weeklyData = useMemo(() => {
     if (!rawWeeklyData) return [];
-    return rawWeeklyData.filter(item => {
-      const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
-      const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.brandName);
-      const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
-      const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-      return channelMatch && clientMatch && teamMatch && typeMatch;
-    });
+    return rawWeeklyData
+      .map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }))
+      .filter(item => {
+        const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
+        const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.brandName);
+        const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
+        const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
+        return channelMatch && clientMatch && teamMatch && typeMatch;
+      });
   }, [rawWeeklyData, selectedChannels, selectedClients, selectedTeams, selectedTypes]);
 
   // Unique Options for Filters
   const filterOptions = useMemo(() => {
     if (!rawMonthlyData) return { channels: [], clients: [], teams: [], types: [] };
     return {
-      channels: Array.from(new Set(rawMonthlyData.map(d => d.channelVendor))).filter(Boolean).sort(),
+      channels: Array.from(new Set(rawMonthlyData.map(d => canonicalizeChannel(d.channelVendor)))).filter(Boolean).sort(),
       clients: Array.from(new Set(rawMonthlyData.map(d => d.brandName))).filter(Boolean).sort(),
       teams: Array.from(new Set(rawMonthlyData.map(d => d.team))).filter(Boolean).sort(),
       types: Array.from(new Set(rawMonthlyData.map(d => d.type))).filter(Boolean).sort(),

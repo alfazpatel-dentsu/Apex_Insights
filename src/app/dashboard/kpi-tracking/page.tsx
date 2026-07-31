@@ -43,6 +43,7 @@ import {
   AlertDialogTitle 
 } from '@/components/ui/alert-dialog';
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus } from '@/lib/types';
+import { canonicalizeChannel } from '@/lib/normalize';
 import { KpiDialog } from './kpi-dialog';
 import { format, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInterval } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -314,21 +315,22 @@ function KpiTrackingContent() {
     if (!kpiData || !mounted) return [];
     const groups: Record<string, any> = {};
     kpiData.forEach(item => {
-      const key = `${item.clientName}-${item.kpi}-${item.channel}`;
+      const channel = canonicalizeChannel(item.channel);
+      const key = `${item.clientName}-${item.kpi}-${channel}`;
       if (!groups[key]) {
         groups[key] = {
           id: item.id,
           uploadRecordId: item.uploadRecordId || item.id,
           clientName: item.clientName,
           kpi: item.kpi,
-          channel: item.channel,
+          channel,
           lob: item.lob,
           direction: item.direction || 'ASC',
           type: item.type,
           monthData: {} as Record<string, KpiData>
         };
       }
-      groups[key].monthData[item.month] = item;
+      groups[key].monthData[item.month] = { ...item, channel };
     });
 
     return Object.values(groups).map(group => {

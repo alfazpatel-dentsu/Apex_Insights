@@ -63,6 +63,7 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { saveWbrEntry, deleteActionItem } from '@/lib/firestore-actions';
+import { canonicalizeChannel } from '@/lib/normalize';
 import { cn, openDialogFromMenu } from '@/lib/utils';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
@@ -345,9 +346,9 @@ export default function WbrEditPage() {
 
   const channelOptions = useMemo(() => {
     const set = new Set<string>();
-    kpis.forEach(k => { if (k.channel) set.add(k.channel); });
-    monthlySpends.forEach(s => { if (s.channelVendor) set.add(s.channelVendor); });
-    weeklySpends.forEach(s => { if (s.channelVendor) set.add(s.channelVendor); });
+    kpis.forEach(k => { if (k.channel) set.add(canonicalizeChannel(k.channel)); });
+    monthlySpends.forEach(s => { if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor)); });
+    weeklySpends.forEach(s => { if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor)); });
     return Array.from(set).sort();
   }, [kpis, monthlySpends, weeklySpends]);
 
@@ -361,7 +362,7 @@ export default function WbrEditPage() {
   const filteredKpis = useMemo(() => {
     return kpis.filter(k => {
       const lobMatch = selectedLobFilter === 'all' || k.lob === selectedLobFilter;
-      const channelMatch = selectedChannelFilter === 'all' || k.channel === selectedChannelFilter;
+      const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(k.channel) === selectedChannelFilter;
       const kpiMatch = selectedKpiFilter === 'all' || k.kpi === selectedKpiFilter;
       return lobMatch && channelMatch && kpiMatch;
     });
@@ -370,10 +371,11 @@ export default function WbrEditPage() {
   const groupedKpis = useMemo(() => {
     const groups: Record<string, any> = {};
     filteredKpis.forEach(k => {
-      const key = `${k.channel}-${k.kpi}-${k.lob}`;
+      const channel = canonicalizeChannel(k.channel);
+      const key = `${channel}-${k.kpi}-${k.lob}`;
       if (!groups[key]) {
         groups[key] = {
-          channel: k.channel,
+          channel,
           kpi: k.kpi,
           lob: k.lob,
           direction: k.direction || 'ASC',
@@ -389,11 +391,12 @@ export default function WbrEditPage() {
     const data: Record<string, Record<string, number>> = {};
     monthlySpends.filter(s => {
       const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
-      const channelMatch = selectedChannelFilter === 'all' || s.channelVendor === selectedChannelFilter;
+      const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
+      const channel = canonicalizeChannel(s.channelVendor);
       if (!data[s.month]) data[s.month] = {};
-      data[s.month][s.channelVendor] = (data[s.month][s.channelVendor] || 0) + s.actualSpendsInr;
+      data[s.month][channel] = (data[s.month][channel] || 0) + s.actualSpendsInr;
       data[s.month]['Total'] = (data[s.month]['Total'] || 0) + s.actualSpendsInr;
     });
     return data;
@@ -403,10 +406,10 @@ export default function WbrEditPage() {
     const set = new Set<string>();
     monthlySpends.filter(s => {
       const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
-      const channelMatch = selectedChannelFilter === 'all' || s.channelVendor === selectedChannelFilter;
+      const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
-      if (s.channelVendor) set.add(s.channelVendor);
+      if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor));
     });
     return Array.from(set).sort();
   }, [monthlySpends, selectedLobFilter, selectedChannelFilter]);
@@ -441,7 +444,7 @@ export default function WbrEditPage() {
   const filteredWeeklyKpisForGrid = useMemo(() => {
     return kpis.filter(k => {
       const lobMatch = selectedWeeklyLobFilter === 'all' || k.lob === selectedWeeklyLobFilter;
-      const channelMatch = selectedWeeklyChannelFilter === 'all' || k.channel === selectedWeeklyChannelFilter;
+      const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(k.channel) === selectedWeeklyChannelFilter;
       const kpiMatch = selectedWeeklyKpiFilter === 'all' || k.kpi === selectedWeeklyKpiFilter;
       return lobMatch && channelMatch && kpiMatch;
     });
@@ -450,10 +453,11 @@ export default function WbrEditPage() {
   const groupedWeeklyKpis = useMemo(() => {
     const groups: Record<string, any> = {};
     filteredWeeklyKpisForGrid.forEach(k => {
-      const key = `${k.channel}-${k.kpi}-${k.lob}`;
+      const channel = canonicalizeChannel(k.channel);
+      const key = `${channel}-${k.kpi}-${k.lob}`;
       if (!groups[key]) {
         groups[key] = {
-          channel: k.channel,
+          channel,
           kpi: k.kpi,
           lob: k.lob,
           direction: k.direction || 'ASC',
@@ -469,9 +473,10 @@ export default function WbrEditPage() {
     const data: Record<string, Record<string, number>> = {};
     weeklySpends.filter(s => {
       const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
-      const channelMatch = selectedWeeklyChannelFilter === 'all' || s.channelVendor === selectedWeeklyChannelFilter;
+      const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
+      const channel = canonicalizeChannel(s.channelVendor);
       const d = parse(s.week, 'dd-MM-yyyy', new Date());
       if (isValid(d)) {
           const monday = startOfWeek(d, { weekStartsOn: 1 });
@@ -488,7 +493,7 @@ export default function WbrEditPage() {
           const weekKey = `${monthKey}-W${weekNum}`;
 
           if (!data[weekKey]) data[weekKey] = {};
-          data[weekKey][s.channelVendor] = (data[weekKey][s.channelVendor] || 0) + s.spendsInr;
+          data[weekKey][channel] = (data[weekKey][channel] || 0) + s.spendsInr;
           data[weekKey]['Total'] = (data[weekKey]['Total'] || 0) + s.spendsInr;
       }
     });
@@ -499,10 +504,10 @@ export default function WbrEditPage() {
     const set = new Set<string>();
     weeklySpends.filter(s => {
       const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
-      const channelMatch = selectedWeeklyChannelFilter === 'all' || s.channelVendor === selectedWeeklyChannelFilter;
+      const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
-      if (s.channelVendor) set.add(s.channelVendor);
+      if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor));
     });
     return Array.from(set).sort();
   }, [weeklySpends, selectedWeeklyLobFilter, selectedWeeklyChannelFilter]);

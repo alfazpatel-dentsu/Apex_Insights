@@ -124,6 +124,18 @@ export interface Client {
   clientPartner?: string;
 }
 
+/** Master list entry for KPI definitions (kpiDefinitions collection). */
+export interface Kpi {
+  id: string;
+  name: string;
+}
+
+/** Master list entry for media channels (channels collection). */
+export interface Channel {
+  id: string;
+  name: string;
+}
+
 export interface WbrEntry {
   id: string;
   clientId: string;
