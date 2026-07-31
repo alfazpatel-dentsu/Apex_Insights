@@ -698,7 +698,11 @@ export default function SpendsAnalyticsPage() {
             <CardTitle className="text-2xl md:text-3xl xl:text-4xl font-black font-headline break-all leading-[1.05] py-0.5">
               {formatCurrency(stats?.yearly.total || 0)}
             </CardTitle>
-            {renderVarianceRow(stats?.yearly.growth || 0, stats?.yearly.varianceAmount, 'VS PREV YEAR')}
+            {renderVarianceRow(
+              stats?.yearly.growth || 0,
+              stats?.yearly.varianceAmount,
+              (stats?.yearly.prevTotal || 0) > 0 ? 'YTD YOY' : 'YTD TOTAL'
+            )}
           </CardHeader>
           <CardContent className="min-w-0">{stats && renderGainerLoserList(stats.yearly.gainers, stats.yearly.losers)}</CardContent>
         </Card>
