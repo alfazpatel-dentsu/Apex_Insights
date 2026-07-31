@@ -364,7 +364,9 @@ export default function AdminPage() {
                 <Database weight="fill" className="h-5 w-5" />
                 <h3 className="text-lg font-black uppercase tracking-tighter">Maintenance</h3>
               </div>
-              <p className="text-[10px] font-mono text-secondary uppercase tracking-widest leading-relaxed">System-wide data purge.</p>
+              <p className="text-[10px] font-mono text-secondary uppercase tracking-widest leading-relaxed">
+                Admin-only data resets. Full KPI / Spends wipes live here — not on tracker pages.
+              </p>
             </div>
             
             <div className="space-y-3">
@@ -380,14 +382,14 @@ export default function AdminPage() {
               />
               <div className="h-px bg-ink/10 my-4" />
               <MaintenanceButton 
-                label="Reset KPI Module" 
+                label="Clear All KPI Data" 
                 icon={<Warning />}
-                onClick={() => { setMaintenanceAction({ id: 'kpi_reset', label: 'Reset All KPI Data' }); setIsMaintenanceAlertOpen(true); }}
+                onClick={() => { setMaintenanceAction({ id: 'kpi_reset', label: 'Clear All KPI Data (kpis + weekly)' }); setIsMaintenanceAlertOpen(true); }}
               />
               <MaintenanceButton 
-                label="Reset Spends Module" 
+                label="Clear All Spends Data" 
                 icon={<Warning />}
-                onClick={() => { setMaintenanceAction({ id: 'spends_reset', label: 'Reset All Spends Data' }); setIsMaintenanceAlertOpen(true); }}
+                onClick={() => { setMaintenanceAction({ id: 'spends_reset', label: 'Clear All Spends Data (monthly + weekly)' }); setIsMaintenanceAlertOpen(true); }}
               />
             </div>
           </div>

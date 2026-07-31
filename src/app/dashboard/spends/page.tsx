@@ -11,14 +11,12 @@ import {
   PlusCircle, 
   MoreHorizontal, 
   Search, 
-  Trash, 
   Loader2,
   Calendar as CalendarIcon,
   Layers,
   Upload,
   Download,
   FileSpreadsheet,
-  AlertTriangle,
   Factory,
   Tag,
   Filter,
@@ -62,7 +60,6 @@ import {
   deleteWeeklySpend,
   bulkSaveMonthlySpends,
   bulkSaveWeeklySpends,
-  clearAllSpendsData
 } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { PageHeader } from '@/components/page-header';
@@ -184,8 +181,6 @@ function SpendsContent() {
   const [editingMonthly, setEditingMonthly] = useState<MonthlySpend | null>(null);
   const [editingWeekly, setEditingWeekly] = useState<WeeklySpend | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [isClearAllAlertOpen, setIsClearAllAlertOpen] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
 
   const filteredMonthly = useMemo(() => {
     if (!monthlySpends) return [];
@@ -327,19 +322,6 @@ function SpendsContent() {
     saveAs(new Blob([buffer]), `${activeTab}_spends_${timestamp}.xlsx`);
   };
 
-  const handleClearAll = async () => {
-    setIsClearing(true);
-    try {
-      await clearAllSpendsData(firestore);
-      toast({ title: "Data Purged", description: "All monthly and weekly SPENDS data has been successfully deleted." });
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Purge Failed", description: error.message });
-    } finally {
-      setIsClearing(false);
-      setIsClearAllAlertOpen(false);
-    }
-  };
-
   if (!mounted) return <div className="flex flex-1 items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary/40" /></div>;
 
   return (
@@ -386,12 +368,6 @@ function SpendsContent() {
               </DropdownMenuItem>
               <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={handleExportExcel}>
                 <FileSpreadsheet className="h-4 w-4" />Export to Excel
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                className="rounded-none flex items-center gap-2 text-destructive focus:text-destructive focus:bg-destructive/10" 
-                onClick={() => setIsClearAllAlertOpen(true)}
-              >
-                <Trash className="h-4 w-4" />Clear All Data
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -618,30 +594,6 @@ function SpendsContent() {
                 setDeletingId(null);
               }
             }}>Confirm Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={isClearAllAlertOpen} onOpenChange={setIsClearAllAlertOpen}>
-        <AlertDialogContent className="rounded-none glass ">
-          <AlertDialogHeader>
-            <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="h-8 w-8" />
-              <AlertDialogTitle className="font-headline text-2xl">Purge All SPENDS Data?</AlertDialogTitle>
-            </div>
-            <AlertDialogDescription className="text-foreground/70 font-bold leading-relaxed">
-              This will permanently delete <strong>ALL</strong> monthly and weekly records matching your current view.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="pt-8">
-            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold" disabled={isClearing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              className="rounded-none bg-destructive hover:bg-destructive/90 h-12 px-10 font-black" 
-              onClick={handleClearAll}
-              disabled={isClearing}
-            >
-              {isClearing ? "Clearing..." : "Yes, Purge Everything"}
-            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
