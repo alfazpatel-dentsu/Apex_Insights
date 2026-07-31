@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useForm } from 'react-hook-form';
@@ -30,13 +29,17 @@ import { useEffect } from 'react';
 
 const leadSchema = z.object({
   companyName: z.string().min(1, 'Required'),
-  contactPerson: z.string().min(1, 'Required'),
-  email: z.string().email('Invalid email'),
   phone: z.string().optional(),
   status: z.enum(['Unqualified', 'Qualified', 'Pitch', 'Negotiation', 'Contract', 'Won', 'Lost']),
   services: z.array(z.string()).min(1, 'Select at least one service'),
   estimatedValue: z.coerce.number().min(0),
   notes: z.string().optional(),
+  opportunityOwner: z.string().optional(),
+  expectedSpends: z.coerce.number().min(0).optional(),
+  retainerDetails: z.string().optional(),
+  expectedGoLiveDate: z.string().optional(),
+  pitchDate: z.string().optional(),
+  teamAssigned: z.string().optional(),
 });
 
 type LeadFormValues = z.infer<typeof leadSchema>;
@@ -51,45 +54,46 @@ interface LeadDialogProps {
 const statusOptions: LeadStatus[] = ['Unqualified', 'Qualified', 'Pitch', 'Negotiation', 'Contract', 'Won', 'Lost'];
 const serviceOptions: ServiceType[] = ['Performance', 'SEO', 'Affiliates', 'Branding', 'Marketplace', 'Creatives', 'Social'];
 
+const emptyDefaults: LeadFormValues = {
+  companyName: '',
+  phone: '',
+  status: 'Unqualified',
+  services: [],
+  estimatedValue: 0,
+  notes: '',
+  opportunityOwner: '',
+  expectedSpends: 0,
+  retainerDetails: '',
+  expectedGoLiveDate: '',
+  pitchDate: '',
+  teamAssigned: '',
+};
+
 export function LeadDialog({ isOpen, onOpenChange, onSave, lead }: LeadDialogProps) {
   const form = useForm<LeadFormValues>({
     resolver: zodResolver(leadSchema),
-    defaultValues: {
-      companyName: '',
-      contactPerson: '',
-      email: '',
-      phone: '',
-      status: 'Unqualified',
-      services: [],
-      estimatedValue: 0,
-      notes: '',
-    }
+    defaultValues: emptyDefaults,
   });
 
   useEffect(() => {
     if (isOpen) {
       if (lead) {
         form.reset({
-          companyName: lead.companyName,
-          contactPerson: lead.contactPerson,
-          email: lead.email,
+          companyName: lead.companyName || '',
           phone: lead.phone || '',
           status: lead.status,
-          services: lead.services,
-          estimatedValue: lead.estimatedValue,
+          services: lead.services || [],
+          estimatedValue: lead.estimatedValue || 0,
           notes: lead.notes || '',
+          opportunityOwner: lead.opportunityOwner || '',
+          expectedSpends: lead.expectedSpends || 0,
+          retainerDetails: lead.retainerDetails || '',
+          expectedGoLiveDate: lead.expectedGoLiveDate || '',
+          pitchDate: lead.pitchDate || '',
+          teamAssigned: lead.teamAssigned || '',
         });
       } else {
-        form.reset({
-          companyName: '',
-          contactPerson: '',
-          email: '',
-          phone: '',
-          status: 'Unqualified',
-          services: [],
-          estimatedValue: 0,
-          notes: '',
-        });
+        form.reset(emptyDefaults);
       }
     }
   }, [isOpen, lead, form]);
@@ -132,9 +136,16 @@ export function LeadDialog({ isOpen, onOpenChange, onSave, lead }: LeadDialogPro
                     </Select>
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="contactPerson" render={({ field }) => (
+                <FormField control={form.control} name="opportunityOwner" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Primary Contact</FormLabel>
+                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Opportunity Owner</FormLabel>
+                    <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="teamAssigned" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Team Assigned</FormLabel>
                     <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -146,16 +157,37 @@ export function LeadDialog({ isOpen, onOpenChange, onSave, lead }: LeadDialogPro
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="email" render={({ field }) => (
+                <FormField control={form.control} name="expectedSpends" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Official Email</FormLabel>
-                    <FormControl><Input type="email" className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" {...field} /></FormControl>
+                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Expected Spends (INR)</FormLabel>
+                    <FormControl><Input type="number" className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-mono font-bold" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="pitchDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Pitch Date</FormLabel>
+                    <FormControl><Input type="date" className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="expectedGoLiveDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Expected Go Live Date</FormLabel>
+                    <FormControl><Input type="date" className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="phone" render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Phone Number</FormLabel>
+                    <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="retainerDetails" render={({ field }) => (
+                  <FormItem className="md:col-span-2">
+                    <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Retainer Details</FormLabel>
                     <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>

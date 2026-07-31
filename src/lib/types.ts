@@ -103,13 +103,22 @@ export type ServiceType = 'Performance' | 'SEO' | 'Affiliates' | 'Branding' | 'M
 export interface Lead {
   id: string;
   companyName: string;
-  contactPerson: string;
-  email: string;
-  phone: string;
+  phone?: string;
   status: LeadStatus;
   services: ServiceType[];
   estimatedValue: number;
-  notes: string;
+  notes?: string;
+  opportunityOwner?: string;
+  expectedSpends?: number;
+  retainerDetails?: string;
+  expectedGoLiveDate?: string;
+  pitchDate?: string;
+  teamAssigned?: string;
+  uploadRecordId?: string;
+  /** @deprecated Removed from Sales Tracker form; retained for legacy records */
+  contactPerson?: string;
+  /** @deprecated Removed from Sales Tracker form; retained for legacy records */
+  email?: string;
   updatedAt: string;
 }
 
