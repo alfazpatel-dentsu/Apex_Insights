@@ -59,10 +59,45 @@ const formatChartLabel = (val: number) => {
   if (val == null || Number.isNaN(val) || val === 0) return '';
   const absVal = Math.abs(val);
   const sign = val < 0 ? '-' : '';
-  if (absVal >= 10000000) return `${sign}${(absVal / 10000000).toFixed(2)}Cr`;
+  // One decimal keeps labels short enough for dense 12-week charts
+  if (absVal >= 10000000) return `${sign}${(absVal / 10000000).toFixed(1)}Cr`;
   if (absVal >= 100000) return `${sign}${(absVal / 100000).toFixed(1)}L`;
   if (absVal >= 1000) return `${sign}${(absVal / 1000).toFixed(0)}K`;
   return `${sign}${absVal.toFixed(0)}`;
+};
+
+/** Alternate above/below the line so neighboring labels don't collide. */
+const MomentumSpendLabel = (props: {
+  x?: number | string;
+  y?: number | string;
+  value?: number | string;
+  index?: number;
+}) => {
+  const { x, y, value, index = 0 } = props;
+  const numeric = typeof value === 'number' ? value : Number(value);
+  const label = formatChartLabel(numeric);
+  if (!label || x == null || y == null) return null;
+
+  const cx = Number(x);
+  const cy = Number(y);
+  const placeAbove = index % 2 === 0;
+  const dy = placeAbove ? -12 : 18;
+
+  return (
+    <text
+      x={cx}
+      y={cy + dy}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fill="hsl(var(--ink))"
+      fontSize={9}
+      fontWeight={700}
+      fontFamily="var(--font-mono), IBM Plex Mono, monospace"
+      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+    >
+      {label}
+    </text>
+  );
 };
 
 const CHART_PALETTE = [
@@ -408,7 +443,7 @@ export default function BusinessSnapshotPage() {
               </div>
               <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={momentumData} margin={{ top: 28, right: 16, left: 0, bottom: 0 }}>
+                  <LineChart data={momentumData} margin={{ top: 24, right: 20, left: 4, bottom: 18 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.05} />
                     <XAxis
                       dataKey="week"
@@ -422,18 +457,7 @@ export default function BusinessSnapshotPage() {
                     <YAxis fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 10000000).toFixed(1)}Cr`} />
                     <RechartsTooltip contentStyle={{ borderRadius: '0', border: '1px solid #000', boxShadow: '12px 12px 0px rgba(0,0,0,0.1)' }} formatter={(v: number) => [formatCurrency(v), 'Spend']} />
                     <Line type="monotone" dataKey="spend" stroke="hsl(var(--destructive))" strokeWidth={4} dot={{ r: 5, fill: 'hsl(var(--destructive))', strokeWidth: 0 }}>
-                      <LabelList
-                        dataKey="spend"
-                        position="top"
-                        offset={10}
-                        formatter={(v: number) => formatChartLabel(v)}
-                        style={{
-                          fill: 'hsl(var(--ink))',
-                          fontSize: 10,
-                          fontWeight: 700,
-                          fontFamily: 'var(--font-mono), IBM Plex Mono, monospace',
-                        }}
-                      />
+                      <LabelList dataKey="spend" content={<MomentumSpendLabel />} />
                     </Line>
                   </LineChart>
                 </ResponsiveContainer>
