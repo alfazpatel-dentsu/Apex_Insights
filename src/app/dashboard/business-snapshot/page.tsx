@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { 
   Sparkle, 
   ArrowsClockwise, 
@@ -25,8 +26,8 @@ import { format, parse, subMonths, subWeeks, startOfWeek, addDays, isValid, isBe
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
-import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, Client, Lead } from '@/lib/types';
-import { canonicalizeChannel } from '@/lib/normalize';
+import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead } from '@/lib/types';
+import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -109,6 +110,23 @@ const CHART_PALETTE = [
   '#EC4899', // Pink
   '#8B5CF6', // Purple
 ];
+
+/** Mirror Action Items Kanban columns on Snapshot Accountability Pulse. */
+const ACTION_BOARD_STATUSES: ActionStatus[] = [
+  'Work-In Progress',
+  'On-Hold',
+  'Observation',
+  'Overdue',
+  'Completed',
+];
+
+const actionBoardAccent: Record<ActionStatus, string> = {
+  'Work-In Progress': 'bg-brand',
+  'On-Hold': 'bg-warning',
+  Observation: 'bg-secondary',
+  Overdue: 'bg-destructive',
+  Completed: 'bg-success',
+};
 
 export default function BusinessSnapshotPage() {
   const firestore = useFirestore();
@@ -284,27 +302,24 @@ export default function BusinessSnapshotPage() {
           percent: ((leadCounts[status] || 0) / maxLead) * 100
         })));
 
-        // 5. ACCOUNTABILITY PULSE
-        const sections = ["OPERATIONS", "CLIENT ENGAGEMENT", "SALES", "MANAGEMENT", "HR", "AZTEC"];
-        const today = startOfDay(new Date());
-        const thresholdDate = addDays(today, 3);
-
-        const pulse = sections.map(section => {
-          const sectionActions = actions.filter(a => a.section === section && a.status !== 'Completed');
-          let overdueCount = 0;
-          let nearOverdueCount = 0;
-          sectionActions.forEach(a => {
-            if (!a.dueDate) return;
-            try {
-              const due = parse(a.dueDate, 'yyyy-MM-dd', new Date());
-              if (!isValid(due)) return;
-              if (isBefore(due, today)) overdueCount++;
-              else if (isBefore(due, endOfDay(thresholdDate))) nearOverdueCount++;
-            } catch(e) {}
-          });
-          return { section, overdue: overdueCount, soon: nearOverdueCount };
-        }).filter(s => s.overdue > 0 || s.soon > 0).sort((a, b) => b.overdue - a.overdue);
-        
+        // 5. ACCOUNTABILITY PULSE — Kanban status board counts
+        const statusCounts: Record<ActionStatus, number> = {
+          'Work-In Progress': 0,
+          'On-Hold': 0,
+          Observation: 0,
+          Overdue: 0,
+          Completed: 0,
+        };
+        actions.forEach((a) => {
+          const status = resolveActionStatus(a.status, a.dueDate);
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+        const totalActions = Object.values(statusCounts).reduce((sum, n) => sum + n, 0) || 1;
+        const pulse = ACTION_BOARD_STATUSES.map((status) => ({
+          status,
+          count: statusCounts[status] || 0,
+          percent: ((statusCounts[status] || 0) / totalActions) * 100,
+        }));
         setAccountabilityPulse(pulse);
 
         // 6. NEWS FEED (Utilizing resolved names)
@@ -622,58 +637,54 @@ export default function BusinessSnapshotPage() {
                   </div>
               </div>
 
-              {/* Card 3: Accountability Pulse (Overdue Actions) */}
-              <div className="bg-white p-10 flex flex-col space-y-8 min-h-[500px]">
-                  <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">ACCOUNTABILITY PULSE</p>
-                      <h3 className="text-2xl font-black tracking-tighter uppercase">Overdue & Critical</h3>
+              {/* Card 3: Accountability Pulse (Action Kanban Status) */}
+              <Link
+                href="/dashboard/actions"
+                aria-label="Open Action Items Kanban Board"
+                className="bg-white p-10 flex flex-col space-y-8 min-h-[500px] group cursor-pointer transition-colors hover:bg-cream/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+              >
+                  <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">ACCOUNTABILITY PULSE</p>
+                          <h3 className="text-2xl font-black tracking-tighter uppercase">Action Board</h3>
+                      </div>
+                      <ArrowUpRight className="h-5 w-5 text-secondary shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
                   </div>
-                  <div className="flex-1 space-y-4 pt-4 overflow-y-auto custom-scrollbar">
-                      {accountabilityPulse.length > 0 ? accountabilityPulse.map((item, i) => (
-                        <div key={i} className="group p-4 bg-foreground/[0.02] border border-foreground/5 hover:bg-foreground/[0.04] transition-colors">
-                           <div className="flex items-center justify-between mb-3">
-                              <span className="text-11px font-black uppercase tracking-tight">{item.section}</span>
-                              <div className="flex gap-2">
-                                 {item.overdue > 0 && (
-                                   <Badge variant="destructive" className="h-5 px-1.5 text-[9px] font-black rounded-sm shadow-sm flex gap-1">
-                                      <Warning className="h-2.5 w-2.5" /> {item.overdue}
-                                   </Badge>
-                                 )}
-                                 {item.soon > 0 && (
-                                   <Badge variant="warning" className="h-5 px-1.5 text-[9px] font-black rounded-sm shadow-sm flex gap-1">
-                                      <Clock className="h-2.5 w-2.5" /> {item.soon}
-                                   </Badge>
-                                 )}
-                              </div>
+                  <div className="flex-1 space-y-5 pt-2">
+                      {accountabilityPulse.some((item: any) => item.count > 0) ? accountabilityPulse.map((item: any) => (
+                        <div key={item.status} className="space-y-2">
+                           <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase">
+                              <span className="tracking-widest truncate">{item.status}</span>
+                              <span className={cn(
+                                "shrink-0 tabular-nums",
+                                item.status === 'Overdue' && item.count > 0 ? "text-destructive" : "text-secondary"
+                              )}>
+                                {item.count}
+                              </span>
                            </div>
-                           <div className="flex items-center gap-4">
-                              <div className="flex-1 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
-                                 <div 
-                                    className="h-full bg-destructive" 
-                                    style={{ width: `${(item.overdue / (item.overdue + item.soon || 1)) * 100}%` }} 
-                                  />
-                              </div>
-                              <span className="text-[8px] font-black opacity-30 uppercase">Risk Level</span>
+                           <div className="h-2 bg-foreground/[0.04] overflow-hidden">
+                              <div
+                                className={cn("h-full transition-all", actionBoardAccent[item.status as ActionStatus] || 'bg-brand')}
+                                style={{ width: `${Math.max(item.percent, item.count > 0 ? 4 : 0)}%` }}
+                              />
                            </div>
                         </div>
                       )) : (
                         <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
                           <CheckCircle2 className="h-10 w-10 text-success/20" weight="bold" />
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-30">Tasks Clear<br/>No overdue task data</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-30">No action items yet</p>
                         </div>
                       )}
                   </div>
-                  <div className="pt-6 border-t border-foreground/5 flex items-center justify-between">
-                     <div className="flex items-center gap-1.5">
-                        <div className="h-2 w-2 rounded-full bg-destructive" />
-                        <span className="text-[8px] font-black uppercase text-secondary tracking-widest">Overdue</span>
-                     </div>
-                     <div className="flex items-center gap-1.5">
-                        <div className="h-2 w-2 rounded-full bg-warning" />
-                        <span className="text-[8px] font-black uppercase text-secondary tracking-widest">Due Soon (72h)</span>
-                     </div>
+                  <div className="pt-6 border-t border-foreground/5 grid grid-cols-2 gap-x-3 gap-y-2">
+                     {ACTION_BOARD_STATUSES.map((status) => (
+                       <div key={status} className="flex items-center gap-1.5 min-w-0">
+                          <div className={cn("h-2 w-2 shrink-0", actionBoardAccent[status])} />
+                          <span className="text-[8px] font-black uppercase text-secondary tracking-widest truncate">{status}</span>
+                       </div>
+                     ))}
                   </div>
-              </div>
+              </Link>
           </div>
 
           <div className="space-y-6">
@@ -779,13 +790,21 @@ function SnapshotWidget({
         </p>
         <div className="space-y-2 min-w-0">
             <div
+<<<<<<< HEAD
               className="text-3xl md:text-4xl xl:text-[2.75rem] font-black font-headline tracking-tighter text-ink leading-none break-all"
+=======
+              className="text-3xl md:text-4xl xl:text-[2.75rem] font-black font-headline tracking-tighter text-ink leading-[1.05] py-0.5 break-all"
+>>>>>>> origin/cursor/action-items-kanban-690f
               title={value}
             >
               {value}
             </div>
             <div className={cn(
+<<<<<<< HEAD
               "flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-black uppercase",
+=======
+              "flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-black uppercase relative z-10",
+>>>>>>> origin/cursor/action-items-kanban-690f
               isDown ? "text-destructive" : "text-success"
             )}>
               {isUp ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : isDown ? <ArrowDownRight className="h-3 w-3 shrink-0" /> : null}

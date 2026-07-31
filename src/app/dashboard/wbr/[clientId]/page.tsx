@@ -63,7 +63,7 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { saveWbrEntry, deleteActionItem } from '@/lib/firestore-actions';
-import { canonicalizeChannel } from '@/lib/normalize';
+import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { cn, openDialogFromMenu } from '@/lib/utils';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
@@ -885,7 +885,21 @@ export default function WbrEditPage() {
                       <TableRow key={action.id} className="border-b border-foreground/5 hover:bg-foreground/[0.01]">
                         <TableCell className="px-8 py-4"><div className="flex flex-col"><span className="text-xs font-black text-foreground/80">{action.taskName}</span><span className="text-[9px] font-bold text-secondary uppercase">{action.assignedTo}</span></div></TableCell>
                         <TableCell><Badge variant="outline" className="text-[8px] font-black h-4 px-1.5 leading-none border-foreground/10 uppercase">{action.section}</Badge></TableCell>
-                        <TableCell><Badge className={cn("text-[8px] font-black uppercase h-5 px-2 rounded-none flex items-center gap-1 w-fit", action.status === 'Completed' ? 'bg-success text-success-foreground' : action.status === 'Pending' ? 'bg-muted text-muted-foreground' : action.status === 'Blocked' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary')}>{action.status}</Badge></TableCell>
+                        <TableCell>{(() => {
+                          const status = resolveActionStatus(action.status, action.dueDate);
+                          return (
+                            <Badge className={cn(
+                              "text-[8px] font-black uppercase h-5 px-2 rounded-none flex items-center gap-1 w-fit",
+                              status === 'Completed' ? 'bg-success text-success-foreground'
+                                : status === 'Overdue' ? 'bg-destructive/10 text-destructive'
+                                : status === 'On-Hold' ? 'bg-warning/15 text-warning'
+                                : status === 'Observation' ? 'bg-secondary/15 text-secondary'
+                                : 'bg-primary/10 text-primary'
+                            )}>
+                              {status}
+                            </Badge>
+                          );
+                        })()}</TableCell>
                         <TableCell className="max-w-[200px] truncate text-[10px] font-medium opacity-60">{action.comment || action.description}</TableCell>
                         <TableCell className="px-4"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-none"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-none glass p-2 min-w-[140px]"><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest gap-2" onSelect={openDialogFromMenu(() => { setSelectedAction(action); setIsActionDialogOpen(true); })}>Update Protocol</DropdownMenuItem><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest text-destructive gap-2 focus:bg-destructive/10 focus:text-destructive" onClick={() => deleteActionItem(firestore, action.id)}>Purge Task</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                       </TableRow>
