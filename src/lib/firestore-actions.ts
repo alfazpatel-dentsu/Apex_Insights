@@ -8,6 +8,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, ActionItem } from './types';
 import { format, parse, isValid, startOfWeek, addDays, subMonths, subYears, startOfYear, subWeeks, endOfMonth, startOfMonth } from 'date-fns';
 import { generateBusinessSnapshot } from '@/ai/flows/business-snapshot-flow';
+import { canonicalizeChannel } from './normalize';
 
 const sanitizeNumber = (val: any): number => {
     if (typeof val === 'number') return val;
@@ -42,6 +43,13 @@ const parseDirection = (dirStr: any): 'ASC' | 'DESC' => {
     const s = dirStr.toString().toLowerCase();
     if (s.includes('lower') || s.includes('descending') || s.includes('desc')) return 'DESC';
     return 'ASC';
+};
+
+const parseKpiType = (raw: any): 'PRIMARY' | 'NON-PRIMARY' => {
+    if (!raw) return 'PRIMARY';
+    const s = raw.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (s.includes('nonprimary') || s === 'secondary' || s === 'non') return 'NON-PRIMARY';
+    return 'PRIMARY';
 };
 
 const parseMonthStr = (monthStr: any, isWeeklyDate: boolean = false): string => {
@@ -126,11 +134,11 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
             const kpiId = kpiDocRef.id;
 
             const clientName = getRowVal(entry, 'clientName', 'Client')?.toString().trim();
-            const channel = getRowVal(entry, 'channel', 'Channel')?.toString().trim();
+            const channel = canonicalizeChannel(getRowVal(entry, 'channel', 'Channel')?.toString());
             const kpi = getRowVal(entry, 'kpi', 'KPI')?.toString().trim();
             const clientId = getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A';
             
-            if (!clientName || !channel || !kpi) return;
+            if (!clientName || !channel || channel === 'N/A' || !kpi) return;
             
             const monthStr = parseMonthStr(getRowVal(entry, 'Month', 'month')) || defaultMonthStr;
             if (monthStr) uploadedMonths.add(monthStr);
@@ -150,6 +158,7 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
             kpiPayload.cduLead = getRowVal(entry, 'CDU Lead', 'Lead')?.toString().trim() || 'N/A';
             kpiPayload.emCsm = getRowVal(entry, 'EM/CSM', 'CSM', 'Manager')?.toString().trim() || 'N/A';
             kpiPayload.direction = parseDirection(getRowVal(entry, 'direction', 'Direction'));
+            kpiPayload.kpiType = parseKpiType(getRowVal(entry, 'KPI Type', 'kpiType', 'Kpi Type'));
             kpiPayload.currency = getRowVal(entry, 'currency', 'Currency') || 'INR';
             kpiPayload.targetMonth = sanitizeNumber(getRowVal(entry, 'Monthly Target', 'Target'));
             kpiPayload.achievedMonthTillYesterday = sanitizeNumber(getRowVal(entry, 'Monthly Achieved', 'Monthly Achived', 'Achieved'));
@@ -191,7 +200,11 @@ export const saveKpiData = async (db: Firestore, kpiData: Omit<KpiData, 'id'>, w
     const kpiDocRef = existingKpiId ? doc(db, 'kpis', existingKpiId) : doc(collection(db, 'kpis'));
     const kpiId = kpiDocRef.id;
     
-    const payload = { ...kpiData, uploadRecordId: kpiId };
+    const payload = {
+      ...kpiData,
+      channel: canonicalizeChannel(kpiData.channel),
+      uploadRecordId: kpiId,
+    };
     batch.set(kpiDocRef, payload, { merge: true });
 
     weeklyData.forEach(week => { 
@@ -308,10 +321,15 @@ export const purgeCollection = async (db: Firestore, collectionName: string) => 
 
 export const saveMonthlySpend = async (db: Firestore, data: Omit<MonthlySpend, 'id'>, id?: string) => {
     const ref = id ? doc(db, 'monthlySpends', id) : doc(collection(db, 'monthlySpends'));
+    const payload = {
+      ...data,
+      channelVendor: canonicalizeChannel(data.channelVendor),
+      uploadRecordId: ref.id,
+    };
     try {
-        await setDoc(ref, { ...data, uploadRecordId: ref.id }, { merge: true });
+        await setDoc(ref, payload, { merge: true });
     } catch (e) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'write', requestResourceData: data }));
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'write', requestResourceData: payload }));
         throw e;
     }
 };
@@ -319,7 +337,12 @@ export const saveMonthlySpend = async (db: Firestore, data: Omit<MonthlySpend, '
 export const saveWeeklySpend = async (db: Firestore, data: Omit<WeeklySpend, 'id'>, id?: string) => {
     const ref = id ? doc(db, 'weeklySpends', id) : doc(collection(db, 'weeklySpends'));
     const month = parseMonthStr(data.week, true);
-    const payload = { ...data, month, uploadRecordId: ref.id };
+    const payload = {
+      ...data,
+      channelVendor: canonicalizeChannel(data.channelVendor),
+      month,
+      uploadRecordId: ref.id,
+    };
     try {
         await setDoc(ref, payload, { merge: true });
     } catch (e) {
@@ -401,12 +424,12 @@ export const bulkSaveMonthlySpends = async (db: Firestore, entries: any[], onPro
             if (!month) month = fallbackMonth;
 
             batch.set(docRef, {
-                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'id')?.toString().trim() || 'N/A',
+                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A',
                 brandName: getRowVal(entry, 'Brand Name', 'Brand', 'client')?.toString().trim() || 'Unknown',
                 industry: getRowVal(entry, 'Industry') || 'N/A',
                 type: getRowVal(entry, 'Type') || 'N/A',
                 subEntity: getRowVal(entry, 'Sub Entity', 'LOB', 'Entity') || 'N/A',
-                channelVendor: getRowVal(entry, 'Channel', 'Vendor', 'Source') || 'N/A',
+                channelVendor: canonicalizeChannel(getRowVal(entry, 'Channel', 'Vendor', 'Source')),
                 creditLine: getRowVal(entry, 'Credit Line') || 'N/A',
                 currency: getRowVal(entry, 'Currency') || 'INR',
                 team: getRowVal(entry, 'Team') || 'N/A', 
@@ -453,17 +476,17 @@ export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProg
             if (!month) month = fallbackMonth;
 
             batch.set(docRef, {
-                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'id')?.toString().trim() || 'N/A',
+                clientId: getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A',
                 brandName: getRowVal(entry, 'Brand Name', 'Brand', 'client')?.toString().trim() || 'Unknown',
                 industry: getRowVal(entry, 'Industry') || 'N/A',
                 type: getRowVal(entry, 'Type') || 'N/A',
                 subEntity: getRowVal(entry, 'Sub Entity', 'LOB', 'Entity') || 'N/A',
-                channelVendor: getRowVal(entry, 'Channel', 'Vendor', 'Source') || 'N/A',
+                channelVendor: canonicalizeChannel(getRowVal(entry, 'Channel', 'Vendor', 'Source')),
                 creditLine: getRowVal(entry, 'Credit Line') || 'N/A',
                 currency: getRowVal(entry, 'Currency') || 'INR',
-                team: getRowVal(entry, 'Team') || 'N/A', 
-                week: weekStr || format(new Date(), 'dd-MM-yyyy'), 
-                month, 
+                team: getRowVal(entry, 'Team') || 'N/A',
+                week: weekStr || format(new Date(), 'dd-MM-yyyy'),
+                month,
                 spendsInr: sanitizeNumber(getRowVal(entry, 'SPENDS', 'Spend', 'Amount', 'Total')),
                 uploadRecordId: docRef.id
             }, { merge: true });
@@ -471,9 +494,9 @@ export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProg
         });
 
         if (batchOpCount > 0) {
-            await batch.commit().catch(async (err) => { 
-                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/weeklySpends', operation: 'create' })); 
-                throw err; 
+            await batch.commit().catch(async (err) => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/weeklySpends', operation: 'create' }));
+                throw err;
             });
             processedCount += batchOpCount;
             await throttle();

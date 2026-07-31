@@ -63,6 +63,7 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { saveWbrEntry, deleteActionItem } from '@/lib/firestore-actions';
+import { canonicalizeChannel } from '@/lib/normalize';
 import { cn, openDialogFromMenu } from '@/lib/utils';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
@@ -259,6 +260,7 @@ export default function WbrEditPage() {
           setWeeklyKpis(weeklyKpiList);
         }
 
+        // Join key is CLID (clientId) — brandName is display only.
         const allSpendsSnap = await getDocs(query(
           collection(firestore, 'monthlySpends'), 
           where('clientId', '==', actualClientId)
@@ -345,9 +347,9 @@ export default function WbrEditPage() {
 
   const channelOptions = useMemo(() => {
     const set = new Set<string>();
-    kpis.forEach(k => { if (k.channel) set.add(k.channel); });
-    monthlySpends.forEach(s => { if (s.channelVendor) set.add(s.channelVendor); });
-    weeklySpends.forEach(s => { if (s.channelVendor) set.add(s.channelVendor); });
+    kpis.forEach(k => { if (k.channel) set.add(canonicalizeChannel(k.channel)); });
+    monthlySpends.forEach(s => { if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor)); });
+    weeklySpends.forEach(s => { if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor)); });
     return Array.from(set).sort();
   }, [kpis, monthlySpends, weeklySpends]);
 
@@ -361,7 +363,7 @@ export default function WbrEditPage() {
   const filteredKpis = useMemo(() => {
     return kpis.filter(k => {
       const lobMatch = selectedLobFilter === 'all' || k.lob === selectedLobFilter;
-      const channelMatch = selectedChannelFilter === 'all' || k.channel === selectedChannelFilter;
+      const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(k.channel) === selectedChannelFilter;
       const kpiMatch = selectedKpiFilter === 'all' || k.kpi === selectedKpiFilter;
       return lobMatch && channelMatch && kpiMatch;
     });
@@ -370,10 +372,11 @@ export default function WbrEditPage() {
   const groupedKpis = useMemo(() => {
     const groups: Record<string, any> = {};
     filteredKpis.forEach(k => {
-      const key = `${k.channel}-${k.kpi}-${k.lob}`;
+      const channel = canonicalizeChannel(k.channel);
+      const key = `${channel}-${k.kpi}-${k.lob}`;
       if (!groups[key]) {
         groups[key] = {
-          channel: k.channel,
+          channel,
           kpi: k.kpi,
           lob: k.lob,
           direction: k.direction || 'ASC',
@@ -389,12 +392,14 @@ export default function WbrEditPage() {
     const data: Record<string, Record<string, number>> = {};
     monthlySpends.filter(s => {
       const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
-      const channelMatch = selectedChannelFilter === 'all' || s.channelVendor === selectedChannelFilter;
+      const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
+      const channel = canonicalizeChannel(s.channelVendor);
+      const amount = Number(s.actualSpendsInr) || 0;
       if (!data[s.month]) data[s.month] = {};
-      data[s.month][s.channelVendor] = (data[s.month][s.channelVendor] || 0) + s.actualSpendsInr;
-      data[s.month]['Total'] = (data[s.month]['Total'] || 0) + s.actualSpendsInr;
+      data[s.month][channel] = (data[s.month][channel] || 0) + amount;
+      data[s.month]['Total'] = (data[s.month]['Total'] || 0) + amount;
     });
     return data;
   }, [monthlySpends, selectedLobFilter, selectedChannelFilter]);
@@ -403,10 +408,10 @@ export default function WbrEditPage() {
     const set = new Set<string>();
     monthlySpends.filter(s => {
       const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
-      const channelMatch = selectedChannelFilter === 'all' || s.channelVendor === selectedChannelFilter;
+      const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
-      if (s.channelVendor) set.add(s.channelVendor);
+      if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor));
     });
     return Array.from(set).sort();
   }, [monthlySpends, selectedLobFilter, selectedChannelFilter]);
@@ -441,7 +446,7 @@ export default function WbrEditPage() {
   const filteredWeeklyKpisForGrid = useMemo(() => {
     return kpis.filter(k => {
       const lobMatch = selectedWeeklyLobFilter === 'all' || k.lob === selectedWeeklyLobFilter;
-      const channelMatch = selectedWeeklyChannelFilter === 'all' || k.channel === selectedWeeklyChannelFilter;
+      const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(k.channel) === selectedWeeklyChannelFilter;
       const kpiMatch = selectedWeeklyKpiFilter === 'all' || k.kpi === selectedWeeklyKpiFilter;
       return lobMatch && channelMatch && kpiMatch;
     });
@@ -450,10 +455,11 @@ export default function WbrEditPage() {
   const groupedWeeklyKpis = useMemo(() => {
     const groups: Record<string, any> = {};
     filteredWeeklyKpisForGrid.forEach(k => {
-      const key = `${k.channel}-${k.kpi}-${k.lob}`;
+      const channel = canonicalizeChannel(k.channel);
+      const key = `${channel}-${k.kpi}-${k.lob}`;
       if (!groups[key]) {
         groups[key] = {
-          channel: k.channel,
+          channel,
           kpi: k.kpi,
           lob: k.lob,
           direction: k.direction || 'ASC',
@@ -469,9 +475,11 @@ export default function WbrEditPage() {
     const data: Record<string, Record<string, number>> = {};
     weeklySpends.filter(s => {
       const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
-      const channelMatch = selectedWeeklyChannelFilter === 'all' || s.channelVendor === selectedWeeklyChannelFilter;
+      const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
+      const channel = canonicalizeChannel(s.channelVendor);
+      const amount = Number(s.spendsInr) || 0;
       const d = parse(s.week, 'dd-MM-yyyy', new Date());
       if (isValid(d)) {
           const monday = startOfWeek(d, { weekStartsOn: 1 });
@@ -488,8 +496,8 @@ export default function WbrEditPage() {
           const weekKey = `${monthKey}-W${weekNum}`;
 
           if (!data[weekKey]) data[weekKey] = {};
-          data[weekKey][s.channelVendor] = (data[weekKey][s.channelVendor] || 0) + s.spendsInr;
-          data[weekKey]['Total'] = (data[weekKey]['Total'] || 0) + s.spendsInr;
+          data[weekKey][channel] = (data[weekKey][channel] || 0) + amount;
+          data[weekKey]['Total'] = (data[weekKey]['Total'] || 0) + amount;
       }
     });
     return data;
@@ -499,10 +507,10 @@ export default function WbrEditPage() {
     const set = new Set<string>();
     weeklySpends.filter(s => {
       const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
-      const channelMatch = selectedWeeklyChannelFilter === 'all' || s.channelVendor === selectedWeeklyChannelFilter;
+      const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
       return lobMatch && channelMatch;
     }).forEach(s => {
-      if (s.channelVendor) set.add(s.channelVendor);
+      if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor));
     });
     return Array.from(set).sort();
   }, [weeklySpends, selectedWeeklyLobFilter, selectedWeeklyChannelFilter]);
@@ -522,7 +530,7 @@ export default function WbrEditPage() {
   if (isLoading || !isClient) return (
     <div className="flex flex-1 flex-col items-center justify-center p-20 gap-4">
       <Loader2 className="animate-spin h-12 w-12 text-primary" />
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Consulting Aztec Database...</p>
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Loading client data…</p>
     </div>
   );
 
@@ -530,7 +538,7 @@ export default function WbrEditPage() {
     <div className="max-w-7xl mx-auto space-y-10 pb-20 pt-4 px-4">
       <div className="flex flex-wrap items-center justify-between gap-6">
         <div className="flex items-center gap-6">
-          <Button variant="ghost" size="icon" className="h-12 w-12 rounded-2xl glass shadow-lg" onClick={() => router.push('/dashboard/wbr')}>
+          <Button variant="ghost" size="icon" className="h-12 w-12 rounded-none glass shadow-lg" onClick={() => router.push('/dashboard/wbr')}>
             <ArrowLeft className="h-6 w-6" />
           </Button>
           <div className="space-y-1">
@@ -544,7 +552,7 @@ export default function WbrEditPage() {
         </div>
 
         {!isWindowOpen && !isAdmin && (
-          <div className="flex items-center gap-3 bg-destructive/10 text-destructive px-6 h-14 rounded-[2rem] border border-destructive/20 shadow-xl shadow-destructive/10 animate-in slide-in-from-right-4">
+          <div className="flex items-center gap-3 bg-destructive/10 text-destructive px-6 h-14 rounded-none border border-destructive/20 shadow-destructive/10 animate-in slide-in-from-right-4">
             <Lock className="h-5 w-5" />
             <div className="flex flex-col">
                 <span className="text-[10px] font-black uppercase tracking-widest">Historical Lock Active</span>
@@ -562,30 +570,30 @@ export default function WbrEditPage() {
                 <div className="h-6 w-1 bg-primary rounded-full" />
                 <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">ACCOUNT CONFIGURATION (ADMIN ONLY)</h4>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 p-10 rounded-[3rem] glass shadow-2xl relative overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 p-10 rounded-none glass relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-5"><ShieldCheck className="h-32 w-32" /></div>
                 <FormField control={form.control} name="cluster" render={({ field }) => (
                     <FormItem className="space-y-2">
                     <div className="flex items-center justify-between"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">STRATEGIC CLUSTER</FormLabel>{renderFieldInfo('cluster')}</div>
-                    <FormControl><Input className="rounded-2xl bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
+                    <FormControl><Input className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
                     </FormItem>
                 )} />
                 <FormField control={form.control} name="clusterLead" render={({ field }) => (
                     <FormItem className="space-y-2">
                     <div className="flex items-center justify-between"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CLUSTER LEAD</FormLabel>{renderFieldInfo('clusterLead')}</div>
-                    <FormControl><Input className="rounded-2xl bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
+                    <FormControl><Input className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
                     </FormItem>
                 )} />
                 <FormField control={form.control} name="emcsm" render={({ field }) => (
                     <FormItem className="space-y-2">
                     <div className="flex items-center justify-between"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">EM / CSM MANAGER</FormLabel>{renderFieldInfo('emcsm')}</div>
-                    <FormControl><Input className="rounded-2xl bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
+                    <FormControl><Input className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
                     </FormItem>
                 )} />
                 <FormField control={form.control} name="clientPartner" render={({ field }) => (
                     <FormItem className="space-y-2">
                     <div className="flex items-center justify-between"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CLIENT PARTNER</FormLabel>{renderFieldInfo('clientPartner')}</div>
-                    <FormControl><Input className="rounded-2xl bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
+                    <FormControl><Input className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold" {...field} disabled={!isAdmin} /></FormControl>
                     </FormItem>
                 )} />
             </div>
@@ -600,22 +608,22 @@ export default function WbrEditPage() {
                </div>
                <div className="flex items-center gap-3 flex-wrap">
                   <DateRangePicker date={monthlyDateRange} setDate={setMonthlyDateRange} />
-                  <div className="flex items-center gap-2 bg-foreground/5 rounded-2xl p-1 px-4 border border-foreground/5 h-10">
-                    <Filter className="h-3 w-3 opacity-40" />
-                    <Select value={selectedLobFilter} onValueChange={setSelectedLobFilter}><SelectTrigger className="h-8 min-w-[80px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="LOB" /></SelectTrigger><SelectContent className="rounded-xl glass border-none"><SelectItem value="all" className="text-[10px] font-bold">ALL LOB</SelectItem>{lobs.map(lob => <SelectItem key={lob} value={lob} className="text-[10px] font-bold uppercase">{lob}</SelectItem>)}</SelectContent></Select>
+                  <div className="flex items-center gap-2 bg-foreground/5 rounded-none p-1 px-4 border border-foreground/5 h-10">
+                    <Filter className="h-3 w-3 text-secondary" />
+                    <Select value={selectedLobFilter} onValueChange={setSelectedLobFilter}><SelectTrigger className="h-8 min-w-[80px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="LOB" /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL LOB</SelectItem>{lobs.map(lob => <SelectItem key={lob} value={lob} className="text-[10px] font-bold uppercase">{lob}</SelectItem>)}</SelectContent></Select>
                   </div>
-                  <div className="flex items-center gap-2 bg-foreground/5 rounded-2xl p-1 px-4 border border-foreground/5 h-10">
-                    <Filter className="h-3 w-3 opacity-40" />
-                    <Select value={selectedChannelFilter} onValueChange={setSelectedChannelFilter}><SelectTrigger className="h-8 min-w-[120px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="CHANNEL" /></SelectTrigger><SelectContent className="rounded-xl glass border-none"><SelectItem value="all" className="text-[10px] font-bold">ALL CHANNELS</SelectItem>{channelOptions.map(channel => <SelectItem key={channel} value={channel} className="text-[10px] font-bold uppercase">{channel}</SelectItem>)}</SelectContent></Select>
+                  <div className="flex items-center gap-2 bg-foreground/5 rounded-none p-1 px-4 border border-foreground/5 h-10">
+                    <Filter className="h-3 w-3 text-secondary" />
+                    <Select value={selectedChannelFilter} onValueChange={setSelectedChannelFilter}><SelectTrigger className="h-8 min-w-[120px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="CHANNEL" /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL CHANNELS</SelectItem>{channelOptions.map(channel => <SelectItem key={channel} value={channel} className="text-[10px] font-bold uppercase">{channel}</SelectItem>)}</SelectContent></Select>
                   </div>
-                  <div className="flex items-center gap-2 bg-foreground/5 rounded-2xl p-1 px-4 border border-foreground/5 h-10">
-                    <Filter className="h-3 w-3 opacity-40" />
-                    <Select value={selectedKpiFilter} onValueChange={setSelectedKpiFilter}><SelectTrigger className="h-8 min-w-[100px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="KPI" /></SelectTrigger><SelectContent className="rounded-xl glass border-none"><SelectItem value="all" className="text-[10px] font-bold">ALL KPIs</SelectItem>{kpiOptions.map(kpi => <SelectItem key={kpi} value={kpi} className="text-[10px] font-bold uppercase">{kpi}</SelectItem>)}</SelectContent></Select>
+                  <div className="flex items-center gap-2 bg-foreground/5 rounded-none p-1 px-4 border border-foreground/5 h-10">
+                    <Filter className="h-3 w-3 text-secondary" />
+                    <Select value={selectedKpiFilter} onValueChange={setSelectedKpiFilter}><SelectTrigger className="h-8 min-w-[100px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="KPI" /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL KPIs</SelectItem>{kpiOptions.map(kpi => <SelectItem key={kpi} value={kpi} className="text-[10px] font-bold uppercase">{kpi}</SelectItem>)}</SelectContent></Select>
                   </div>
                </div>
             </div>
 
-            <div className="rounded-[3rem] glass shadow-2xl border-none overflow-hidden h-fit">
+            <div className="rounded-none glass overflow-hidden h-fit">
               <ScrollArea className="w-full">
                 <table className="w-full border-collapse">
                   <thead>
@@ -633,13 +641,13 @@ export default function WbrEditPage() {
                         <button 
                           type="button" 
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsSpendsExpanded(!isSpendsExpanded); }} 
-                          className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center hover:bg-primary hover:text-white transition-all outline-none shadow-sm"
+                          className="h-8 w-8 rounded-none bg-primary/10 text-primary flex items-center justify-center hover:bg-primary hover:text-white transition-all outline-none shadow-sm"
                         >
                           {isSpendsExpanded ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                         </button>
                         <div className="flex flex-col">
                             <span className="text-xs font-black uppercase tracking-tight">Spends Pulse</span>
-                            <span className="text-[9px] font-bold opacity-40 uppercase tracking-widest">Total Spends</span>
+                            <span className="text-[9px] font-bold text-secondary uppercase tracking-widest">Total Spends</span>
                         </div>
                       </td>
                       {monthsInRange.map(m => { 
@@ -714,29 +722,29 @@ export default function WbrEditPage() {
                </div>
                <div className="flex items-center gap-3 flex-wrap">
                   <DateRangePicker date={weeklyDateRange} setDate={setWeeklyDateRange} />
-                  <div className="flex items-center gap-2 bg-foreground/5 rounded-2xl p-1 px-4 border border-foreground/5 h-10">
-                    <Filter className="h-3 w-3 opacity-40" />
-                    <Select value={selectedWeeklyLobFilter} onValueChange={setSelectedWeeklyLobFilter}><SelectTrigger className="h-8 min-w-[80px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="LOB" /></SelectTrigger><SelectContent className="rounded-xl glass border-none"><SelectItem value="all" className="text-[10px] font-bold">ALL LOB</SelectItem>{lobs.map(lob => <SelectItem key={lob} value={lob} className="text-[10px] font-bold uppercase">{lob}</SelectItem>)}</SelectContent></Select>
+                  <div className="flex items-center gap-2 bg-foreground/5 rounded-none p-1 px-4 border border-foreground/5 h-10">
+                    <Filter className="h-3 w-3 text-secondary" />
+                    <Select value={selectedWeeklyLobFilter} onValueChange={setSelectedWeeklyLobFilter}><SelectTrigger className="h-8 min-w-[80px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="LOB" /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL LOB</SelectItem>{lobs.map(lob => <SelectItem key={lob} value={lob} className="text-[10px] font-bold uppercase">{lob}</SelectItem>)}</SelectContent></Select>
                   </div>
-                  <div className="flex items-center gap-2 bg-foreground/5 rounded-2xl p-1 px-4 border border-foreground/5 h-10">
-                    <Filter className="h-3 w-3 opacity-40" />
-                    <Select value={selectedWeeklyChannelFilter} onValueChange={setSelectedWeeklyChannelFilter}><SelectTrigger className="h-8 min-w-[120px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="CHANNEL" /></SelectTrigger><SelectContent className="rounded-xl glass border-none"><SelectItem value="all" className="text-[10px] font-bold">ALL CHANNELS</SelectItem>{channelOptions.map(channel => <SelectItem key={channel} value={channel} className="text-[10px] font-bold uppercase">{channel}</SelectItem>)}</SelectContent></Select>
+                  <div className="flex items-center gap-2 bg-foreground/5 rounded-none p-1 px-4 border border-foreground/5 h-10">
+                    <Filter className="h-3 w-3 text-secondary" />
+                    <Select value={selectedWeeklyChannelFilter} onValueChange={setSelectedWeeklyChannelFilter}><SelectTrigger className="h-8 min-w-[120px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="CHANNEL" /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL CHANNELS</SelectItem>{channelOptions.map(channel => <SelectItem key={channel} value={channel} className="text-[10px] font-bold uppercase">{channel}</SelectItem>)}</SelectContent></Select>
                   </div>
-                  <div className="flex items-center gap-2 bg-foreground/5 rounded-2xl p-1 px-4 border border-foreground/5 h-10">
-                    <Filter className="h-3 w-3 opacity-40" />
-                    <Select value={selectedWeeklyKpiFilter} onValueChange={setSelectedWeeklyKpiFilter}><SelectTrigger className="h-8 min-w-[100px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="KPI" /></SelectTrigger><SelectContent className="rounded-xl glass border-none"><SelectItem value="all" className="text-[10px] font-bold">ALL KPIs</SelectItem>{kpiOptions.map(kpi => <SelectItem key={kpi} value={kpi} className="text-[10px] font-bold uppercase">{kpi}</SelectItem>)}</SelectContent></Select>
+                  <div className="flex items-center gap-2 bg-foreground/5 rounded-none p-1 px-4 border border-foreground/5 h-10">
+                    <Filter className="h-3 w-3 text-secondary" />
+                    <Select value={selectedWeeklyKpiFilter} onValueChange={setSelectedWeeklyKpiFilter}><SelectTrigger className="h-8 min-w-[100px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue placeholder="KPI" /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL KPIs</SelectItem>{kpiOptions.map(kpi => <SelectItem key={kpi} value={kpi} className="text-[10px] font-bold uppercase">{kpi}</SelectItem>)}</SelectContent></Select>
                   </div>
                   <div className="h-px w-8 bg-foreground/10 hidden md:block" />
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Operational Risk (P-RAG)</span>
-                    <Badge className={cn("text-[10px] font-black uppercase h-8 px-4 rounded-xl shadow-lg", form.getValues('performanceRag') === 'Green' ? 'bg-success text-success-foreground' : form.getValues('performanceRag') === 'Amber' ? 'bg-warning text-warning-foreground' : 'bg-destructive text-destructive-foreground')}>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-secondary">Operational Risk (P-RAG)</span>
+                    <Badge className={cn("text-[10px] font-black uppercase h-8 px-4 rounded-none shadow-lg", form.getValues('performanceRag') === 'Green' ? 'bg-success text-success-foreground' : form.getValues('performanceRag') === 'Amber' ? 'bg-warning text-warning-foreground' : 'bg-destructive text-destructive-foreground')}>
                       {form.getValues('performanceRag') || 'N/A'}
                     </Badge>
                   </div>
                </div>
             </div>
 
-            <div className="rounded-[3rem] glass shadow-2xl border-none overflow-hidden h-fit">
+            <div className="rounded-none glass overflow-hidden h-fit">
               <ScrollArea className="w-full">
                 <table className="w-full border-collapse">
                   <thead>
@@ -745,7 +753,7 @@ export default function WbrEditPage() {
                       {weeksInRange.map(w => (
                         <th key={w.key} className="px-4 py-6 text-center border-r border-foreground/5 min-w-[130px]">
                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] font-black uppercase tracking-widest opacity-40">WEEK</span>
+                              <span className="text-[10px] font-black uppercase tracking-widest text-secondary">WEEK</span>
                               <span className="text-[11px] font-black uppercase">{w.label}</span>
                            </div>
                         </th>
@@ -759,13 +767,13 @@ export default function WbrEditPage() {
                         <button 
                           type="button" 
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsWeeklySpendsExpanded(!isWeeklySpendsExpanded); }} 
-                          className="h-8 w-8 rounded-xl bg-brand/10 text-brand flex items-center justify-center hover:bg-brand hover:text-white transition-all outline-none shadow-sm"
+                          className="h-8 w-8 rounded-none bg-brand/10 text-brand flex items-center justify-center hover:bg-brand hover:text-white transition-all outline-none shadow-sm"
                         >
                           {isWeeklySpendsExpanded ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                         </button>
                         <div className="flex flex-col">
                             <span className="text-xs font-black uppercase tracking-tight">Weekly Spends</span>
-                            <span className="text-[9px] font-bold opacity-40 uppercase tracking-widest">Temporal Depletion</span>
+                            <span className="text-[9px] font-bold text-secondary uppercase tracking-widest">Temporal Depletion</span>
                         </div>
                       </td>
                       {weeksInRange.map(w => {
@@ -789,7 +797,7 @@ export default function WbrEditPage() {
                         <td className="sticky left-0 z-20 bg-background/95 backdrop-blur-md px-8 py-6 border-r border-foreground/5">
                           <div className="flex flex-col">
                             <span className="text-[10px] font-black uppercase text-foreground/70">{group.channel} Achieved</span>
-                            <span className="text-[8px] font-bold opacity-40 uppercase tracking-tighter mt-0.5">{group.kpi} • {group.lob}</span>
+                            <span className="text-[8px] font-bold text-secondary uppercase tracking-tighter mt-0.5">{group.kpi} • {group.lob}</span>
                           </div>
                         </td>
                         {weeksInRange.map((w, idx) => { 
@@ -834,20 +842,20 @@ export default function WbrEditPage() {
 
           <section className="space-y-6">
             <div className="flex items-center gap-3 px-1"><div className="h-6 w-1 bg-primary/40 rounded-full" /><h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary/60">ENGAGEMENT REVIEW (CSM CONTEXT)</h4></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-10 rounded-[3rem] glass shadow-xl border-none">
-                <FormField control={form.control} name="contractStatus" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CONTRACT STATUS</FormLabel>{renderFieldInfo('contractStatus')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('contractStatus')}><FormControl><SelectTrigger className="rounded-2xl bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-[1.5rem] glass border-none"><SelectItem value="Valid" className="font-bold">Valid</SelectItem><SelectItem value="Expired" className="text-destructive font-black">Expired</SelectItem><SelectItem value="Negotiation" className="text-warning font-black">Negotiation</SelectItem></SelectContent></Select></FormItem>)} />
-                <FormField control={form.control} name="engagementRag" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">ENGAGEMENT RAG</FormLabel>{renderFieldInfo('engagementRag')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('engagementRag')}><FormControl><SelectTrigger className="rounded-2xl bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-black"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-[1.5rem] glass border-none"><SelectItem value="Green" className="text-success font-black">GREEN</SelectItem><SelectItem value="Amber" className="text-warning font-black">AMBER</SelectItem><SelectItem value="Red" className="text-destructive font-black">RED</SelectItem></SelectContent></Select></FormItem>)} />
-                <div className="md:col-span-2"><FormField control={form.control} name="financeIssues" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">FINANCE & BILLING INTELLIGENCE</FormLabel>{renderFieldInfo('financeIssues')}</div><FormControl><Textarea className="rounded-[2rem] bg-foreground/[0.03] border-none min-h-[120px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('financeIssues')} /></FormControl></FormItem>)} /></div>
-                <FormField control={form.control} name="organicOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">ORGANIC GROWTH PULSE</FormLabel>{renderFieldInfo('organicOpportunities')}</div><FormControl><Textarea className="rounded-[2rem] bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('organicOpportunities')} /></FormControl></FormItem>)} />
-                <FormField control={form.control} name="crossSellOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CROSS-SELL HORIZON</FormLabel>{renderFieldInfo('crossSellOpportunities')}</div><FormControl><Textarea className="rounded-[2rem] bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('crossSellOpportunities')} /></FormControl></FormItem>)} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-10 rounded-none glass ">
+                <FormField control={form.control} name="contractStatus" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CONTRACT STATUS</FormLabel>{renderFieldInfo('contractStatus')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('contractStatus')}><FormControl><SelectTrigger className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-none glass "><SelectItem value="Valid" className="font-bold">Valid</SelectItem><SelectItem value="Expired" className="text-destructive font-black">Expired</SelectItem><SelectItem value="Negotiation" className="text-warning font-black">Negotiation</SelectItem></SelectContent></Select></FormItem>)} />
+                <FormField control={form.control} name="engagementRag" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">ENGAGEMENT RAG</FormLabel>{renderFieldInfo('engagementRag')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('engagementRag')}><FormControl><SelectTrigger className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-black"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-none glass "><SelectItem value="Green" className="text-success font-black">GREEN</SelectItem><SelectItem value="Amber" className="text-warning font-black">AMBER</SelectItem><SelectItem value="Red" className="text-destructive font-black">RED</SelectItem></SelectContent></Select></FormItem>)} />
+                <div className="md:col-span-2"><FormField control={form.control} name="financeIssues" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">FINANCE & BILLING INTELLIGENCE</FormLabel>{renderFieldInfo('financeIssues')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[120px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('financeIssues')} /></FormControl></FormItem>)} /></div>
+                <FormField control={form.control} name="organicOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">ORGANIC GROWTH PULSE</FormLabel>{renderFieldInfo('organicOpportunities')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('organicOpportunities')} /></FormControl></FormItem>)} />
+                <FormField control={form.control} name="crossSellOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CROSS-SELL HORIZON</FormLabel>{renderFieldInfo('crossSellOpportunities')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('crossSellOpportunities')} /></FormControl></FormItem>)} />
             </div>
           </section>
 
           <section className="space-y-6">
             <div className="flex items-center gap-3 px-1"><div className="h-6 w-1 bg-primary/40 rounded-full" /><h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary/60">OPERATIONAL REVIEW (LEAD CONTEXT)</h4></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-10 rounded-[3rem] glass shadow-xl border-none">
-                <FormField control={form.control} name="performanceRag" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">PERFORMANCE RAG (RISK)</FormLabel>{renderFieldInfo('performanceRag')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('performanceRag')}><FormControl><SelectTrigger className="rounded-2xl bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-black"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-[1.5rem] glass border-none"><SelectItem value="Green" className="text-success font-black">GREEN</SelectItem><SelectItem value="Amber" className="text-warning font-black">AMBER</SelectItem><SelectItem value="Red" className="text-destructive font-black">RED</SelectItem></SelectContent></Select></FormItem>)} />
-                <div className="md:col-span-2"><FormField control={form.control} name="summary" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">EXECUTIVE STRATEGIC SUMMARY</FormLabel>{renderFieldInfo('summary')}</div><FormControl><Textarea className="rounded-[2.5rem] bg-foreground/[0.03] border-none min-h-[160px] shadow-inner p-8 text-sm font-medium leading-relaxed resize-none font-mono" {...field} disabled={!canEditField('summary')} /></FormControl></FormItem>)} /></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-10 rounded-none glass ">
+                <FormField control={form.control} name="performanceRag" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">PERFORMANCE RAG (RISK)</FormLabel>{renderFieldInfo('performanceRag')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('performanceRag')}><FormControl><SelectTrigger className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-black"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-none glass "><SelectItem value="Green" className="text-success font-black">GREEN</SelectItem><SelectItem value="Amber" className="text-warning font-black">AMBER</SelectItem><SelectItem value="Red" className="text-destructive font-black">RED</SelectItem></SelectContent></Select></FormItem>)} />
+                <div className="md:col-span-2"><FormField control={form.control} name="summary" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">EXECUTIVE STRATEGIC SUMMARY</FormLabel>{renderFieldInfo('summary')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[160px] shadow-inner p-8 text-sm font-medium leading-relaxed resize-none font-mono" {...field} disabled={!canEditField('summary')} /></FormControl></FormItem>)} /></div>
             </div>
           </section>
 
@@ -857,29 +865,29 @@ export default function WbrEditPage() {
                    <div className="h-6 w-1 bg-brand rounded-full" />
                    <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-brand">CLIENT ACTION LOG</h4>
                 </div>
-                <Button type="button" size="sm" className="rounded-2xl gap-2 font-black text-[10px] uppercase shadow-lg shadow-brand/20" onClick={() => { setSelectedAction(null); setIsActionDialogOpen(true); }}>
+                <Button type="button" size="sm" className="rounded-none gap-2 font-black text-[10px] uppercase shadow-lg shadow-brand/20" onClick={() => { setSelectedAction(null); setIsActionDialogOpen(true); }}>
                   <PlusCircle className="h-4 w-4" /> INITIATE TASK
                 </Button>
              </div>
-             <div className="rounded-[2.5rem] glass shadow-2xl border-none overflow-hidden">
+             <div className="rounded-none glass overflow-hidden">
                 <Table>
                   <TableHeader className="bg-foreground/[0.02]"><TableRow className="border-b border-foreground/5">
-                      <TableHead className="px-8 py-6 text-[9px] font-black uppercase tracking-widest opacity-40">Task & Owner</TableHead>
-                      <TableHead className="text-[9px] font-black uppercase tracking-widest opacity-40">Section</TableHead>
-                      <TableHead className="text-[9px] font-black uppercase tracking-widest opacity-40">Status</TableHead>
-                      <TableHead className="text-[9px] font-black uppercase tracking-widest opacity-40">Intelligence</TableHead>
+                      <TableHead className="px-8 py-6 text-[9px] font-black uppercase tracking-widest text-secondary">Task & Owner</TableHead>
+                      <TableHead className="text-[9px] font-black uppercase tracking-widest text-secondary">Section</TableHead>
+                      <TableHead className="text-[9px] font-black uppercase tracking-widest text-secondary">Status</TableHead>
+                      <TableHead className="text-[9px] font-black uppercase tracking-widest text-secondary">Intelligence</TableHead>
                       <TableHead className="w-10"></TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {!clientActions || clientActions.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center py-20 text-[10px] font-black uppercase tracking-widest opacity-20 italic">No action items discussed for this entity.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center py-20 text-[10px] font-black uppercase tracking-widest text-secondary/70 italic">No action items discussed for this entity.</TableCell></TableRow>
                     ) : clientActions.map((action) => (
                       <TableRow key={action.id} className="border-b border-foreground/5 hover:bg-foreground/[0.01]">
-                        <TableCell className="px-8 py-4"><div className="flex flex-col"><span className="text-xs font-black text-foreground/80">{action.taskName}</span><span className="text-[9px] font-bold opacity-40 uppercase">{action.assignedTo}</span></div></TableCell>
+                        <TableCell className="px-8 py-4"><div className="flex flex-col"><span className="text-xs font-black text-foreground/80">{action.taskName}</span><span className="text-[9px] font-bold text-secondary uppercase">{action.assignedTo}</span></div></TableCell>
                         <TableCell><Badge variant="outline" className="text-[8px] font-black h-4 px-1.5 leading-none border-foreground/10 uppercase">{action.section}</Badge></TableCell>
-                        <TableCell><Badge className={cn("text-[8px] font-black uppercase h-5 px-2 rounded-xl flex items-center gap-1 w-fit", action.status === 'Completed' ? 'bg-success text-success-foreground' : action.status === 'Pending' ? 'bg-muted text-muted-foreground' : action.status === 'Blocked' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary')}>{action.status}</Badge></TableCell>
+                        <TableCell><Badge className={cn("text-[8px] font-black uppercase h-5 px-2 rounded-none flex items-center gap-1 w-fit", action.status === 'Completed' ? 'bg-success text-success-foreground' : action.status === 'Pending' ? 'bg-muted text-muted-foreground' : action.status === 'Blocked' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary')}>{action.status}</Badge></TableCell>
                         <TableCell className="max-w-[200px] truncate text-[10px] font-medium opacity-60">{action.comment || action.description}</TableCell>
-                        <TableCell className="px-4"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-xl glass border-none shadow-2xl p-2 min-w-[140px]"><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest gap-2" onSelect={openDialogFromMenu(() => { setSelectedAction(action); setIsActionDialogOpen(true); })}>Update Protocol</DropdownMenuItem><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest text-destructive gap-2 focus:bg-destructive/10 focus:text-destructive" onClick={() => deleteActionItem(firestore, action.id)}>Purge Task</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                        <TableCell className="px-4"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-none"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-none glass p-2 min-w-[140px]"><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest gap-2" onSelect={openDialogFromMenu(() => { setSelectedAction(action); setIsActionDialogOpen(true); })}>Update Protocol</DropdownMenuItem><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest text-destructive gap-2 focus:bg-destructive/10 focus:text-destructive" onClick={() => deleteActionItem(firestore, action.id)}>Purge Task</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -887,8 +895,8 @@ export default function WbrEditPage() {
              </div>
           </section>
 
-          <div className="flex items-center justify-between gap-6 pt-10 border-t border-foreground/5"><div className="flex items-center gap-4"><Button type="button" variant="outline" className="h-14 px-8 rounded-[2rem] glass border-none font-bold text-muted-foreground shadow-lg" onClick={() => router.push('/dashboard/wbr')}>Discard Changes</Button><Button type="button" variant="ghost" className="h-14 px-6 rounded-[2rem] font-bold gap-2 opacity-40 hover:opacity-100"><History className="h-4 w-4" /> Changelog</Button></div><Button type="submit" className="h-16 px-16 rounded-[2.5rem] font-black text-sm uppercase tracking-widest shadow-2xl shadow-primary/30 gap-3" disabled={isSaving || (!isWindowOpen && !isAdmin)}>{isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}{isSaving ? 'Preserving Record...' : 'Synchronize Review'}</Button></div>
-          {!isWindowOpen && !isAdmin && (<div className="text-center p-8 bg-foreground/5 rounded-[2rem] border border-dashed border-foreground/10 max-w-2xl mx-auto space-y-2"><Lock className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" /><p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Historical Record Integrity Protected</p><p className="text-xs font-medium opacity-50"> This record is permanently archived.</p></div>)}
+          <div className="flex items-center justify-between gap-6 pt-10 border-t border-foreground/5"><div className="flex items-center gap-4"><Button type="button" variant="outline" className="h-14 px-8 rounded-none glass font-bold text-muted-foreground shadow-lg" onClick={() => router.push('/dashboard/wbr')}>Discard Changes</Button><Button type="button" variant="ghost" className="h-14 px-6 rounded-none font-bold gap-2 text-secondary hover:opacity-100"><History className="h-4 w-4" /> Changelog</Button></div><Button type="submit" className="h-16 px-16 rounded-none font-black text-sm uppercase tracking-widest shadow-primary/30 gap-3" disabled={isSaving || (!isWindowOpen && !isAdmin)}>{isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}{isSaving ? 'Preserving Record...' : 'Synchronize Review'}</Button></div>
+          {!isWindowOpen && !isAdmin && (<div className="text-center p-8 bg-foreground/5 rounded-none border border-dashed border-foreground/10 max-w-2xl mx-auto space-y-2"><Lock className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" /><p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Historical Record Integrity Protected</p><p className="text-xs font-medium opacity-50"> This record is permanently archived.</p></div>)}
         </form>
       </Form>
       <AddActionItemDialog isOpen={isActionDialogOpen} onOpenChange={(open) => { setIsActionDialogOpen(open); if (!open) setSelectedAction(null); }} clientId={actualClientId} clientName={clientInfo?.name} action={selectedAction} />

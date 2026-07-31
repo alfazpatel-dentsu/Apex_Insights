@@ -165,7 +165,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] glass">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-none glass">
         <DialogHeader>
           <DialogTitle className="font-headline text-3xl font-black uppercase tracking-tighter">
             {action ? 'Update Action Item' : 'New Action Item'}
@@ -177,11 +177,11 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8 rounded-[2rem] bg-foreground/[0.03] border border-foreground/5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8 rounded-none bg-foreground/[0.03] border border-foreground/5">
                 <FormField control={form.control} name="taskName" render={({ field }) => (
                   <FormItem className="md:col-span-2">
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Task Name</FormLabel>
-                    <FormControl><Input className="rounded-xl bg-background/50 border-none h-12 shadow-inner px-4 font-bold" placeholder="Define clear deliverable..." {...field} /></FormControl>
+                    <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" placeholder="Define clear deliverable..." {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -189,7 +189,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                 <FormField control={form.control} name="assignedTo" render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Assigned To</FormLabel>
-                    <FormControl><Input className="rounded-xl bg-background/50 border-none h-12 shadow-inner px-4 font-bold" placeholder="Identity of owner..." {...field} /></FormControl>
+                    <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" placeholder="Identity of owner..." {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -198,8 +198,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Section / Domain</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger className="rounded-xl bg-background/50 border-none h-12 shadow-inner px-4 font-black"><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent className="rounded-xl glass border-none">
+                      <FormControl><SelectTrigger className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-black"><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent className="rounded-none glass ">
                         {sections.map(s => <SelectItem key={s} value={s} className="font-bold text-[10px]">{s}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -222,8 +222,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                       }} 
                       value={field.value || "none"}
                     >
-                      <FormControl><SelectTrigger className="rounded-xl bg-background/50 border-none h-12 shadow-inner px-4 font-bold"><SelectValue placeholder="No Client" /></SelectTrigger></FormControl>
-                      <SelectContent className="rounded-xl glass border-none">
+                      <FormControl><SelectTrigger className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold"><SelectValue placeholder="No Client" /></SelectTrigger></FormControl>
+                      <SelectContent className="rounded-none glass ">
                         <SelectItem value="none" className="font-bold text-[10px]">GLOBAL / NO CLIENT</SelectItem>
                         {discoveredClients?.map(c => <SelectItem key={c.uniqueId} value={c.uniqueId} className="font-bold text-[10px]">{c.name}</SelectItem>)}
                       </SelectContent>
@@ -234,7 +234,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                 <FormField control={form.control} name="dueDate" render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Due Date</FormLabel>
-                    <FormControl><Input type="date" className="rounded-xl bg-background/50 border-none h-12 shadow-inner px-4 font-mono font-bold" {...field} /></FormControl>
+                    <FormControl><Input type="date" className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-mono font-bold" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -243,8 +243,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Status</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger className="rounded-xl bg-background/50 border-none h-12 shadow-inner px-4 font-black"><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent className="rounded-xl glass border-none">
+                      <FormControl><SelectTrigger className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-black"><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent className="rounded-none glass ">
                         {statuses.map(s => <SelectItem key={s} value={s} className="font-bold text-[10px]">{s.toUpperCase()}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -255,8 +255,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Criticality</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger className="rounded-xl bg-background/50 border-none h-12 shadow-inner px-4 font-black"><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent className="rounded-xl glass border-none">
+                      <FormControl><SelectTrigger className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-black"><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent className="rounded-none glass ">
                         {priorities.map(p => <SelectItem key={p} value={p} className="font-bold text-[10px]">{p.toUpperCase()}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -268,21 +268,21 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
               <FormField control={form.control} name="description" render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60 px-2">Task Details</FormLabel>
-                  <FormControl><Textarea className="rounded-[2rem] bg-foreground/[0.03] border-none min-h-[100px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" placeholder="Deep dive context..." {...field} /></FormControl>
+                  <FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[100px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" placeholder="Deep dive context..." {...field} /></FormControl>
                 </FormItem>
               )} />
 
               <FormField control={form.control} name="comment" render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60 px-2">Comments / Intelligence</FormLabel>
-                  <FormControl><Textarea className="rounded-[2rem] bg-foreground/[0.03] border-none min-h-[100px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" placeholder="Latest update..." {...field} /></FormControl>
+                  <FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[100px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" placeholder="Latest update..." {...field} /></FormControl>
                 </FormItem>
               )} />
             </div>
 
             <DialogFooter className="pt-6 border-t border-foreground/5">
-                <Button type="button" variant="ghost" className="rounded-xl h-12 px-6 font-bold" onClick={() => handleOpenChange(false)}>Cancel</Button>
-                <Button type="submit" className="rounded-xl h-12 px-10 font-black shadow-xl shadow-primary/20 uppercase tracking-widest text-[10px]" disabled={isSaving}>
+                <Button type="button" variant="ghost" className="rounded-none h-12 px-6 font-bold" onClick={() => handleOpenChange(false)}>Cancel</Button>
+                <Button type="submit" className="rounded-none h-12 px-10 font-black shadow-primary/20 uppercase tracking-widest text-[10px]" disabled={isSaving}>
                   {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   Save Task
                 </Button>

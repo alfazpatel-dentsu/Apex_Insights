@@ -46,12 +46,12 @@ import {
   AlertDialogTitle 
 } from '@/components/ui/alert-dialog';
 
-// Map internal statuses to labels
+// Map internal statuses to clear operator labels
 const statusLabels: Record<ActionStatus, string> = {
-  'Pending': 'OPEN',
-  'In Progress': 'IN PROGRESS',
-  'Completed': 'CLOSED',
-  'Blocked': 'PENDING ON CLIENT',
+  'Pending': 'Pending',
+  'In Progress': 'In Progress',
+  'Completed': 'Completed',
+  'Blocked': 'Blocked',
 };
 
 // Priority color bars
@@ -97,14 +97,14 @@ export default function ActionItemsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input 
               placeholder="Search tasks, owners..." 
-              className="pl-9 w-[220px] rounded-2xl glass border-none h-10 text-xs shadow-lg"
+              className="pl-9 w-[220px] rounded-none glass h-10 text-xs shadow-lg"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-2xl p-1 px-4 backdrop-blur-md shadow-inner border border-white/20 h-10">
-             <Filter className="h-3 w-3 opacity-40" />
+          <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 px-4 backdrop-blur-md shadow-inner border border-white/20 h-10">
+             <Filter className="h-3 w-3 text-secondary" />
              <select 
                className="bg-transparent border-none text-[10px] font-black uppercase outline-none focus:ring-0 cursor-pointer"
                value={statusFilter}
@@ -115,8 +115,8 @@ export default function ActionItemsPage() {
              </select>
           </div>
 
-          <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-2xl p-1 px-4 backdrop-blur-md shadow-inner border border-white/20 h-10">
-             <Tag className="h-3 w-3 opacity-40" />
+          <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 px-4 backdrop-blur-md shadow-inner border border-white/20 h-10">
+             <Tag className="h-3 w-3 text-secondary" />
              <select 
                className="bg-transparent border-none text-[10px] font-black uppercase outline-none focus:ring-0 cursor-pointer"
                value={sectionFilter}
@@ -129,7 +129,7 @@ export default function ActionItemsPage() {
 
           <Button 
             size="sm" 
-            className="h-10 rounded-2xl gap-2 shadow-xl shadow-primary/20 font-bold px-6"
+            className="h-10 rounded-none gap-2 shadow-primary/20 font-bold px-6"
             onClick={() => { setSelectedAction(null); setIsDialogOpen(true); }}
           >
             <PlusCircle className="h-4 w-4" />
@@ -138,7 +138,7 @@ export default function ActionItemsPage() {
         </div>
       </PageHeader>
 
-      <div className="rounded-[2.5rem] glass overflow-hidden shadow-2xl border-none">
+      <div className="rounded-none glass overflow-hidden ">
         <Table>
           <TableHeader className="bg-foreground/[0.02]">
             <TableRow className="border-b border-foreground/5 hover:bg-transparent">
@@ -153,7 +153,7 @@ export default function ActionItemsPage() {
             {loading ? (
               <TableRow><TableCell colSpan={5} className="text-center py-32"><Loader2 className="animate-spin h-10 w-10 mx-auto text-primary/40" /></TableCell></TableRow>
             ) : filteredActions.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-40 text-muted-foreground italic uppercase text-[10px] font-black tracking-widest opacity-40">No action items recorded.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center py-40 text-muted-foreground italic uppercase text-[10px] font-black tracking-widest text-secondary">No action items recorded.</TableCell></TableRow>
             ) : filteredActions.map((action) => {
               return (
                 <TableRow key={action.id} className="border-b border-foreground/5 hover:bg-foreground/[0.01] group transition-colors">
@@ -192,7 +192,7 @@ export default function ActionItemsPage() {
                   <TableCell>
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-foreground/70">
-                        <Clock className="h-3.5 w-3.5 opacity-40" />
+                        <Clock className="h-3.5 w-3.5 text-secondary" />
                         {statusLabels[action.status]}
                       </div>
                       <div className={cn("h-4 w-4 rounded-sm shadow-sm", priorityColors[action.priority])} title={`Priority: ${action.priority}`} />
@@ -210,11 +210,11 @@ export default function ActionItemsPage() {
                   <TableCell className="px-6 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl opacity-20 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none text-secondary/70 group-hover:opacity-100 transition-opacity">
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="rounded-xl glass border-none shadow-2xl p-2 min-w-[160px]">
+                      <DropdownMenuContent align="end" className="rounded-none glass p-2 min-w-[160px]">
                         <DropdownMenuItem className="rounded-lg text-[10px] font-black uppercase tracking-widest gap-2" onSelect={openDialogFromMenu(() => { setSelectedAction(action); setIsDialogOpen(true); })}>
                           <ArrowRight className="h-3 w-3" /> Edit Task
                         </DropdownMenuItem>
@@ -241,7 +241,7 @@ export default function ActionItemsPage() {
       />
 
       <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <AlertDialogContent className="rounded-[2.5rem] glass border-none shadow-2xl">
+        <AlertDialogContent className="rounded-none glass ">
           <AlertDialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
               <AlertTriangle className="h-8 w-8" />
@@ -252,8 +252,8 @@ export default function ActionItemsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-8">
-            <AlertDialogCancel className="rounded-xl h-12 px-6 font-bold uppercase text-[10px] tracking-widest">CANCEL</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-xl h-12 px-8 font-black uppercase text-[10px] tracking-widest" onClick={async () => {
+            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold uppercase text-[10px] tracking-widest">CANCEL</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-none h-12 px-8 font-black uppercase text-[10px] tracking-widest" onClick={async () => {
               if (deletingId) {
                 await deleteActionItem(firestore, deletingId);
                 toast({ title: 'Task deleted' });

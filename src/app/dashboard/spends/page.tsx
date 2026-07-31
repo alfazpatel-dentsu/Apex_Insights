@@ -25,6 +25,7 @@ import {
   Fingerprint,
   Database
 } from 'lucide-react';
+import { canonicalizeChannel } from '@/lib/normalize';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
@@ -189,14 +190,18 @@ function SpendsContent() {
   const filteredMonthly = useMemo(() => {
     if (!monthlySpends) return [];
     const q = searchQuery.toLowerCase();
-    return monthlySpends.filter(s => 
-      s.brandName.toLowerCase().includes(q) ||
-      s.channelVendor.toLowerCase().includes(q) ||
-      s.clientId?.toLowerCase().includes(q) ||
-      s.uploadRecordId?.toLowerCase().includes(q) ||
-      s.industry?.toLowerCase().includes(q) ||
-      s.type?.toLowerCase().includes(q)
-    );
+    return monthlySpends.filter(s => {
+      const channel = canonicalizeChannel(s.channelVendor).toLowerCase();
+      return (
+        s.brandName.toLowerCase().includes(q) ||
+        channel.includes(q) ||
+        s.channelVendor.toLowerCase().includes(q) ||
+        s.clientId?.toLowerCase().includes(q) ||
+        s.uploadRecordId?.toLowerCase().includes(q) ||
+        s.industry?.toLowerCase().includes(q) ||
+        s.type?.toLowerCase().includes(q)
+      );
+    });
   }, [monthlySpends, searchQuery]);
 
   const filteredWeekly = useMemo(() => {
@@ -206,9 +211,11 @@ function SpendsContent() {
       const q = searchQuery.toLowerCase();
       const isInRange = s.month && s.month >= format(dateRange.from!, 'yyyy-MM') && s.month <= format(dateRange.to!, 'yyyy-MM');
       if (!isInRange) return false;
+      const channel = canonicalizeChannel(s.channelVendor).toLowerCase();
 
       return (
         s.brandName.toLowerCase().includes(q) ||
+        channel.includes(q) ||
         s.channelVendor.toLowerCase().includes(q) ||
         s.clientId?.toLowerCase().includes(q) ||
         s.uploadRecordId?.toLowerCase().includes(q) ||
@@ -306,7 +313,7 @@ function SpendsContent() {
         industry: item.industry,
         type: item.type,
         subEntity: item.subEntity,
-        channelVendor: item.channelVendor,
+        channelVendor: canonicalizeChannel(item.channelVendor),
         creditLine: item.creditLine,
         currency: item.currency,
         team: item.team,
@@ -344,19 +351,19 @@ function SpendsContent() {
           <Button 
             variant="default" 
             size="sm" 
-            className="h-10 rounded-2xl gap-2 bg-brand hover:bg-ink font-black shadow-xl transition-all"
+            className="h-10 rounded-none gap-2 bg-brand hover:bg-ink font-black transition-all"
             onClick={() => setShouldFetch(true)}
             disabled={shouldFetch && (monthlyLoading || weeklyLoading)}
           >
             {monthlyLoading || weeklyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-            FETCH RECORDS
+            Fetch records
           </Button>
 
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input 
               placeholder="Search Brand/ID..." 
-              className="pl-9 w-[180px] rounded-2xl glass border-none h-10 text-xs shadow-lg"
+              className="pl-9 w-[180px] rounded-none glass h-10 text-xs shadow-lg"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -366,22 +373,22 @@ function SpendsContent() {
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-10 rounded-2xl gap-2 glass border-none shadow-lg">
+              <Button size="sm" variant="outline" className="h-10 rounded-none gap-2 glass shadow-lg">
                 <Upload className="h-4 w-4 text-primary" />Manage
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-2xl glass border-none p-2 shadow-2xl">
-              <DropdownMenuItem className="rounded-xl flex items-center gap-2" onClick={downloadTemplate}>
+            <DropdownMenuContent align="end" className="rounded-none glass p-2 ">
+              <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={downloadTemplate}>
                 <Download className="h-4 w-4" />Download Template
               </DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl flex items-center gap-2" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+              <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
                 <Upload className="h-4 w-4" />Upload CSV
               </DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl flex items-center gap-2" onClick={handleExportExcel}>
+              <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={handleExportExcel}>
                 <FileSpreadsheet className="h-4 w-4" />Export to Excel
               </DropdownMenuItem>
               <DropdownMenuItem 
-                className="rounded-xl flex items-center gap-2 text-destructive focus:text-destructive focus:bg-destructive/10" 
+                className="rounded-none flex items-center gap-2 text-destructive focus:text-destructive focus:bg-destructive/10" 
                 onClick={() => setIsClearAllAlertOpen(true)}
               >
                 <Trash className="h-4 w-4" />Clear All Data
@@ -391,7 +398,7 @@ function SpendsContent() {
 
           <Button 
             size="sm" 
-            className="h-10 rounded-2xl gap-2 shadow-xl shadow-primary/20 font-bold"
+            className="h-10 rounded-none gap-2 shadow-primary/20 font-bold"
             onClick={() => activeTab === 'monthly' ? setIsMonthlyDialogOpen(true) : setIsWeeklyDialogOpen(true)}
           >
             <PlusCircle className="h-4 w-4" />
@@ -411,34 +418,34 @@ function SpendsContent() {
       )}
 
       {!shouldFetch ? (
-        <div className="flex flex-col items-center justify-center p-32 border border-dashed border-ink/20 rounded-[2.5rem] bg-foreground/[0.02] text-center space-y-6">
-          <div className="h-20 w-20 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+        <div className="flex flex-col items-center justify-center p-12 md:p-16 border border-dashed border-ink/20 rounded-none bg-foreground/[0.02] text-center space-y-6">
+          <div className="h-20 w-20 bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
             <Database className="h-10 w-10" />
           </div>
           <div className="space-y-2">
-            <h3 className="text-xl font-bold uppercase tracking-tighter">Database Connection Offline</h3>
-            <p className="text-[11px] font-mono text-secondary uppercase tracking-widest max-w-sm">Select a timeline and click <strong>FETCH RECORDS</strong> to access the financial deployment registry.</p>
+            <h3 className="text-xl font-bold uppercase tracking-tighter">No spends loaded</h3>
+            <p className="text-sm text-secondary max-w-sm mx-auto">Select a date range, then click <strong>Fetch records</strong> to load spend data.</p>
           </div>
           <Button 
-            className="h-14 px-12 rounded-[2rem] bg-brand text-white font-black uppercase tracking-[0.2em] text-[10px] brutalist-shadow active:translate-x-1 active:translate-y-1 active:shadow-none transition-all"
+            className="h-12 px-10 rounded-none bg-brand text-white font-bold uppercase tracking-[0.15em] text-xs brutalist-shadow active:translate-x-1 active:translate-y-1 active:shadow-none transition-all"
             onClick={() => setShouldFetch(true)}
           >
-            Consult Archive
+            Fetch records
           </Button>
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="rounded-2xl glass border-none p-1 mb-6">
+          <TabsList className="rounded-none glass p-1 mb-6">
             <TabsTrigger 
               value="monthly" 
-              className="rounded-xl px-6 font-bold flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
+              className="rounded-none px-6 font-bold flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
             >
               <CalendarIcon className="h-4 w-4" /> Monthly SPENDS
               {monthlySpends && <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-[10px] bg-foreground/10 text-inherit border-none">{filteredMonthly.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger 
               value="weekly" 
-              className="rounded-xl px-6 font-bold flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
+              className="rounded-none px-6 font-bold flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
             >
               <Layers className="h-4 w-4" /> Weekly SPENDS
               {weeklySpends && <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-[10px] bg-foreground/10 text-inherit border-none">{filteredWeekly.length}</Badge>}
@@ -446,7 +453,7 @@ function SpendsContent() {
           </TabsList>
 
           <TabsContent value="monthly" className="animate-in fade-in slide-in-from-bottom-2 focus-visible:outline-none">
-            <div className="rounded-[2.5rem] glass overflow-hidden shadow-2xl border-none">
+            <div className="rounded-none glass overflow-hidden ">
               <Table>
                 <TableHeader className="bg-foreground/[0.02]">
                   <TableRow className="border-b border-foreground/5 hover:bg-transparent">
@@ -478,15 +485,15 @@ function SpendsContent() {
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 text-[10px] font-bold text-foreground/70">
-                            <Factory className="h-3 w-3 opacity-40" /> {spend.industry}
+                            <Factory className="h-3 w-3 text-secondary" /> {spend.industry}
                           </div>
-                          <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-tighter opacity-40">
+                          <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-tighter text-secondary">
                             <Tag className="h-3 w-3" /> {spend.type}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-[11px] font-black">{spend.channelVendor}</div>
+                        <div className="text-[11px] font-black">{canonicalizeChannel(spend.channelVendor)}</div>
                         <div className="text-[9px] font-mono font-bold opacity-60">{spend.month}</div>
                       </TableCell>
                       <TableCell>
@@ -496,9 +503,9 @@ function SpendsContent() {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><MoreHorizontal className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none"><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="rounded-xl glass border-none">
+                          <DropdownMenuContent align="end" className="rounded-none glass ">
                             <DropdownMenuItem className="rounded-lg text-xs font-bold" onSelect={openDialogFromMenu(() => { setEditingMonthly(spend); setIsMonthlyDialogOpen(true); })}>Edit Record</DropdownMenuItem>
                             <DropdownMenuItem className="rounded-lg text-xs font-bold text-destructive" onSelect={openDialogFromMenu(() => setDeletingId(spend.id))}>Delete</DropdownMenuItem>
                           </DropdownMenuContent>
@@ -512,7 +519,7 @@ function SpendsContent() {
           </TabsContent>
 
           <TabsContent value="weekly" className="animate-in fade-in slide-in-from-bottom-2 focus-visible:outline-none">
-            <div className="rounded-[2.5rem] glass overflow-hidden shadow-2xl border-none">
+            <div className="rounded-none glass overflow-hidden ">
               <Table>
                 <TableHeader className="bg-foreground/[0.02]">
                   <TableRow className="border-b border-foreground/5 hover:bg-transparent">
@@ -544,15 +551,15 @@ function SpendsContent() {
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 text-[10px] font-bold text-foreground/70">
-                            <Factory className="h-3 w-3 opacity-40" /> {spend.industry}
+                            <Factory className="h-3 w-3 text-secondary" /> {spend.industry}
                           </div>
-                          <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-tighter opacity-40">
+                          <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-tighter text-secondary">
                             <Tag className="h-3 w-3" /> {spend.type}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-[11px] font-black">{spend.channelVendor}</div>
+                        <div className="text-[11px] font-black">{canonicalizeChannel(spend.channelVendor)}</div>
                         <Badge variant="outline" className="text-[9px] h-4 rounded-sm px-1 font-bold">{spend.week}</Badge>
                       </TableCell>
                       <TableCell>
@@ -562,9 +569,9 @@ function SpendsContent() {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><MoreHorizontal className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none"><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="rounded-xl glass border-none">
+                          <DropdownMenuContent align="end" className="rounded-none glass ">
                             <DropdownMenuItem className="rounded-lg text-xs font-bold" onSelect={openDialogFromMenu(() => { setEditingWeekly(spend); setIsWeeklyDialogOpen(true); })}>Edit Record</DropdownMenuItem>
                             <DropdownMenuItem className="rounded-lg text-xs font-bold text-destructive" onSelect={openDialogFromMenu(() => setDeletingId(spend.id))}>Delete</DropdownMenuItem>
                           </DropdownMenuContent>
@@ -596,14 +603,14 @@ function SpendsContent() {
       />
 
       <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <AlertDialogContent className="rounded-[2.5rem] glass border-none shadow-2xl">
+        <AlertDialogContent className="rounded-none glass ">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-headline text-2xl">Delete Record?</AlertDialogTitle>
             <AlertDialogDescription className="text-foreground/70 font-medium">This action is permanent and cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-6">
-            <AlertDialogCancel className="rounded-xl h-12 px-6 font-bold">Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-xl h-12 px-8 font-black" onClick={async () => {
+            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold">Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-none h-12 px-8 font-black" onClick={async () => {
               if (deletingId) {
                 if (activeTab === 'monthly') await deleteMonthlySpend(firestore, deletingId);
                 else await deleteWeeklySpend(firestore, deletingId);
@@ -616,7 +623,7 @@ function SpendsContent() {
       </AlertDialog>
 
       <AlertDialog open={isClearAllAlertOpen} onOpenChange={setIsClearAllAlertOpen}>
-        <AlertDialogContent className="rounded-[2.5rem] glass border-none shadow-2xl">
+        <AlertDialogContent className="rounded-none glass ">
           <AlertDialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
               <AlertTriangle className="h-8 w-8" />
@@ -627,9 +634,9 @@ function SpendsContent() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="pt-8">
-            <AlertDialogCancel className="rounded-xl h-12 px-6 font-bold" disabled={isClearing}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold" disabled={isClearing}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              className="rounded-xl bg-destructive hover:bg-destructive/90 h-12 px-10 font-black" 
+              className="rounded-none bg-destructive hover:bg-destructive/90 h-12 px-10 font-black" 
               onClick={handleClearAll}
               disabled={isClearing}
             >
@@ -698,7 +705,7 @@ function SpendFormDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] glass">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto rounded-none glass">
         <DialogHeader>
           <DialogTitle className="font-headline text-2xl">{editingData ? 'Edit' : 'Add New'} {type === 'monthly' ? 'Monthly' : 'Weekly'} SPENDS</DialogTitle>
           <DialogDescription className="text-foreground/70">Fill in the spending details accurately. Provide a Record ID to update an existing entry.</DialogDescription>
@@ -710,7 +717,7 @@ function SpendFormDialog({
                 <FormField key={f.name} control={form.control} name={f.name as any} render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">{f.label}</FormLabel>
-                    <FormControl><Input className="rounded-xl bg-foreground/5 border-none h-10 shadow-inner" {...field} disabled={f.disabled} /></FormControl>
+                    <FormControl><Input className="rounded-none bg-foreground/5 border-none h-10 shadow-inner" {...field} disabled={f.disabled} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -720,14 +727,14 @@ function SpendFormDialog({
                   <FormField control={form.control} name="month" render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Month (YYYY-MM)</FormLabel>
-                      <FormControl><Input className="rounded-xl bg-foreground/5 border-none h-10 shadow-inner" placeholder="2024-03" {...field} /></FormControl>
+                      <FormControl><Input className="rounded-none bg-foreground/5 border-none h-10 shadow-inner" placeholder="2024-03" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="actualSpendsInr" render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Actual SPENDS (INR)</FormLabel>
-                      <FormControl><Input type="number" className="rounded-xl bg-foreground/5 border-none h-10 font-mono shadow-inner" {...field} /></FormControl>
+                      <FormControl><Input type="number" className="rounded-none bg-foreground/5 border-none h-10 font-mono shadow-inner" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -737,14 +744,14 @@ function SpendFormDialog({
                   <FormField control={form.control} name="week" render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Week</FormLabel>
-                      <FormControl><Input className="rounded-xl bg-foreground/5 border-none h-10 shadow-inner" placeholder="e.g. 07-01-2024" {...field} /></FormControl>
+                      <FormControl><Input className="rounded-none bg-foreground/5 border-none h-10 shadow-inner" placeholder="e.g. 07-01-2024" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="spendsInr" render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">SPENDS (INR)</FormLabel>
-                      <FormControl><Input type="number" className="rounded-xl bg-foreground/5 border-none h-10 font-mono shadow-inner" {...field} /></FormControl>
+                      <FormControl><Input type="number" className="rounded-none bg-foreground/5 border-none h-10 font-mono shadow-inner" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -752,8 +759,8 @@ function SpendFormDialog({
               )}
             </div>
             <DialogFooter className="pt-8">
-              <Button type="button" variant="ghost" className="rounded-xl h-12 px-6 font-bold" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button type="submit" className="rounded-xl h-12 px-10 font-black shadow-lg shadow-primary/20">Save Record</Button>
+              <Button type="button" variant="ghost" className="rounded-none h-12 px-6 font-bold" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button type="submit" className="rounded-none h-12 px-10 font-black shadow-lg shadow-primary/20">Save Record</Button>
             </DialogFooter>
           </form>
         </Form>
