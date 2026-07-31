@@ -689,7 +689,7 @@ export default function BusinessSnapshotPage() {
 
           <div className="space-y-6">
             <div className="flex items-center gap-3 px-1"><Globe className="h-5 w-5 text-brand" /><h2 className="text-sm font-black uppercase tracking-[0.2em] text-secondary">Spends Insights</h2></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-ink border border-ink ">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-ink border border-ink min-w-0">
                 <SnapshotWidget
                   title={`ANNUAL SPENDS YTD (${stats.month.split('-')[0]} · JAN–${stats.ytdThroughLabel.toUpperCase()})`}
                   value={formatCurrency(stats.yearlyTotal)}
@@ -783,18 +783,25 @@ function SnapshotWidget({
   const amountPrefix = varianceAmount != null && varianceAmount > 0 ? '+' : '';
 
   return (
-    <div className="bg-white p-10 flex flex-col h-full relative overflow-hidden">
-      <div className="space-y-4 mb-8">
-        <p className="text-[11px] font-black uppercase tracking-widest text-brand">{title}</p>
-        <div className="space-y-2">
-            <div className="text-6xl font-black font-headline tracking-tighter text-ink">{value}</div>
+    <div className="bg-white p-5 md:p-6 xl:p-8 flex flex-col h-full min-w-0 overflow-hidden">
+      <div className="space-y-3 mb-6 min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-widest text-brand leading-snug break-words">
+          {title}
+        </p>
+        <div className="space-y-2 min-w-0">
+            <div
+              className="text-3xl md:text-4xl xl:text-[2.75rem] font-black font-headline tracking-tighter text-ink leading-[1.05] py-0.5 break-all"
+              title={value}
+            >
+              {value}
+            </div>
             <div className={cn(
-              "flex flex-wrap items-center gap-1.5 font-mono text-[11px] font-black uppercase",
+              "flex flex-wrap items-center gap-1.5 font-mono text-[10px] font-black uppercase relative z-10",
               isDown ? "text-destructive" : "text-success"
             )}>
-              {isUp ? <ArrowUpRight className="h-3 w-3" /> : isDown ? <ArrowDownRight className="h-3 w-3" /> : null}
+              {isUp ? <ArrowUpRight className="h-3 w-3 shrink-0" /> : isDown ? <ArrowDownRight className="h-3 w-3 shrink-0" /> : null}
               {varianceAmount != null && (
-                <span>{amountPrefix}{formatCurrency(varianceAmount)}</span>
+                <span className="break-all">{amountPrefix}{formatCurrency(varianceAmount)}</span>
               )}
               {varianceAmount != null && <span className="opacity-40">·</span>}
               <span>{Math.abs(variance).toFixed(1)}%</span>
@@ -802,10 +809,42 @@ function SnapshotWidget({
             </div>
         </div>
       </div>
-      <Separator className="bg-ink/5 mb-8" />
-      <div className="flex-1 grid grid-cols-2 gap-10">
-            <div className="space-y-4"><span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-success"><ArrowUp className="h-3 w-3" /> TOP 3 GAINERS</span><div className="space-y-5">{gainers && gainers.length > 0 ? gainers.map((g, i) => (<div key={i} className="space-y-1"><p className="text-[14px] font-black text-ink leading-none truncate uppercase tracking-tight">{g.brand}</p><p className="text-[9px] font-bold text-secondary uppercase text-secondary">{g.type}</p><p className="text-[11px] font-black leading-none flex items-center justify-between text-success"><span>+{formatCurrency(g.amount || 0)}</span><span className="opacity-60 text-[9px]">({g.variance.toFixed(1)}%)</span></p></div>)) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant gains</p>}</div></div>
-            <div className="space-y-4"><span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-destructive"><ArrowDown className="h-3 w-3" /> TOP 3 LOSERS</span><div className="space-y-5">{losers && losers.length > 0 ? losers.map((l, i) => (<div key={i} className="space-y-1"><p className="text-[14px] font-black text-ink leading-none truncate uppercase tracking-tight">{l.brand}</p><p className="text-[9px] font-bold text-secondary uppercase text-secondary">{l.type}</p><p className="text-[11px] font-black leading-none flex items-center justify-between text-destructive"><span>{formatCurrency(l.amount || 0)}</span><span className="opacity-60 text-[9px]">({l.variance.toFixed(1)}%)</span></p></div>)) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant losses</p>}</div></div>
+      <Separator className="bg-ink/5 mb-6" />
+      <div className="flex-1 grid grid-cols-2 gap-4 min-w-0">
+            <div className="space-y-3 min-w-0">
+              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-success">
+                <ArrowUp className="h-3 w-3 shrink-0" /> TOP 3 GAINERS
+              </span>
+              <div className="space-y-4">
+                {gainers && gainers.length > 0 ? gainers.map((g, i) => (
+                  <div key={i} className="space-y-1 min-w-0">
+                    <p className="text-[12px] font-black text-ink leading-tight truncate uppercase tracking-tight" title={g.brand}>{g.brand}</p>
+                    <p className="text-[8px] font-bold text-secondary uppercase truncate">{g.type}</p>
+                    <p className="text-[10px] font-black leading-none flex items-center justify-between gap-1 text-success min-w-0">
+                      <span className="truncate">+{formatCurrency(g.amount || 0)}</span>
+                      <span className="opacity-60 text-[8px] shrink-0">({g.variance.toFixed(1)}%)</span>
+                    </p>
+                  </div>
+                )) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant gains</p>}
+              </div>
+            </div>
+            <div className="space-y-3 min-w-0">
+              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-destructive">
+                <ArrowDown className="h-3 w-3 shrink-0" /> TOP 3 LOSERS
+              </span>
+              <div className="space-y-4">
+                {losers && losers.length > 0 ? losers.map((l, i) => (
+                  <div key={i} className="space-y-1 min-w-0">
+                    <p className="text-[12px] font-black text-ink leading-tight truncate uppercase tracking-tight" title={l.brand}>{l.brand}</p>
+                    <p className="text-[8px] font-bold text-secondary uppercase truncate">{l.type}</p>
+                    <p className="text-[10px] font-black leading-none flex items-center justify-between gap-1 text-destructive min-w-0">
+                      <span className="truncate">{formatCurrency(l.amount || 0)}</span>
+                      <span className="opacity-60 text-[8px] shrink-0">({l.variance.toFixed(1)}%)</span>
+                    </p>
+                  </div>
+                )) : <p className="text-[10px] font-bold text-secondary/20 italic">No significant losses</p>}
+              </div>
+            </div>
       </div>
     </div>
   );
