@@ -26,7 +26,7 @@ import {
   Check,
   X
 } from 'lucide-react';
-import { format, parse, subMonths, subWeeks } from 'date-fns';
+import { format, parse, subMonths, subWeeks, isValid } from 'date-fns';
 import { where } from 'firebase/firestore';
 
 import { useCollection } from '@/firebase';
