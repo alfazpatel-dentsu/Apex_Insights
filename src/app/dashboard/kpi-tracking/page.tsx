@@ -230,6 +230,7 @@ function KpiTrackingContent() {
 
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedLobs, setSelectedLobs] = useState<string[]>([]);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
 
   const [isClearAllAlertOpen, setIsClearAllAlertOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -368,11 +369,66 @@ function KpiTrackingContent() {
 
   const filteredData = useMemo(() => {
     let filtered = [...groupedDisplayData];
-    if (searchQueryFromUrl) { const q = searchQueryFromUrl.toLowerCase(); filtered = filtered.filter(item => item.clientName.toLowerCase().includes(q) || item.kpi.toLowerCase().includes(q)); }
+    if (searchQueryFromUrl) {
+      const q = searchQueryFromUrl.toLowerCase();
+      filtered = filtered.filter(item =>
+        item.clientName.toLowerCase().includes(q) ||
+        item.kpi.toLowerCase().includes(q) ||
+        item.channel?.toLowerCase().includes(q)
+      );
+    }
     if (selectedClients.length > 0) filtered = filtered.filter(item => selectedClients.includes(item.clientName));
     if (selectedLobs.length > 0) filtered = filtered.filter(item => selectedLobs.includes(item.lob));
+    if (selectedChannels.length > 0) filtered = filtered.filter(item => selectedChannels.includes(item.channel));
     return filtered;
-  }, [groupedDisplayData, searchQueryFromUrl, selectedClients, selectedLobs]);
+  }, [groupedDisplayData, searchQueryFromUrl, selectedClients, selectedLobs, selectedChannels]);
+
+  // Interdependent filter option lists: each dimension is constrained by the others.
+  const filterOptions = useMemo(() => {
+    const forClients = groupedDisplayData.filter(item => {
+      const lobMatch = selectedLobs.length === 0 || selectedLobs.includes(item.lob);
+      const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channel);
+      return lobMatch && channelMatch;
+    });
+    const forLobs = groupedDisplayData.filter(item => {
+      const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.clientName);
+      const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channel);
+      return clientMatch && channelMatch;
+    });
+    const forChannels = groupedDisplayData.filter(item => {
+      const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.clientName);
+      const lobMatch = selectedLobs.length === 0 || selectedLobs.includes(item.lob);
+      return clientMatch && lobMatch;
+    });
+    return {
+      clients: Array.from(new Set(forClients.map(d => d.clientName).filter(Boolean))).sort(),
+      lobs: Array.from(new Set(forLobs.map(d => d.lob).filter(Boolean))).sort(),
+      channels: Array.from(new Set(forChannels.map(d => d.channel).filter(Boolean))).sort(),
+    };
+  }, [groupedDisplayData, selectedClients, selectedLobs, selectedChannels]);
+
+  // Drop selections that are no longer valid given interdependent options.
+  useEffect(() => {
+    setSelectedClients(prev => {
+      const next = prev.filter(c => filterOptions.clients.includes(c));
+      return next.length === prev.length ? prev : next;
+    });
+    setSelectedLobs(prev => {
+      const next = prev.filter(l => filterOptions.lobs.includes(l));
+      return next.length === prev.length ? prev : next;
+    });
+    setSelectedChannels(prev => {
+      const next = prev.filter(c => filterOptions.channels.includes(c));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [filterOptions]);
+
+  const clearAllFilters = () => {
+    setSelectedClients([]);
+    setSelectedLobs([]);
+    setSelectedChannels([]);
+  };
+  const isAnyFilterActive = selectedClients.length > 0 || selectedLobs.length > 0 || selectedChannels.length > 0;
 
   const sortedDisplayData = useMemo(() => {
     const items = [...filteredData];
@@ -567,9 +623,65 @@ function KpiTrackingContent() {
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Popover><PopoverTrigger asChild><Button variant="outline" size="sm" className={cn("h-9 rounded-none glass  gap-2 px-4 shadow-sm", selectedClients.length > 0 && "bg-primary/10")}><Filter className="h-3.5 w-3.5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">Clients</span></Button></PopoverTrigger><PopoverContent className="w-[280px] p-2 rounded-none glass" align="start"><SearchableFilterContent placeholder="Search clients..." options={Array.from(new Set(groupedDisplayData.map(d => d.clientName))).sort()} selected={selectedClients} onToggle={(c) => setSelectedClients(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])} /></PopoverContent></Popover>
-            <Popover><PopoverTrigger asChild><Button variant="outline" size="sm" className={cn("h-9 rounded-none glass  gap-2 px-4 shadow-sm", selectedLobs.length > 0 && "bg-primary/10")}><Filter className="h-3.5 w-3.5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">LOB</span></Button></PopoverTrigger><PopoverContent className="w-[280px] p-2 rounded-none glass" align="start"><SearchableFilterContent placeholder="Search LOB..." options={Array.from(new Set(groupedDisplayData.map(d => d.lob))).sort()} selected={selectedLobs} onToggle={(l) => setSelectedLobs(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l])} /></PopoverContent></Popover>
-            { (selectedClients.length > 0 || selectedLobs.length > 0) && <Button variant="ghost" size="sm" onClick={() => {setSelectedClients([]); setSelectedLobs([]);}} className="text-[10px] font-black uppercase tracking-widest text-destructive">Clear All</Button> }
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className={cn("h-9 rounded-none glass gap-2 px-4 shadow-sm", selectedClients.length > 0 && "bg-primary/10")}>
+                  <Filter className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">
+                    Clients{selectedClients.length > 0 && ` (${selectedClients.length})`}
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px] p-2 rounded-none glass" align="start">
+                <SearchableFilterContent
+                  placeholder="Search clients..."
+                  options={filterOptions.clients}
+                  selected={selectedClients}
+                  onToggle={(c) => setSelectedClients(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
+                />
+              </PopoverContent>
+            </Popover>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className={cn("h-9 rounded-none glass gap-2 px-4 shadow-sm", selectedLobs.length > 0 && "bg-primary/10")}>
+                  <Filter className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">
+                    LOB{selectedLobs.length > 0 && ` (${selectedLobs.length})`}
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px] p-2 rounded-none glass" align="start">
+                <SearchableFilterContent
+                  placeholder="Search LOB..."
+                  options={filterOptions.lobs}
+                  selected={selectedLobs}
+                  onToggle={(l) => setSelectedLobs(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l])}
+                />
+              </PopoverContent>
+            </Popover>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className={cn("h-9 rounded-none glass gap-2 px-4 shadow-sm", selectedChannels.length > 0 && "bg-primary/10")}>
+                  <Filter className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">
+                    Channel{selectedChannels.length > 0 && ` (${selectedChannels.length})`}
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px] p-2 rounded-none glass" align="start">
+                <SearchableFilterContent
+                  placeholder="Search channels..."
+                  options={filterOptions.channels}
+                  selected={selectedChannels}
+                  onToggle={(c) => setSelectedChannels(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
+                />
+              </PopoverContent>
+            </Popover>
+            {isAnyFilterActive && (
+              <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-[10px] font-black uppercase tracking-widest text-destructive">
+                Clear All
+              </Button>
+            )}
           </div>
 
           <div className="rounded-none glass overflow-x-auto ">
