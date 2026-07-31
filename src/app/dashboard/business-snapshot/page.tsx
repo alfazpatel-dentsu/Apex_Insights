@@ -21,11 +21,9 @@ import {
   Warning, 
   Clock 
 } from "@phosphor-icons/react";
-import { format, parse, subMonths, subWeeks, startOfWeek, addDays, isValid, isBefore, isAfter, startOfDay, endOfDay, eachWeekOfInterval } from 'date-fns';
-import { DateRange } from 'react-day-picker';
+import { format, parse, subMonths, subWeeks, startOfWeek, addDays, isValid, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { DateRangePicker } from '@/components/date-range-picker';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
 import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, Client, Lead } from '@/lib/types';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
@@ -121,10 +119,6 @@ export default function BusinessSnapshotPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [statsWindow, setStatsWindow] = useState<any[]>([]);
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
-    from: subMonths(new Date(), 6),
-    to: new Date(),
-  }));
   const snapshotRef = useRef<HTMLDivElement>(null);
 
   // INTELLIGENCE STATE
@@ -137,17 +131,9 @@ export default function BusinessSnapshotPage() {
 
   useEffect(() => {
     setMounted(true);
+    const start = format(subMonths(new Date(), 6), 'yyyy-MM');
+    setStatsWindow([where('month', '>=', start)]);
   }, []);
-
-  useEffect(() => {
-    if (!dateRange?.from) return;
-    const start = format(dateRange.from, 'yyyy-MM');
-    const end = format(dateRange.to || dateRange.from, 'yyyy-MM');
-    setStatsWindow([
-      where('month', '>=', start),
-      where('month', '<=', end),
-    ]);
-  }, [dateRange]);
 
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', statsWindow);
   const { data: weeklySpends, loading: wLoading } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
@@ -227,20 +213,11 @@ export default function BusinessSnapshotPage() {
           }
         }));
 
-        // 3. MOMENTUM & CHANNEL SPENDS (scoped to selected date range)
+        // 3. MOMENTUM & CHANNEL SPENDS
         const spendByWeekStart: Record<string, number> = {};
         const channelTotals: Record<string, number> = {};
-        const rangeFrom = startOfDay(dateRange?.from || subMonths(new Date(), 6));
-        const rangeTo = endOfDay(dateRange?.to || new Date());
         
-        const weeksArr = Array.from(new Set(weeklySpends?.map(s => s.week))).filter(week => {
-          try {
-            const d = parse(week, 'dd-MM-yyyy', new Date());
-            return isValid(d) && !isBefore(d, rangeFrom) && !isAfter(d, rangeTo);
-          } catch {
-            return false;
-          }
-        }).sort((a,b) => {
+        const weeksArr = Array.from(new Set(weeklySpends?.map(s => s.week))).sort((a,b) => {
           try { return parse(a, 'dd-MM-yyyy', new Date()).getTime() - parse(b, 'dd-MM-yyyy', new Date()).getTime(); } catch(e) { return 0; }
         });
         const lastWeekLabel = weeksArr[weeksArr.length - 1] || '';
@@ -248,7 +225,7 @@ export default function BusinessSnapshotPage() {
         weeklySpends?.forEach(s => {
           try {
             const d = parse(s.week, 'dd-MM-yyyy', new Date());
-            if (isValid(d) && !isBefore(d, rangeFrom) && !isAfter(d, rangeTo)) {
+            if (isValid(d)) {
               const weekStartKey = format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd');
               spendByWeekStart[weekStartKey] = (spendByWeekStart[weekStartKey] || 0) + (s.spendsInr || 0);
               
@@ -259,23 +236,15 @@ export default function BusinessSnapshotPage() {
           } catch(e) {}
         });
 
-        let weekStarts = eachWeekOfInterval(
-          {
-            start: startOfWeek(rangeFrom, { weekStartsOn: 1 }),
-            end: startOfWeek(rangeTo, { weekStartsOn: 1 }),
-          },
-          { weekStartsOn: 1 }
-        );
-        // Keep the chart readable on long ranges
-        if (weekStarts.length > 16) weekStarts = weekStarts.slice(-16);
-
-        const momentum = weekStarts.map((weekStart) => {
+        const momentum: any[] = [];
+        for (let i = 11; i >= 0; i--) {
+          const weekStart = startOfWeek(subWeeks(new Date(), i), { weekStartsOn: 1 });
           const weekStartKey = format(weekStart, 'yyyy-MM-dd');
-          return {
+          momentum.push({
             week: format(weekStart, 'dd MMM'),
             spend: spendByWeekStart[weekStartKey] || 0,
-          };
-        });
+          });
+        }
         setMomentumData(momentum);
         
         setChannelSpends(Object.entries(channelTotals).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value));
@@ -363,7 +332,7 @@ export default function BusinessSnapshotPage() {
     };
 
     fetchIntelligence();
-  }, [mounted, firestore, weeklySpends, dateRange]);
+  }, [mounted, firestore, weeklySpends]);
 
   const stats = useMemo(() => {
     if (!monthlySpends || !weeklySpends || !mounted) return null;
@@ -403,17 +372,7 @@ export default function BusinessSnapshotPage() {
     const prevMonthData = getDetails(monthlySpends.filter(d => d.month === format(subMonths(parse(targetMonth, 'yyyy-MM', new Date()), 1), 'yyyy-MM')));
     const mShifts = calcShifts(currMonthData, prevMonthData);
 
-    const weeks = Array.from(new Set(weeklySpends.map(s => s.week))).filter(week => {
-      if (!dateRange?.from) return true;
-      try {
-        const d = parse(week, 'dd-MM-yyyy', new Date());
-        const from = startOfDay(dateRange.from);
-        const to = endOfDay(dateRange.to || dateRange.from);
-        return isValid(d) && !isBefore(d, from) && !isAfter(d, to);
-      } catch {
-        return false;
-      }
-    }).sort((a, b) => {
+    const weeks = Array.from(new Set(weeklySpends.map(s => s.week))).sort((a, b) => {
       try { return parse(b, 'dd-MM-yyyy', new Date()).getTime() - parse(a, 'dd-MM-yyyy', new Date()).getTime(); } catch(e) { return 0; }
     });
     const lastW = weeks[0] || '';
@@ -424,7 +383,7 @@ export default function BusinessSnapshotPage() {
     const wShifts = calcShifts(currWData, prevWData);
 
     return { month: targetMonth, monthName: format(parse(targetMonth, 'yyyy-MM', new Date()), 'MMMM').toUpperCase(), monthlyTotal: Object.values(currMonthData.spendMap).reduce((a, b) => a + b, 0), prevMonthTotal: Object.values(prevMonthData.spendMap).reduce((a, b) => a + b, 0), mGainers: mShifts.gainers, mLosers: mShifts.losers, weeklyTotal: Object.values(currWData.spendMap).reduce((a, b) => a + b, 0), prevWeeklyTotal: Object.values(prevWData.spendMap).reduce((a, b) => a + b, 0), wGainers: wShifts.gainers, wLosers: wShifts.losers, weeklyDate: lastW, yearlyTotal: monthlySpends.filter(d => d.month.startsWith(targetMonth.split('-')[0])).reduce((a, b) => a + (b.actualSpendsInr || 0), 0) };
-  }, [monthlySpends, weeklySpends, mounted, dateRange]);
+  }, [monthlySpends, weeklySpends, mounted]);
 
   const { data: snapshotDoc, loading: sLoading } = useDoc<BusinessSnapshot>(stats ? `businessSnapshots/${stats.month}` : null);
 
@@ -464,21 +423,9 @@ export default function BusinessSnapshotPage() {
         <div className="space-y-2">
           <div className="terminal-overline">Command Center</div>
           <h1 className="text-5xl lg:text-7xl font-black tracking-tighter uppercase">Snapshot</h1>
-          <p className="text-[11px] font-mono text-secondary uppercase tracking-[0.2em]">
-            Strategic Performance Review
-            {dateRange?.from
-              ? ` · ${format(dateRange.from, 'dd MMM yyyy')}${dateRange.to ? ` – ${format(dateRange.to, 'dd MMM yyyy')}` : ''}`
-              : stats?.month
-                ? ` · ${stats.month}`
-                : ' · Initializing...'}
-          </p>
+          <p className="text-[11px] font-mono text-secondary uppercase tracking-[0.2em]">Strategic Performance Review · {stats?.month || 'Initializing...'}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <DateRangePicker
-            date={dateRange}
-            setDate={setDateRange}
-            className="shrink-0"
-          />
+        <div className="flex items-center gap-3">
           {isAdmin && (
             <Button variant="outline" className="h-12 px-6 border-ink hover:bg-cream transition-colors font-bold uppercase text-[10px] tracking-widest" onClick={handleRefresh} disabled={isRefreshing}>
               <ArrowsClockwise className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
@@ -505,9 +452,7 @@ export default function BusinessSnapshotPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-[9px] font-black uppercase tracking-[0.3em] text-secondary">WEEKLY SPENDS PULSE</span>
-                  <h2 className="text-3xl font-black tracking-tighter uppercase mt-1">
-                    {momentumData.length > 0 ? `${momentumData.length}-Week Momentum` : 'Spend Momentum'}
-                  </h2>
+                  <h2 className="text-3xl font-black tracking-tighter uppercase mt-1">12-Week Momentum</h2>
                 </div>
                 <div className="flex items-center gap-6"><div className="h-2 w-2 rounded-full bg-destructive" /><span className="text-[9px] font-black uppercase tracking-widest text-secondary">SPEND</span></div>
               </div>
