@@ -930,6 +930,12 @@ export default function BusinessSnapshotPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
+                {clientHealthLoading && (
+                  <div className="flex items-center gap-2 text-[9px] font-black text-secondary uppercase tracking-widest">
+                    <CircleNotch className="h-3.5 w-3.5 animate-spin text-brand" />
+                    Syncing…
+                  </div>
+                )}
                 {healthCycleDate && (
                   <div className="flex items-center gap-2 text-[9px] font-black text-secondary uppercase tracking-widest bg-white px-3 py-1.5 border border-ink/10">
                     <Calendar className="h-3.5 w-3.5" />
