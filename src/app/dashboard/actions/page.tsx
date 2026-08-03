@@ -47,6 +47,7 @@ import { canonicalizeActionStatus, resolveActionStatus } from '@/lib/normalize';
 import { useToast } from '@/hooks/use-toast';
 import { PageHeader } from '@/components/page-header';
 import { AddActionItemDialog } from './add-action-item-dialog';
+import { ActionPulseView } from './action-pulse';
 import { cn, openDialogFromMenu } from '@/lib/utils';
 import {
   AlertDialog,
@@ -135,6 +136,7 @@ export default function ActionItemsPage() {
 
   const [search, setSearch] = useState('');
   const [sectionFilter, setSectionFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'pulse' | 'kanban'>('pulse');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -323,9 +325,36 @@ export default function ActionItemsPage() {
     <div className="flex flex-1 flex-col gap-6 animate-in fade-in duration-700 min-w-0">
       <PageHeader
         title="ACTION ITEMS"
-        description="Kanban board for WoW deliverables — drag cards across status columns. Past-due tasks move to Overdue automatically (except Observation)."
+        description={
+          viewMode === 'pulse'
+            ? 'Action Pulse — runway, owner load, and focus queue for WoW deliverables.'
+            : 'Kanban — drag cards across status columns. Past-due tasks move to Overdue automatically (except Observation).'
+        }
       >
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex h-10 border border-ink/15 bg-white p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode('pulse')}
+              className={cn(
+                'px-4 text-[10px] font-black uppercase tracking-widest transition-colors',
+                viewMode === 'pulse' ? 'bg-brand text-white' : 'text-secondary hover:text-foreground'
+              )}
+            >
+              Pulse
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('kanban')}
+              className={cn(
+                'px-4 text-[10px] font-black uppercase tracking-widest transition-colors',
+                viewMode === 'kanban' ? 'bg-brand text-white' : 'text-secondary hover:text-foreground'
+              )}
+            >
+              Kanban
+            </button>
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
@@ -370,6 +399,14 @@ export default function ActionItemsPage() {
         <div className="flex flex-1 items-center justify-center py-32">
           <Loader2 className="animate-spin h-10 w-10 text-primary/40" />
         </div>
+      ) : viewMode === 'pulse' ? (
+        <ActionPulseView
+          items={filteredActions}
+          onOpen={(action) => {
+            setSelectedAction(action);
+            setIsDialogOpen(true);
+          }}
+        />
       ) : (
         <DndContext
           sensors={sensors}
