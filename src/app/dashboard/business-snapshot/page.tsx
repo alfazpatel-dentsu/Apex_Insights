@@ -42,12 +42,36 @@ import {
   CartesianGrid, 
   Tooltip as RechartsTooltip, 
   ResponsiveContainer,
-  BarChart,
+  BarChart, 
   Bar,
   Cell,
   LabelList
 } from 'recharts';
 import { ScrollArea } from '@/components/ui/scroll-area';
+
+function normalizeClientName(name?: string | null): string {
+  return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Map noisy KPI clientId/clientName pairs onto one canonical client key
+ * so path tiles count unique clients, not duplicate ID variants.
+ */
+function resolveCanonicalClientId(
+  kpi: Pick<KpiData, 'clientId' | 'clientName'>,
+  canonicalIds: Set<string>,
+  idByName: Map<string, string>
+): string | null {
+  const rawId = (kpi.clientId || '').trim();
+  const rawName = (kpi.clientName || '').trim();
+  const nameKey = normalizeClientName(rawName);
+
+  if (rawId && canonicalIds.has(rawId)) return rawId;
+  if (nameKey && idByName.has(nameKey)) return idByName.get(nameKey)!;
+  if (rawId) return rawId;
+  if (nameKey) return `name:${nameKey}`;
+  return null;
+}
 
 const formatCurrency = (val: number) => {
     const absVal = Math.abs(val);
@@ -147,6 +171,44 @@ interface ClientHealthRow {
 }
 
 const PATH_RANK: Record<ClientPath, number> = { 'off-path': 0, 'no-signal': 1, 'on-path': 2 };
+
+/** Keep one health row per unique client (by id, then by name). */
+function dedupeClientHealthRows(rows: ClientHealthRow[]): ClientHealthRow[] {
+  const byId = new Map<string, ClientHealthRow>();
+  const byName = new Map<string, string>(); // nameKey → clientId
+
+  for (const row of rows) {
+    const nameKey = normalizeClientName(row.clientName);
+    const existingIdForName = nameKey ? byName.get(nameKey) : undefined;
+
+    // Same display name already represented under another id → merge into that bucket
+    if (existingIdForName && existingIdForName !== row.clientId) {
+      const existing = byId.get(existingIdForName)!;
+      if (PATH_RANK[row.path] < PATH_RANK[existing.path]) {
+        byId.set(existingIdForName, {
+          ...row,
+          clientId: existingIdForName,
+          clientName: existing.clientName || row.clientName,
+        });
+      }
+      continue;
+    }
+
+    const existing = byId.get(row.clientId);
+    if (!existing) {
+      byId.set(row.clientId, row);
+      if (nameKey) byName.set(nameKey, row.clientId);
+      continue;
+    }
+
+    // Duplicate id (should be rare): keep the riskier path
+    if (PATH_RANK[row.path] < PATH_RANK[existing.path]) {
+      byId.set(row.clientId, row);
+    }
+  }
+
+  return Array.from(byId.values());
+}
 
 const KPI_PAGE_SIZE = 500;
 
@@ -556,14 +618,18 @@ export default function BusinessSnapshotPage() {
         const nameById: Record<string, string> = {};
         const clusterById: Record<string, string> = {};
         const leadById: Record<string, string> = {};
+        const canonicalIds = new Set<string>();
+        const idByName = new Map<string, string>();
         clientSnap.forEach((d) => {
           const c = d.data() as Client;
-          if (c.uniqueId && c.name && !looksLikeClientId(c.name, c.uniqueId)) {
-            nameById[c.uniqueId] = c.name;
-          }
           if (c.uniqueId) {
+            canonicalIds.add(c.uniqueId);
             clusterById[c.uniqueId] = c.cluster || 'Unassigned';
             leadById[c.uniqueId] = c.clusterLead || '';
+          }
+          if (c.uniqueId && c.name && !looksLikeClientId(c.name, c.uniqueId)) {
+            nameById[c.uniqueId] = c.name;
+            idByName.set(normalizeClientName(c.name), c.uniqueId);
           }
         });
 
@@ -575,6 +641,8 @@ export default function BusinessSnapshotPage() {
           wbrByClient.set(w.clientId, w);
           if (w.clientName && !looksLikeClientId(w.clientName, w.clientId)) {
             nameById[w.clientId] = w.clientName;
+            const nk = normalizeClientName(w.clientName);
+            if (nk && !idByName.has(nk)) idByName.set(nk, w.clientId);
           }
           if (w.cluster) clusterById[w.clientId] = w.cluster;
           if (w.clusterLead) leadById[w.clientId] = w.clusterLead;
@@ -588,47 +656,50 @@ export default function BusinessSnapshotPage() {
         });
         setWbrRagSummary(rag);
 
-        // Group all KPI rows for the month by client, then roll up Primary MTD path
+        // Group KPI rows by canonical client (unique clients only)
         const kpisByClient = new Map<string, KpiData[]>();
         kpiRows.forEach((kpi) => {
-          if (!kpi.clientId) return;
-          if (kpi.clientName && !looksLikeClientId(kpi.clientName, kpi.clientId)) {
-            nameById[kpi.clientId] = kpi.clientName;
+          const clientId = resolveCanonicalClientId(kpi, canonicalIds, idByName);
+          if (!clientId) return;
+          if (kpi.clientName && !looksLikeClientId(kpi.clientName, clientId)) {
+            nameById[clientId] = kpi.clientName;
           }
-          if (kpi.cluster) clusterById[kpi.clientId] = kpi.cluster;
-          if (kpi.cduLead) leadById[kpi.clientId] = kpi.cduLead;
-          const list = kpisByClient.get(kpi.clientId) || [];
+          if (kpi.cluster) clusterById[clientId] = kpi.cluster;
+          if (kpi.cduLead) leadById[clientId] = kpi.cduLead;
+          const list = kpisByClient.get(clientId) || [];
           list.push(kpi);
-          kpisByClient.set(kpi.clientId, list);
+          kpisByClient.set(clientId, list);
         });
 
         // Path tiles are Primary-KPI clients only (WBR-only accounts must not inflate No Signal)
-        const rows: ClientHealthRow[] = Array.from(kpisByClient.entries()).flatMap(([clientId, clientKpis]) => {
-          if (!selectPrimaryKpisForPath(clientKpis).length) return [];
+        const rows: ClientHealthRow[] = dedupeClientHealthRows(
+          Array.from(kpisByClient.entries()).flatMap(([clientId, clientKpis]) => {
+            if (!selectPrimaryKpisForPath(clientKpis).length) return [];
 
-          const rolled = clientPathFromPrimaryKpis(clientKpis);
-          const kpi = rolled.representative;
-          const wbr = wbrByClient.get(clientId);
-          const { achieved, target, direction, pathStatus, path } = rolled;
+            const rolled = clientPathFromPrimaryKpis(clientKpis);
+            const kpi = rolled.representative;
+            const wbr = wbrByClient.get(clientId);
+            const { achieved, target, direction, pathStatus, path } = rolled;
 
-          return [{
-            clientId,
-            clientName: nameById[clientId] || wbr?.clientName || kpi?.clientName || clientId,
-            cluster: clusterById[clientId] || wbr?.cluster || kpi?.cluster || 'Unassigned',
-            lead: leadById[clientId] || wbr?.clusterLead || kpi?.cduLead || '—',
-            kpiName: kpi?.kpi || 'No primary KPI',
-            channel: kpi?.channel || '—',
-            achieved,
-            target,
-            direction,
-            currency: kpi?.currency,
-            pathStatus,
-            path,
-            performanceRag: (wbr?.performanceRag || 'N/A') as RagStatus,
-            engagementRag: (wbr?.engagementRag || 'N/A') as RagStatus,
-            attainment: kpi ? kpiAttainmentPct(achieved, target, direction) : null,
-          }];
-        });
+            return [{
+              clientId,
+              clientName: nameById[clientId] || wbr?.clientName || kpi?.clientName || clientId,
+              cluster: clusterById[clientId] || wbr?.cluster || kpi?.cluster || 'Unassigned',
+              lead: leadById[clientId] || wbr?.clusterLead || kpi?.cduLead || '—',
+              kpiName: kpi?.kpi || 'No primary KPI',
+              channel: kpi?.channel || '—',
+              achieved,
+              target,
+              direction,
+              currency: kpi?.currency,
+              pathStatus,
+              path,
+              performanceRag: (wbr?.performanceRag || 'N/A') as RagStatus,
+              engagementRag: (wbr?.engagementRag || 'N/A') as RagStatus,
+              attainment: kpi ? kpiAttainmentPct(achieved, target, direction) : null,
+            }];
+          })
+        );
 
         rows.sort((a, b) => {
           const pathDiff = PATH_RANK[a.path] - PATH_RANK[b.path];
@@ -657,7 +728,12 @@ export default function BusinessSnapshotPage() {
       noSignal: 0,
       ...wbrRagSummary,
     };
+    // Guaranteed unique-client counts (one row per client after dedupe)
+    const counted = new Set<string>();
     clientHealth.forEach((row) => {
+      const key = row.clientId || normalizeClientName(row.clientName);
+      if (!key || counted.has(key)) return;
+      counted.add(key);
       if (row.path === 'on-path') summary.onPath += 1;
       else if (row.path === 'off-path') summary.offPath += 1;
       else summary.noSignal += 1;
@@ -985,21 +1061,21 @@ export default function BusinessSnapshotPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-ink border-b border-ink">
               <PathSummaryTile
                 label="On Path"
-                hint="Primary KPI on target"
+                hint="Unique clients · Primary KPI on target"
                 count={clientHealthSummary.onPath}
                 tone="success"
                 href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=on&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=on'}
               />
               <PathSummaryTile
                 label="Off Path"
-                hint="Primary KPI behind target"
+                hint="Unique clients · Primary KPI behind target"
                 count={clientHealthSummary.offPath}
                 tone="destructive"
                 href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=off&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=off'}
               />
               <PathSummaryTile
                 label="No Signal"
-                hint="Primary KPI MTD N/A"
+                hint="Unique clients · Primary KPI MTD N/A"
                 count={clientHealthSummary.noSignal}
                 tone="secondary"
                 href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=none&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=none'}
@@ -1053,16 +1129,19 @@ function PathSummaryTile({
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">{label}</p>
         <ArrowUpRight className="h-4 w-4 text-secondary/40 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
       </div>
-      <p
-        className={cn(
-          'text-5xl font-black font-headline tracking-tighter',
-          tone === 'success' && 'text-success',
-          tone === 'destructive' && 'text-destructive',
-          tone === 'secondary' && 'text-secondary'
-        )}
-      >
-        {count}
-      </p>
+      <div className="space-y-1">
+        <p
+          className={cn(
+            'text-5xl font-black font-headline tracking-tighter',
+            tone === 'success' && 'text-success',
+            tone === 'destructive' && 'text-destructive',
+            tone === 'secondary' && 'text-secondary'
+          )}
+        >
+          {count}
+        </p>
+        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-secondary/60">clients</p>
+      </div>
       <p className="text-[10px] font-bold uppercase tracking-widest text-secondary/70">{hint}</p>
       <p className="text-[9px] font-black uppercase tracking-widest text-brand/70 opacity-0 group-hover:opacity-100 transition-opacity">
         Open KPI Tracker →
