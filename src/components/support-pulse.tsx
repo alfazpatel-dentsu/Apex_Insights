@@ -116,7 +116,8 @@ export function SupportPulse() {
           </h3>
           <p className="text-[11px] font-medium text-secondary max-w-xl">
             Freshdesk tickets from {summary?.trackFrom || '2026-06-01'} · Team = Group · SLA violated when
-            Resolution Status is SLA VIOLATED (target &lt; {summary?.slaTargetPct ?? 3.5}%).
+            Resolution Status is SLA VIOLATED (target &lt; {summary?.slaTargetPct ?? 3.5}%). Support_Id
+            inbox tickets are excluded.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

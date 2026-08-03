@@ -52,4 +52,4 @@ Login requires valid Firebase Auth credentials plus a Firestore `users/{uid}` pr
 
 ### Environment variables
 
-`.env` template includes empty `GEMINI_API_KEY`, `GOOGLE_GENAI_API_KEY`, and `FRESHDESK_API_KEY`. Optional Freshdesk knobs: `FRESHDESK_DOMAIN`, `FRESHDESK_TRACK_FROM` (default `2026-06-01`), `FRESHDESK_SLA_TARGET` (default `3.5`), `FRESHDESK_RESOLUTION_STATUS_FIELD`. Firebase config is hardcoded, not env-based.
+`.env` template includes empty `GEMINI_API_KEY`, `GOOGLE_GENAI_API_KEY`, and `FRESHDESK_API_KEY`. Optional Freshdesk knobs: `FRESHDESK_DOMAIN`, `FRESHDESK_TRACK_FROM` (default `2026-06-01`), `FRESHDESK_SLA_TARGET` (default `3.5`), `FRESHDESK_RESOLUTION_STATUS_FIELD`, `FRESHDESK_EXCLUDE_GROUPS` / `FRESHDESK_EXCLUDE_GROUP_IDS` (Support_Id excluded by default). Firebase config is hardcoded, not env-based.

@@ -124,7 +124,7 @@ function FreshdeskContent() {
     <div className="space-y-6" data-testid="freshdesk-page">
       <PageHeader
         title="Support Desk"
-        description="Freshdesk tickets from sokworks · Team = Group · SLA = Resolution Status SLA VIOLATED"
+        description="Freshdesk tickets from sokworks · Team = Group · SLA = Resolution Status SLA VIOLATED · Support_Id excluded"
       >
         <Link
           href="/dashboard/business-snapshot"

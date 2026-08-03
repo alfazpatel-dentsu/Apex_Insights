@@ -4,6 +4,7 @@
  * KPI window: tickets from 2026-06-01 onward.
  * SLA violated = custom "Resolution Status" equals "SLA VIOLATED".
  * Team = Freshdesk Group.
+ * Support_Id (inbox catch-all) is excluded from all Snapshot / Support Desk metrics.
  */
 
 import {
@@ -26,11 +27,21 @@ export {
   type FreshdeskTicketFilter,
 };
 
+/** Default catch-all Support_Id group — ignored in all calculations. */
+export const FRESHDESK_EXCLUDED_GROUP_IDS = [6000113565];
+export const FRESHDESK_EXCLUDED_GROUP_NAMES = ['support_id', 'support id', 'support-id'];
+
 const STATUS_LABELS: Record<number, string> = {
   2: 'Open',
   3: 'Pending',
   4: 'Resolved',
   5: 'Closed',
+};
+
+type ExclusionSets = {
+  groupIds: Set<number>;
+  groupNames: Set<string>;
+  emailConfigIds: Set<number>;
 };
 
 function getConfig() {
@@ -39,6 +50,32 @@ function getConfig() {
   const trackFrom = process.env.FRESHDESK_TRACK_FROM || FRESHDESK_TRACK_FROM;
   const slaTargetPct = Number(process.env.FRESHDESK_SLA_TARGET || FRESHDESK_SLA_TARGET_PCT);
   return { domain, apiKey, trackFrom, slaTargetPct, configured: Boolean(apiKey) };
+}
+
+function normalizeGroupLabel(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function configuredExcludedGroupIds(): Set<number> {
+  const fromEnv = (process.env.FRESHDESK_EXCLUDE_GROUP_IDS || '')
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n));
+  return new Set([...FRESHDESK_EXCLUDED_GROUP_IDS, ...fromEnv]);
+}
+
+function configuredExcludedGroupNames(): Set<string> {
+  const fromEnv = (process.env.FRESHDESK_EXCLUDE_GROUPS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(normalizeGroupLabel);
+  return new Set([...FRESHDESK_EXCLUDED_GROUP_NAMES.map(normalizeGroupLabel), ...fromEnv]);
+}
+
+function isExcludedGroupName(name: string | null | undefined, excludedNames: Set<string>): boolean {
+  if (!name) return false;
+  return excludedNames.has(normalizeGroupLabel(name));
 }
 
 function authHeader(apiKey: string) {
@@ -141,6 +178,83 @@ async function ensureGroupNames(
       }
     })
   );
+}
+
+/**
+ * Build Support_Id exclusion sets:
+ * - group id / name (Support_Id)
+ * - email configs that route into that group (tickets "created by" Support_Id inbox)
+ */
+async function buildExclusionSets(
+  apiKey: string,
+  domain: string,
+  groups: Map<number, string>
+): Promise<ExclusionSets> {
+  const groupIds = configuredExcludedGroupIds();
+  const groupNames = configuredExcludedGroupNames();
+
+  for (const [id, name] of groups.entries()) {
+    if (isExcludedGroupName(name, groupNames)) groupIds.add(id);
+  }
+
+  // Ensure known excluded IDs have names loaded
+  await ensureGroupNames(apiKey, domain, groups, groupIds);
+  for (const id of Array.from(groupIds)) {
+    const name = groups.get(id);
+    if (name) groupNames.add(normalizeGroupLabel(name));
+  }
+
+  const emailConfigIds = new Set<number>();
+  try {
+    for (let page = 1; page <= 10; page++) {
+      const configs = await fdFetch<Array<{ id: number; group_id?: number | null; name?: string }>>(
+        `/email_configs?per_page=100&page=${page}`,
+        apiKey,
+        domain
+      );
+      if (!Array.isArray(configs) || configs.length === 0) break;
+      for (const cfg of configs) {
+        const cfgGroupId = cfg.group_id == null ? null : Number(cfg.group_id);
+        // Mailboxes that land in Support_Id — covers tickets "created by" that inbox
+        // even if later reassigned / left unassigned within the same config.
+        if (cfgGroupId != null && groupIds.has(cfgGroupId)) {
+          emailConfigIds.add(Number(cfg.id));
+        }
+      }
+      if (configs.length < 100) break;
+    }
+  } catch {
+    /* email_configs optional */
+  }
+
+  return { groupIds, groupNames, emailConfigIds };
+}
+
+function isExcludedRawTicket(ticket: any, exclusion: ExclusionSets, groups: Map<number, string>): boolean {
+  const groupId = ticket.group_id == null || ticket.group_id === '' ? null : Number(ticket.group_id);
+  if (groupId != null && Number.isFinite(groupId) && exclusion.groupIds.has(groupId)) return true;
+
+  const groupName =
+    groupId != null && Number.isFinite(groupId)
+      ? groups.get(groupId) || ''
+      : '';
+  if (isExcludedGroupName(groupName, exclusion.groupNames)) return true;
+
+  const emailConfigId =
+    ticket.email_config_id == null || ticket.email_config_id === ''
+      ? null
+      : Number(ticket.email_config_id);
+  if (emailConfigId != null && Number.isFinite(emailConfigId) && exclusion.emailConfigIds.has(emailConfigId)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isExcludedLiteTicket(ticket: FreshdeskTicketLite, exclusion: ExclusionSets): boolean {
+  if (ticket.groupId != null && exclusion.groupIds.has(ticket.groupId)) return true;
+  if (isExcludedGroupName(ticket.groupName, exclusion.groupNames)) return true;
+  return false;
 }
 
 /**
@@ -281,8 +395,12 @@ export async function getFreshdeskSummary(): Promise<FreshdeskSummary> {
       groups,
       inWindow.map((t) => t.group_id)
     );
+    const exclusion = await buildExclusionSets(apiKey, domain, groups);
 
-    const tickets = inWindow.map((t) => toLite(t, groups, resolutionFieldKey));
+    const tickets = inWindow
+      .filter((t) => !isExcludedRawTicket(t, exclusion, groups))
+      .map((t) => toLite(t, groups, resolutionFieldKey))
+      .filter((t) => !isExcludedLiteTicket(t, exclusion));
 
     const totalTickets = tickets.length;
     const slaViolated = tickets.filter((t) => t.slaViolated).length;
@@ -396,8 +514,12 @@ export async function getFreshdeskTickets(opts: {
       groups,
       inWindow.map((t) => t.group_id)
     );
+    const exclusion = await buildExclusionSets(apiKey, domain, groups);
 
-    let tickets = inWindow.map((t) => toLite(t, groups, resolutionFieldKey));
+    let tickets = inWindow
+      .filter((t) => !isExcludedRawTicket(t, exclusion, groups))
+      .map((t) => toLite(t, groups, resolutionFieldKey))
+      .filter((t) => !isExcludedLiteTicket(t, exclusion));
 
     const view = opts.view || 'all';
     if (view === 'open') tickets = tickets.filter((t) => t.isOpen);
