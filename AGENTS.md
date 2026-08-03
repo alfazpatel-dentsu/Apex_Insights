@@ -23,6 +23,7 @@ The VM update script handles this automatically when `src/app` is missing.
 | Next.js dev server | Yes | `npm run dev` — Turbopack, port **3000** |
 | Firebase Auth + Firestore | Yes (cloud) | Hardcoded project `vdc200007-ppclientcentre-prod` in `src/firebase/config.ts`; no local emulator config |
 | Gemini API | Optional | Only for Business Snapshot AI refresh; set `GEMINI_API_KEY` or `GOOGLE_GENAI_API_KEY` in `.env` |
+| Freshdesk API | Optional | Snapshot Support Pulse + Support Desk page; set `FRESHDESK_API_KEY` (and optionally `FRESHDESK_DOMAIN=sokworks.freshdesk.com`) in `.env` |
 
 Optional: `npm run genkit:dev` for Genkit AI flow debugging (separate process, not needed for normal app use).
 
@@ -51,4 +52,4 @@ Login requires valid Firebase Auth credentials plus a Firestore `users/{uid}` pr
 
 ### Environment variables
 
-`.env` template includes empty `GEMINI_API_KEY` and `GOOGLE_GENAI_API_KEY`. Firebase config is hardcoded, not env-based.
+`.env` template includes empty `GEMINI_API_KEY`, `GOOGLE_GENAI_API_KEY`, and `FRESHDESK_API_KEY`. Optional Freshdesk knobs: `FRESHDESK_DOMAIN`, `FRESHDESK_TRACK_FROM` (default `2026-06-01`), `FRESHDESK_SLA_TARGET` (default `3.5`), `FRESHDESK_RESOLUTION_STATUS_FIELD`. Firebase config is hardcoded, not env-based.

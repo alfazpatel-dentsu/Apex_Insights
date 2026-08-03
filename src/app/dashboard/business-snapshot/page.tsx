@@ -48,6 +48,7 @@ import {
   LabelList
 } from 'recharts';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { SupportPulse } from '@/components/support-pulse';
 
 const formatCurrency = (val: number) => {
     const absVal = Math.abs(val);
@@ -1025,6 +1026,8 @@ export default function BusinessSnapshotPage() {
               />
             </div>
           </div>
+
+          <SupportPulse />
         </div>
       )}
     </div>
