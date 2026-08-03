@@ -14,7 +14,8 @@ import {
   CaretDoubleRight,
   SignOut,
   Briefcase,
-  ListChecks
+  ListChecks,
+  Headset
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useUser, useDoc, useAuth } from "@/firebase";
@@ -30,6 +31,7 @@ const nav = [
   { href: "/dashboard/spends-dashboard", label: "Spends Dashboard", icon: PresentationChart, testId: "sidebar-nav-spends-dashboard", permission: "dashboard" },
   { href: "/dashboard/wbr", label: "Weekly Review", icon: ClipboardText, testId: "sidebar-nav-wbr", permission: "wbr" },
   { href: "/dashboard/actions", label: "Action Items", icon: ListChecks, testId: "sidebar-nav-actions", permission: "actions" },
+  { href: "/dashboard/freshdesk", label: "Support Desk", icon: Headset, testId: "sidebar-nav-freshdesk", permission: "snapshot" },
   { href: "/dashboard/admin", label: "Administration", icon: ShieldCheck, testId: "sidebar-nav-admin", permission: "admin" },
 ];
 
