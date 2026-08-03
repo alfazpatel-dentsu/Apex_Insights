@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect, Suspense } from 'react';
 import { format } from 'date-fns';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   PlusCircle, 
   Search, 
@@ -99,19 +100,58 @@ const formatDisplayDate = (value?: string) => {
   }
 };
 
+const LEAD_STAGES: LeadStatus[] = [
+  'Unqualified',
+  'Qualified',
+  'Pitch',
+  'Negotiation',
+  'Contract',
+  'Won',
+  'Lost',
+];
+
+function parseStatusParam(raw: string | null): string {
+  if (!raw) return 'all';
+  const match = LEAD_STAGES.find((s) => s.toLowerCase() === raw.trim().toLowerCase());
+  return match || 'all';
+}
+
 export default function SalesTrackerPage() {
+  return (
+    <Suspense fallback={<div className="flex flex-1 items-center justify-center p-20"><Loader2 className="animate-spin h-8 w-8 text-primary/40" /></div>}>
+      <SalesTrackerContent />
+    </Suspense>
+  );
+}
+
+function SalesTrackerContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const { data: leads, loading } = useCollection<Lead>('leads');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>(() => parseStatusParam(searchParams.get('status')));
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  useEffect(() => {
+    setStatusFilter(parseStatusParam(searchParams.get('status')));
+  }, [searchParams]);
+
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'all') params.delete('status');
+    else params.set('status', value);
+    const qs = params.toString();
+    router.replace(qs ? `/dashboard/sales-tracker?${qs}` : '/dashboard/sales-tracker');
+  };
 
   const filteredLeads = useMemo(() => {
     if (!leads) return [];
@@ -234,16 +274,12 @@ export default function SalesTrackerPage() {
              <select 
                className="bg-transparent border-none text-[10px] font-black uppercase outline-none focus:ring-0 cursor-pointer"
                value={statusFilter}
-               onChange={(e) => setStatusFilter(e.target.value)}
+               onChange={(e) => handleStatusFilterChange(e.target.value)}
              >
                <option value="all">All Stages</option>
-               <option value="Unqualified">Unqualified</option>
-               <option value="Qualified">Qualified</option>
-               <option value="Pitch">Pitch</option>
-               <option value="Negotiation">Negotiation</option>
-               <option value="Contract">Contract</option>
-               <option value="Won">Won</option>
-               <option value="Lost">Lost</option>
+               {LEAD_STAGES.map((stage) => (
+                 <option key={stage} value={stage}>{stage}</option>
+               ))}
              </select>
           </div>
 

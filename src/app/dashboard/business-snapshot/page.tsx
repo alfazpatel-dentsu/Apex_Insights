@@ -377,6 +377,7 @@ export default function BusinessSnapshotPage() {
 
         const maxLead = Math.max(...Object.values(leadCounts), 1);
         setPipelineData(statusOrder.map(status => ({
+          status, // LeadStatus key for deep links
           name: status.toUpperCase(),
           value: leadCounts[status] || 0,
           percent: ((leadCounts[status] || 0) / maxLead) * 100
@@ -876,24 +877,34 @@ export default function BusinessSnapshotPage() {
 
               {/* Card 2: Conversion Funnel (Sales Pipeline) */}
               <div className="bg-white p-10 flex flex-col space-y-8 min-h-[500px]">
-                  <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">SALES PIPELINE</p>
-                      <h3 className="text-2xl font-black tracking-tighter uppercase">Discovery → Won</h3>
-                  </div>
+                  <Link
+                    href="/dashboard/sales-tracker"
+                    className="flex items-start justify-between gap-4 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset -m-2 p-2"
+                  >
+                      <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary group-hover:text-brand transition-colors">SALES PIPELINE</p>
+                          <h3 className="text-2xl font-black tracking-tighter uppercase">Discovery → Won</h3>
+                      </div>
+                      <ArrowUpRight className="h-5 w-5 text-secondary shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
+                  </Link>
                   <div className="flex-1 space-y-6 pt-4">
-                      {pipelineData.length > 0 ? pipelineData.map((stage, i) => (
-                        <div key={i} className="space-y-2">
+                      {pipelineData.length > 0 ? pipelineData.map((stage) => (
+                        <Link
+                          key={stage.status || stage.name}
+                          href={`/dashboard/sales-tracker?status=${encodeURIComponent(stage.status || stage.name)}`}
+                          className="block space-y-2 group/stage rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                        >
                            <div className="flex items-center justify-between text-[10px] font-black uppercase">
-                              <span className="tracking-widest">{stage.name}</span>
-                              <span className="text-secondary">{stage.value} OPPORTUNITIES</span>
+                              <span className="tracking-widest group-hover/stage:text-brand transition-colors">{stage.name}</span>
+                              <span className="text-secondary group-hover/stage:text-brand transition-colors">{stage.value} OPPORTUNITIES</span>
                            </div>
-                           <div className="h-6 bg-foreground/[0.03] relative overflow-hidden">
-                              <div className="absolute inset-0 bg-brand/10" style={{ width: `${stage.percent}%` }} />
+                           <div className="h-6 bg-foreground/[0.03] relative overflow-hidden group-hover/stage:bg-brand/[0.06] transition-colors">
+                              <div className="absolute inset-0 bg-brand/10 group-hover/stage:bg-brand/20 transition-colors" style={{ width: `${stage.percent}%` }} />
                               <div className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[9px] font-black text-secondary">
                                  {stage.percent.toFixed(1)}%
                               </div>
                            </div>
-                        </div>
+                        </Link>
                       )) : <p className="p-20 text-center text-[10px] font-black uppercase text-secondary/70 italic">No lead data available.</p>}
                   </div>
               </div>
