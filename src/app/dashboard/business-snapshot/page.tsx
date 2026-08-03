@@ -42,12 +42,18 @@ import {
   CartesianGrid, 
   Tooltip as RechartsTooltip, 
   ResponsiveContainer,
-  BarChart,
+  BarChart, 
   Bar,
   Cell,
   LabelList
 } from 'recharts';
 import { ScrollArea } from '@/components/ui/scroll-area';
+
+/** CLID is the sole unique client key across KPI / Spends / WBR. */
+function normalizeClid(clientId?: string | null): string | null {
+  const id = (clientId || '').trim();
+  return id || null;
+}
 
 const formatCurrency = (val: number) => {
     const absVal = Math.abs(val);
@@ -371,6 +377,7 @@ export default function BusinessSnapshotPage() {
 
         const maxLead = Math.max(...Object.values(leadCounts), 1);
         setPipelineData(statusOrder.map(status => ({
+          status, // LeadStatus key for deep links
           name: status.toUpperCase(),
           value: leadCounts[status] || 0,
           percent: ((leadCounts[status] || 0) / maxLead) * 100
@@ -556,53 +563,80 @@ export default function BusinessSnapshotPage() {
         const nameById: Record<string, string> = {};
         const clusterById: Record<string, string> = {};
         const leadById: Record<string, string> = {};
+        /** Same CLID universe as the WBR board (clients registry + KPI-tracked accounts). */
+        const wbrBoardClids = new Set<string>();
+
         clientSnap.forEach((d) => {
           const c = d.data() as Client;
-          if (c.uniqueId && c.name && !looksLikeClientId(c.name, c.uniqueId)) {
-            nameById[c.uniqueId] = c.name;
-          }
-          if (c.uniqueId) {
-            clusterById[c.uniqueId] = c.cluster || 'Unassigned';
-            leadById[c.uniqueId] = c.clusterLead || '';
+          const clid = normalizeClid(c.uniqueId);
+          if (!clid) return;
+          wbrBoardClids.add(clid);
+          clusterById[clid] = c.cluster || 'Unassigned';
+          leadById[clid] = c.clusterLead || '';
+          if (c.name && !looksLikeClientId(c.name, clid)) {
+            nameById[clid] = c.name;
           }
         });
 
+        // Mirror WBR page KPI discovery (last 3 months) so strip counts match the click-through list
+        const discoveryMonth = format(subMonths(new Date(), 3), 'yyyy-MM');
+        try {
+          const discoverySnap = await getDocs(
+            query(collection(firestore, 'kpis'), where('month', '>=', discoveryMonth))
+          );
+          discoverySnap.forEach((d) => {
+            const clid = normalizeClid((d.data() as KpiData).clientId);
+            if (clid) wbrBoardClids.add(clid);
+          });
+        } catch (discoveryErr) {
+          console.warn('WBR board CLID discovery from KPIs failed; using clients registry only.', discoveryErr);
+        }
+
+        // One WBR row per CLID for this cycle
         const wbrByClient = new Map<string, WbrEntry>();
-        const rag = { pGreen: 0, pAmber: 0, pRed: 0, eGreen: 0, eAmber: 0, eRed: 0 };
         (wbrSnap?.docs || []).forEach((d) => {
           const w = { id: d.id, ...(d.data() as object) } as WbrEntry;
-          if (!w.clientId) return;
-          wbrByClient.set(w.clientId, w);
-          if (w.clientName && !looksLikeClientId(w.clientName, w.clientId)) {
-            nameById[w.clientId] = w.clientName;
+          const clid = normalizeClid(w.clientId);
+          if (!clid) return;
+          wbrByClient.set(clid, w);
+          if (w.clientName && !looksLikeClientId(w.clientName, clid)) {
+            nameById[clid] = w.clientName;
           }
-          if (w.cluster) clusterById[w.clientId] = w.cluster;
-          if (w.clusterLead) leadById[w.clientId] = w.clusterLead;
+          if (w.cluster) clusterById[clid] = w.cluster;
+          if (w.clusterLead) leadById[clid] = w.clusterLead;
+        });
 
-          if (w.performanceRag === 'Green') rag.pGreen += 1;
-          else if (w.performanceRag === 'Amber') rag.pAmber += 1;
-          else if (w.performanceRag === 'Red') rag.pRed += 1;
-          if (w.engagementRag === 'Green') rag.eGreen += 1;
-          else if (w.engagementRag === 'Amber') rag.eAmber += 1;
-          else if (w.engagementRag === 'Red') rag.eRed += 1;
+        // RAG strips must match WBR click-through: unique board CLIDs with that RAG only
+        const rag = { pGreen: 0, pAmber: 0, pRed: 0, eGreen: 0, eAmber: 0, eRed: 0 };
+        wbrByClient.forEach((w, clid) => {
+          if (!wbrBoardClids.has(clid)) return;
+          const p = String(w.performanceRag || '').trim();
+          const e = String(w.engagementRag || '').trim();
+          if (p === 'Green') rag.pGreen += 1;
+          else if (p === 'Amber') rag.pAmber += 1;
+          else if (p === 'Red') rag.pRed += 1;
+          if (e === 'Green') rag.eGreen += 1;
+          else if (e === 'Amber') rag.eAmber += 1;
+          else if (e === 'Red') rag.eRed += 1;
         });
         setWbrRagSummary(rag);
 
-        // Group all KPI rows for the month by client, then roll up Primary MTD path
+        // Group KPI rows by CLID — one path status per unique client
         const kpisByClient = new Map<string, KpiData[]>();
         kpiRows.forEach((kpi) => {
-          if (!kpi.clientId) return;
-          if (kpi.clientName && !looksLikeClientId(kpi.clientName, kpi.clientId)) {
-            nameById[kpi.clientId] = kpi.clientName;
+          const clid = normalizeClid(kpi.clientId);
+          if (!clid) return;
+          if (kpi.clientName && !looksLikeClientId(kpi.clientName, clid)) {
+            nameById[clid] = kpi.clientName;
           }
-          if (kpi.cluster) clusterById[kpi.clientId] = kpi.cluster;
-          if (kpi.cduLead) leadById[kpi.clientId] = kpi.cduLead;
-          const list = kpisByClient.get(kpi.clientId) || [];
+          if (kpi.cluster) clusterById[clid] = kpi.cluster;
+          if (kpi.cduLead) leadById[clid] = kpi.cduLead;
+          const list = kpisByClient.get(clid) || [];
           list.push(kpi);
-          kpisByClient.set(kpi.clientId, list);
+          kpisByClient.set(clid, list);
         });
 
-        // Path tiles are Primary-KPI clients only (WBR-only accounts must not inflate No Signal)
+        // Path tiles are Primary-KPI CLIDs only (WBR-only accounts must not inflate No Signal)
         const rows: ClientHealthRow[] = Array.from(kpisByClient.entries()).flatMap(([clientId, clientKpis]) => {
           if (!selectPrimaryKpisForPath(clientKpis).length) return [];
 
@@ -657,7 +691,12 @@ export default function BusinessSnapshotPage() {
       noSignal: 0,
       ...wbrRagSummary,
     };
+    // One count per CLID
+    const counted = new Set<string>();
     clientHealth.forEach((row) => {
+      const clid = normalizeClid(row.clientId);
+      if (!clid || counted.has(clid)) return;
+      counted.add(clid);
       if (row.path === 'on-path') summary.onPath += 1;
       else if (row.path === 'off-path') summary.offPath += 1;
       else summary.noSignal += 1;
@@ -838,24 +877,34 @@ export default function BusinessSnapshotPage() {
 
               {/* Card 2: Conversion Funnel (Sales Pipeline) */}
               <div className="bg-white p-10 flex flex-col space-y-8 min-h-[500px]">
-                  <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">SALES PIPELINE</p>
-                      <h3 className="text-2xl font-black tracking-tighter uppercase">Discovery → Won</h3>
-                  </div>
+                  <Link
+                    href="/dashboard/sales-tracker"
+                    className="flex items-start justify-between gap-4 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset -m-2 p-2"
+                  >
+                      <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary group-hover:text-brand transition-colors">SALES PIPELINE</p>
+                          <h3 className="text-2xl font-black tracking-tighter uppercase">Discovery → Won</h3>
+                      </div>
+                      <ArrowUpRight className="h-5 w-5 text-secondary shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
+                  </Link>
                   <div className="flex-1 space-y-6 pt-4">
-                      {pipelineData.length > 0 ? pipelineData.map((stage, i) => (
-                        <div key={i} className="space-y-2">
+                      {pipelineData.length > 0 ? pipelineData.map((stage) => (
+                        <Link
+                          key={stage.status || stage.name}
+                          href={`/dashboard/sales-tracker?status=${encodeURIComponent(stage.status || stage.name)}`}
+                          className="block space-y-2 group/stage rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                        >
                            <div className="flex items-center justify-between text-[10px] font-black uppercase">
-                              <span className="tracking-widest">{stage.name}</span>
-                              <span className="text-secondary">{stage.value} OPPORTUNITIES</span>
+                              <span className="tracking-widest group-hover/stage:text-brand transition-colors">{stage.name}</span>
+                              <span className="text-secondary group-hover/stage:text-brand transition-colors">{stage.value} OPPORTUNITIES</span>
                            </div>
-                           <div className="h-6 bg-foreground/[0.03] relative overflow-hidden">
-                              <div className="absolute inset-0 bg-brand/10" style={{ width: `${stage.percent}%` }} />
+                           <div className="h-6 bg-foreground/[0.03] relative overflow-hidden group-hover/stage:bg-brand/[0.06] transition-colors">
+                              <div className="absolute inset-0 bg-brand/10 group-hover/stage:bg-brand/20 transition-colors" style={{ width: `${stage.percent}%` }} />
                               <div className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[9px] font-black text-secondary">
                                  {stage.percent.toFixed(1)}%
                               </div>
                            </div>
-                        </div>
+                        </Link>
                       )) : <p className="p-20 text-center text-[10px] font-black uppercase text-secondary/70 italic">No lead data available.</p>}
                   </div>
               </div>
@@ -985,21 +1034,21 @@ export default function BusinessSnapshotPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-ink border-b border-ink">
               <PathSummaryTile
                 label="On Path"
-                hint="Primary KPI on target"
+                hint="Unique CLIDs · Primary KPI on target"
                 count={clientHealthSummary.onPath}
                 tone="success"
                 href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=on&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=on'}
               />
               <PathSummaryTile
                 label="Off Path"
-                hint="Primary KPI behind target"
+                hint="Unique CLIDs · Primary KPI behind target"
                 count={clientHealthSummary.offPath}
                 tone="destructive"
                 href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=off&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=off'}
               />
               <PathSummaryTile
                 label="No Signal"
-                hint="Primary KPI MTD N/A"
+                hint="Unique CLIDs · Primary KPI MTD N/A"
                 count={clientHealthSummary.noSignal}
                 tone="secondary"
                 href={healthKpiMonth ? `/dashboard/kpi-tracking?primary=1&path=none&month=${healthKpiMonth}` : '/dashboard/kpi-tracking?primary=1&path=none'}
@@ -1053,16 +1102,19 @@ function PathSummaryTile({
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">{label}</p>
         <ArrowUpRight className="h-4 w-4 text-secondary/40 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand" weight="bold" />
       </div>
-      <p
-        className={cn(
-          'text-5xl font-black font-headline tracking-tighter',
-          tone === 'success' && 'text-success',
-          tone === 'destructive' && 'text-destructive',
-          tone === 'secondary' && 'text-secondary'
-        )}
-      >
-        {count}
-      </p>
+      <div className="space-y-1">
+        <p
+          className={cn(
+            'text-5xl font-black font-headline tracking-tighter',
+            tone === 'success' && 'text-success',
+            tone === 'destructive' && 'text-destructive',
+            tone === 'secondary' && 'text-secondary'
+          )}
+        >
+          {count}
+        </p>
+        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-secondary/60">clients</p>
+      </div>
       <p className="text-[10px] font-bold uppercase tracking-widest text-secondary/70">{hint}</p>
       <p className="text-[9px] font-black uppercase tracking-widest text-brand/70 opacity-0 group-hover:opacity-100 transition-opacity">
         Open KPI Tracker →
