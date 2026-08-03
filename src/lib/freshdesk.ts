@@ -96,12 +96,51 @@ async function resolveResolutionStatusKey(apiKey: string, domain: string): Promi
 async function listGroups(apiKey: string, domain: string): Promise<Map<number, string>> {
   const map = new Map<number, string>();
   try {
-    const groups = await fdFetch<Array<{ id: number; name: string }>>(`/groups`, apiKey, domain);
-    groups.forEach((g) => map.set(g.id, g.name));
+    for (let page = 1; page <= 20; page++) {
+      const groups = await fdFetch<Array<{ id: number | string; name: string }>>(
+        `/groups?per_page=100&page=${page}`,
+        apiKey,
+        domain
+      );
+      if (!Array.isArray(groups) || groups.length === 0) break;
+      groups.forEach((g) => {
+        const id = Number(g.id);
+        if (Number.isFinite(id) && g.name) map.set(id, String(g.name));
+      });
+      if (groups.length < 100) break;
+    }
   } catch {
-    /* optional */
+    /* optional — missing names fall back below */
   }
   return map;
+}
+
+/** Resolve any group IDs not present in the list map (paginated list can miss older groups). */
+async function ensureGroupNames(
+  apiKey: string,
+  domain: string,
+  groups: Map<number, string>,
+  groupIds: Iterable<number | null | undefined>
+): Promise<void> {
+  const missing = Array.from(
+    new Set(
+      Array.from(groupIds)
+        .map((id) => (id == null ? null : Number(id)))
+        .filter((id): id is number => id != null && Number.isFinite(id) && !groups.has(id))
+    )
+  );
+  if (missing.length === 0) return;
+
+  await Promise.all(
+    missing.map(async (id) => {
+      try {
+        const group = await fdFetch<{ id: number; name: string }>(`/groups/${id}`, apiKey, domain);
+        if (group?.name) groups.set(id, String(group.name));
+      } catch {
+        /* leave fallback label */
+      }
+    })
+  );
 }
 
 /**
@@ -172,17 +211,20 @@ function toLite(
   resolutionFieldKey: string
 ): FreshdeskTicketLite {
   const status = Number(ticket.status);
-  const groupId = ticket.group_id ?? null;
+  const groupIdRaw = ticket.group_id;
+  const groupId = groupIdRaw == null || groupIdRaw === '' ? null : Number(groupIdRaw);
   const resolutionStatus = readResolutionStatus(ticket, resolutionFieldKey);
   const slaViolated = isSlaViolated(resolutionStatus);
+  const resolvedName =
+    groupId != null && Number.isFinite(groupId) ? groups.get(groupId) : undefined;
   return {
     id: ticket.id,
     subject: ticket.subject || `Ticket #${ticket.id}`,
     status,
     statusLabel: STATUS_LABELS[status] || `Status ${status}`,
     type: ticket.type || 'Untitled',
-    groupId,
-    groupName: groupId != null ? groups.get(groupId) || `Group ${groupId}` : 'Unassigned',
+    groupId: groupId != null && Number.isFinite(groupId) ? groupId : null,
+    groupName: resolvedName || (groupId != null && Number.isFinite(groupId) ? `Group ${groupId}` : 'Unassigned'),
     createdAt: ticket.created_at,
     updatedAt: ticket.updated_at,
     dueBy: ticket.due_by || null,
@@ -232,9 +274,15 @@ export async function getFreshdeskSummary(): Promise<FreshdeskSummary> {
       fetchTicketsSince(apiKey, domain, trackFrom),
     ]);
 
-    const tickets = rawTickets
-      .filter((t) => ticketCreatedOnOrAfter(t, trackFrom))
-      .map((t) => toLite(t, groups, resolutionFieldKey));
+    const inWindow = rawTickets.filter((t) => ticketCreatedOnOrAfter(t, trackFrom));
+    await ensureGroupNames(
+      apiKey,
+      domain,
+      groups,
+      inWindow.map((t) => t.group_id)
+    );
+
+    const tickets = inWindow.map((t) => toLite(t, groups, resolutionFieldKey));
 
     const totalTickets = tickets.length;
     const slaViolated = tickets.filter((t) => t.slaViolated).length;
@@ -341,9 +389,15 @@ export async function getFreshdeskTickets(opts: {
       fetchTicketsSince(apiKey, domain, trackFrom),
     ]);
 
-    let tickets = rawTickets
-      .filter((t) => ticketCreatedOnOrAfter(t, trackFrom))
-      .map((t) => toLite(t, groups, resolutionFieldKey));
+    const inWindow = rawTickets.filter((t) => ticketCreatedOnOrAfter(t, trackFrom));
+    await ensureGroupNames(
+      apiKey,
+      domain,
+      groups,
+      inWindow.map((t) => t.group_id)
+    );
+
+    let tickets = inWindow.map((t) => toLite(t, groups, resolutionFieldKey));
 
     const view = opts.view || 'all';
     if (view === 'open') tickets = tickets.filter((t) => t.isOpen);
