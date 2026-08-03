@@ -562,16 +562,34 @@ export default function BusinessSnapshotPage() {
         const nameById: Record<string, string> = {};
         const clusterById: Record<string, string> = {};
         const leadById: Record<string, string> = {};
+        /** Same CLID universe as the WBR board (clients registry + KPI-tracked accounts). */
+        const wbrBoardClids = new Set<string>();
+
         clientSnap.forEach((d) => {
           const c = d.data() as Client;
           const clid = normalizeClid(c.uniqueId);
           if (!clid) return;
+          wbrBoardClids.add(clid);
           clusterById[clid] = c.cluster || 'Unassigned';
           leadById[clid] = c.clusterLead || '';
           if (c.name && !looksLikeClientId(c.name, clid)) {
             nameById[clid] = c.name;
           }
         });
+
+        // Mirror WBR page KPI discovery (last 3 months) so strip counts match the click-through list
+        const discoveryMonth = format(subMonths(new Date(), 3), 'yyyy-MM');
+        try {
+          const discoverySnap = await getDocs(
+            query(collection(firestore, 'kpis'), where('month', '>=', discoveryMonth))
+          );
+          discoverySnap.forEach((d) => {
+            const clid = normalizeClid((d.data() as KpiData).clientId);
+            if (clid) wbrBoardClids.add(clid);
+          });
+        } catch (discoveryErr) {
+          console.warn('WBR board CLID discovery from KPIs failed; using clients registry only.', discoveryErr);
+        }
 
         // One WBR row per CLID for this cycle
         const wbrByClient = new Map<string, WbrEntry>();
@@ -587,15 +605,18 @@ export default function BusinessSnapshotPage() {
           if (w.clusterLead) leadById[clid] = w.clusterLead;
         });
 
-        // RAG strips = unique CLIDs (not raw WBR document count)
+        // RAG strips must match WBR click-through: unique board CLIDs with that RAG only
         const rag = { pGreen: 0, pAmber: 0, pRed: 0, eGreen: 0, eAmber: 0, eRed: 0 };
-        wbrByClient.forEach((w) => {
-          if (w.performanceRag === 'Green') rag.pGreen += 1;
-          else if (w.performanceRag === 'Amber') rag.pAmber += 1;
-          else if (w.performanceRag === 'Red') rag.pRed += 1;
-          if (w.engagementRag === 'Green') rag.eGreen += 1;
-          else if (w.engagementRag === 'Amber') rag.eAmber += 1;
-          else if (w.engagementRag === 'Red') rag.eRed += 1;
+        wbrByClient.forEach((w, clid) => {
+          if (!wbrBoardClids.has(clid)) return;
+          const p = String(w.performanceRag || '').trim();
+          const e = String(w.engagementRag || '').trim();
+          if (p === 'Green') rag.pGreen += 1;
+          else if (p === 'Amber') rag.pAmber += 1;
+          else if (p === 'Red') rag.pRed += 1;
+          if (e === 'Green') rag.eGreen += 1;
+          else if (e === 'Amber') rag.eAmber += 1;
+          else if (e === 'Red') rag.eRed += 1;
         });
         setWbrRagSummary(rag);
 
