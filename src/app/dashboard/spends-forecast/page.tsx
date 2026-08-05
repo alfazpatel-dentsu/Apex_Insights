@@ -19,7 +19,10 @@ import { MonthlySpend } from '@/lib/types';
 import {
   buildSpendForecast,
   formatMonthLabel,
+  FORECAST_MODEL_OPTIONS,
+  type ForecastModelId,
   type SpendForecastResult,
+  modelDescription,
 } from '@/lib/spend-forecast';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -87,6 +90,7 @@ export default function SpendsForecastPage() {
   const [mounted, setMounted] = useState(false);
   const [dimension, setDimension] = useState<DimensionFilter>('overall');
   const [dimensionValue, setDimensionValue] = useState<string>('all');
+  const [forecastModel, setForecastModel] = useState<ForecastModelId>('holt-winters');
 
   useEffect(() => {
     setMounted(true);
@@ -118,8 +122,8 @@ export default function SpendsForecastPage() {
             if (dimension === 'team') return row.team === dimensionValue;
             return true;
           };
-    return buildSpendForecast(rawMonthlyData, { filter });
-  }, [rawMonthlyData, mounted, dimension, dimensionValue]);
+    return buildSpendForecast(rawMonthlyData, { filter, model: forecastModel });
+  }, [rawMonthlyData, mounted, dimension, dimensionValue, forecastModel]);
 
   const chartData = useMemo(() => {
     if (!result) return [];
@@ -205,9 +209,28 @@ export default function SpendsForecastPage() {
     <div className="flex flex-col gap-6 min-w-0 pb-10">
       <PageHeader
         title="Spends Forecast"
-        description="12-month MoM forecast (Holt-Winters). Historical actuals stay as uploaded. Churn applies only while a client stays inactive (2+ months with no spend); if they resume later it is treated as a pause, not churn. Impact runs for 12 months after exit while still churned."
+        description="12-month MoM forecast with switchable models. Historical actuals stay as uploaded. Churn applies only while a client stays inactive (2+ months with no spend); resumed spend = pause. Impact runs for 12 months after exit while still churned."
       >
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 border border-white/20">
+            <span className="text-[10px] font-black uppercase tracking-widest pl-2 opacity-50">Model</span>
+            <Select
+              value={forecastModel}
+              onValueChange={(v) => setForecastModel(v as ForecastModelId)}
+            >
+              <SelectTrigger className="h-8 w-[200px] rounded-none text-[10px] font-black uppercase tracking-widest focus:ring-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-none max-h-80">
+                {FORECAST_MODEL_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.id} value={opt.id} className="text-[10px] font-bold">
+                    {opt.shortLabel}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 border border-white/20">
             <span className="text-[10px] font-black uppercase tracking-widest pl-2 opacity-50">Slice</span>
             <Select
@@ -262,15 +285,40 @@ export default function SpendsForecastPage() {
         </div>
       </PageHeader>
 
+      <div className="flex flex-wrap gap-1.5">
+        {FORECAST_MODEL_OPTIONS.map((opt) => {
+          const active = forecastModel === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setForecastModel(opt.id)}
+              className={cn(
+                'h-8 px-3 text-[10px] font-black uppercase tracking-widest border transition-colors',
+                active
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-white/40 dark:bg-white/5 border-foreground/15 text-foreground hover:border-primary/50'
+              )}
+              title={opt.description}
+            >
+              {opt.shortLabel}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex items-start gap-2 rounded-none border border-foreground/15 bg-white/50 dark:bg-white/5 px-3 py-2 text-xs text-secondary">
         <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
         <p>
           <span className="font-semibold text-foreground">Model:</span>{' '}
           {result?.modelLabel || '—'}
+          {' — '}
+          {modelDescription(forecastModel)}
+          {result?.modelNote ? ` (${result.modelNote})` : ''}
           {result?.latestDataMonth
             ? ` · Actuals through ${formatMonthLabel(result.latestDataMonth)} (unchanged)`
             : ' · No monthly spends found'}
-          . Churn = still inactive after ≥2 consecutive zero months (resumed spend = pause, not churn). Monthly loss = up to 6-month pre-exit average; impact window = exit+1 … exit+12 while still churned.
+          . Churn = still inactive after ≥2 consecutive zero months (resumed spend = pause, not churn).
         </p>
       </div>
 

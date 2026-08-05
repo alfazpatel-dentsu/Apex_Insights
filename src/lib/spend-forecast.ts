@@ -1,5 +1,18 @@
 import { addMonths, format, parse } from 'date-fns';
 import type { MonthlySpend } from '@/lib/types';
+import {
+  type ForecastModelId,
+  modelLabel as modelIdLabel,
+  runForecastModel,
+} from '@/lib/spend-forecast-models';
+
+export type { ForecastModelId } from '@/lib/spend-forecast-models';
+export {
+  FORECAST_MODEL_OPTIONS,
+  modelLabel as forecastModelLabel,
+  modelDescription,
+  runForecastModel,
+} from '@/lib/spend-forecast-models';
 
 export const FORECAST_HORIZON_MONTHS = 12;
 export const CHURN_INACTIVE_MONTHS = 2;
@@ -7,7 +20,8 @@ export const CHURN_AVG_LOOKBACK_MONTHS = 6;
 /** Churn monthly loss applies for this many months after the exit month (inclusive end = exit + 12). */
 export const CHURN_IMPACT_MONTHS = 12;
 
-export type ForecastModelKind = 'holt-winters' | 'seasonal-naive' | 'trend';
+/** @deprecated Use ForecastModelId */
+export type ForecastModelKind = ForecastModelId;
 
 export interface MonthAmount {
   month: string; // yyyy-MM
@@ -89,8 +103,9 @@ export interface SpendForecastResult {
   series: SpendSeriesPoint[];
   /** Combined MoM actual + forecast comparison (recent history + horizon). */
   momComparison: MomComparisonRow[];
-  model: ForecastModelKind;
+  model: ForecastModelId;
   modelLabel: string;
+  modelNote?: string;
   latestDataMonth: string | null;
   /**
    * Sum of monthly losses for churned clients whose impact window still
@@ -202,97 +217,20 @@ export function toContiguousSeries(
 
 /**
  * Holt-Winters additive seasonal forecast (period=12).
- * Falls back to seasonal-naive or linear trend for short series.
+ * Prefer `runForecastModel('holt-winters', …)` for new call sites.
  */
 export function forecastHoltWinters(
   history: MonthAmount[],
   horizon = FORECAST_HORIZON_MONTHS,
-  seasonLength = 12
-): { values: number[]; model: ForecastModelKind } {
-  const y = history.map((h) => Math.max(0, h.amount));
-  const n = y.length;
-
-  if (n === 0) {
-    return { values: Array(horizon).fill(0), model: 'trend' };
-  }
-
-  if (n < seasonLength * 1.5) {
-    if (n >= seasonLength) {
-      const values = Array.from({ length: horizon }, (_, i) => {
-        const idx = n - seasonLength + (i % seasonLength);
-        return Math.max(0, y[idx] ?? y[n - 1] ?? 0);
-      });
-      return { values, model: 'seasonal-naive' };
-    }
-
-    const last = y[n - 1] ?? 0;
-    let slope = 0;
-    if (n >= 2) {
-      const k = Math.min(6, n - 1);
-      slope = (y[n - 1] - y[n - 1 - k]) / k;
-    }
-    const values = Array.from({ length: horizon }, (_, i) =>
-      Math.max(0, last + slope * (i + 1))
-    );
-    return { values, model: 'trend' };
-  }
-
-  const alpha = 0.35;
-  const beta = 0.1;
-  const gamma = 0.25;
-
-  const seasons = Math.floor(n / seasonLength);
-  const seasonals = new Array(seasonLength).fill(0);
-  const seasonAverages: number[] = [];
-  for (let s = 0; s < seasons; s++) {
-    let sum = 0;
-    for (let i = 0; i < seasonLength; i++) {
-      sum += y[s * seasonLength + i];
-    }
-    seasonAverages.push(sum / seasonLength);
-  }
-
-  for (let i = 0; i < seasonLength; i++) {
-    let sum = 0;
-    for (let s = 0; s < seasons; s++) {
-      sum += y[s * seasonLength + i] - seasonAverages[s];
-    }
-    seasonals[i] = sum / seasons;
-  }
-
-  let level = seasonAverages[0] ?? y[0];
-  let trend =
-    seasons >= 2
-      ? (seasonAverages[1] - seasonAverages[0]) / seasonLength
-      : (y[Math.min(seasonLength, n - 1)] - y[0]) / Math.min(seasonLength, n - 1 || 1);
-
-  for (let t = 0; t < n; t++) {
-    const value = y[t];
-    const sIdx = t % seasonLength;
-    const lastLevel = level;
-    const seasonal = seasonals[sIdx];
-    level = alpha * (value - seasonal) + (1 - alpha) * (level + trend);
-    trend = beta * (level - lastLevel) + (1 - beta) * trend;
-    seasonals[sIdx] = gamma * (value - level) + (1 - gamma) * seasonal;
-  }
-
-  const values = Array.from({ length: horizon }, (_, i) => {
-    const sIdx = (n + i) % seasonLength;
-    return Math.max(0, level + (i + 1) * trend + seasonals[sIdx]);
-  });
-
-  return { values, model: 'holt-winters' };
+  _seasonLength = 12
+): { values: number[]; model: ForecastModelId } {
+  const result = runForecastModel('holt-winters', history, horizon);
+  return { values: result.values, model: result.model };
+  void _seasonLength;
 }
 
-export function modelLabel(kind: ForecastModelKind): string {
-  switch (kind) {
-    case 'holt-winters':
-      return 'Holt-Winters (seasonal)';
-    case 'seasonal-naive':
-      return 'Seasonal naive (YoY)';
-    case 'trend':
-      return 'Linear trend';
-  }
+export function modelLabel(kind: ForecastModelId): string {
+  return modelIdLabel(kind);
 }
 
 interface ClientMonthMeta {
@@ -435,9 +373,11 @@ export function buildSpendForecast(
   options?: {
     horizon?: number;
     filter?: (row: MonthlySpend) => boolean;
+    model?: ForecastModelId;
   }
 ): SpendForecastResult {
   const horizon = options?.horizon ?? FORECAST_HORIZON_MONTHS;
+  const selectedModel = options?.model ?? 'holt-winters';
   const filtered = options?.filter ? spends.filter(options.filter) : spends;
   const totals = aggregateMonthlyTotals(filtered);
   const contiguous = toContiguousSeries(totals);
@@ -464,7 +404,9 @@ export function buildSpendForecast(
     };
   });
 
-  const { values, model } = forecastHoltWinters(contiguous, horizon);
+  const modelResult = runForecastModel(selectedModel, contiguous, horizon);
+  const values = modelResult.values;
+  const model = modelResult.model;
 
   const forecast: ForecastMonthRow[] = values.map((gross, i) => {
     const month = latestDataMonth
@@ -537,6 +479,7 @@ export function buildSpendForecast(
     momComparison,
     model,
     modelLabel: modelLabel(model),
+    modelNote: modelResult.note,
     latestDataMonth,
     activeChurnMonthlyCapacity,
     churnedClients,

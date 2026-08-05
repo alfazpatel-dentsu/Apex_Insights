@@ -11,6 +11,7 @@ import {
   shiftMonth,
   type MonthAmount,
 } from './spend-forecast';
+import { runForecastModel, FORECAST_MODEL_OPTIONS } from './spend-forecast-models';
 import type { MonthlySpend } from './types';
 
 function assert(cond: unknown, msg: string) {
@@ -54,7 +55,18 @@ const shortHistory: MonthAmount[] = Array.from({ length: 8 }, (_, i) => ({
 }));
 const shortFc = forecastHoltWinters(shortHistory, 12);
 assert(shortFc.values.length === 12, 'short forecast length');
-assert(shortFc.model === 'trend', 'short series uses trend');
+assert(shortFc.model === 'holt-winters', 'holt-winters selected even on short history');
+
+// Multi-model smoke: each engine returns 12 non-negative points
+const longHistory: MonthAmount[] = Array.from({ length: 30 }, (_, i) => ({
+  month: shiftMonth('2023-01', i),
+  amount: 80_00_00_000 + (i % 12) * 5_00_00_000 + Math.floor(i / 12) * 8_00_00_000,
+}));
+for (const opt of FORECAST_MODEL_OPTIONS) {
+  const r = runForecastModel(opt.id, longHistory, 12);
+  assert(r.values.length === 12, `${opt.id} length`);
+  assert(r.values.every((v) => v >= 0 && Number.isFinite(v)), `${opt.id} non-neg finite`);
+}
 
 const CR = 7.22 * 1_00_00_000; // 7.22 Cr — Zalora-style
 const rows: MonthlySpend[] = [];
