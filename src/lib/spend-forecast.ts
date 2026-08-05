@@ -4,6 +4,8 @@ import type { MonthlySpend } from '@/lib/types';
 export const FORECAST_HORIZON_MONTHS = 12;
 export const CHURN_INACTIVE_MONTHS = 2;
 export const CHURN_AVG_LOOKBACK_MONTHS = 6;
+/** Churn monthly loss applies for this many months after the exit month (inclusive end = exit + 12). */
+export const CHURN_IMPACT_MONTHS = 12;
 
 export type ForecastModelKind = 'holt-winters' | 'seasonal-naive' | 'trend';
 
@@ -23,6 +25,13 @@ export interface ChurnedClient {
   /** First month of the trailing inactivity streak. */
   inactivityStartMonth: string;
   lastActiveMonth: string | null;
+  /**
+   * First month the monthly loss applies (month after exit).
+   * Example: exit Sep-25 → impact Oct-25 … Sep-26.
+   */
+  impactStartMonth: string;
+  /** Last month the monthly loss applies (exit + 12 months). */
+  impactEndMonth: string;
   /** Six-month average spend before inactivity started. */
   monthlyChurnLoss: number;
   lookbackMonths: MonthAmount[];
@@ -31,20 +40,45 @@ export interface ChurnedClient {
 export interface ForecastMonthRow {
   month: string;
   label: string;
-  /** Gross model prediction before churn drag. */
+  /** Model prediction (book trajectory; historical actuals unchanged). */
   grossForecast: number;
-  /** Sum of monthly churn losses applied to this month. */
-  churnDrag: number;
-  /** max(0, grossForecast - churnDrag). */
+  /** Churn losses whose 12-month post-exit window covers this month. */
+  churnImpact: number;
+  /** max(0, grossForecast - churnImpact) — planning figure after remaining churn. */
   netForecast: number;
+  /** What spend could have been if churned clients were still active. */
+  potential: number;
+  /** Share of potential missing due to churn (0–100). */
+  missingPct: number;
   isForecast: true;
 }
 
 export interface HistoryMonthRow {
   month: string;
   label: string;
+  /** Recorded actual — never rewritten by the model. */
   actual: number;
+  /** Opportunity cost from churned clients still inside their impact window. */
+  churnImpact: number;
+  /** actual + churnImpact */
+  potential: number;
+  /** churnImpact / potential * 100 */
+  missingPct: number;
   isForecast: false;
+}
+
+/** Unified MoM row for tables / exports (actual history + forecast horizon). */
+export interface MomComparisonRow {
+  month: string;
+  label: string;
+  kind: 'actual' | 'forecast';
+  /** Actual spend, or net forecast after time-boxed churn. */
+  spend: number;
+  /** Gross model forecast (forecast rows only). */
+  grossForecast: number | null;
+  churnImpact: number;
+  potential: number;
+  missingPct: number;
 }
 
 export type SpendSeriesPoint = HistoryMonthRow | ForecastMonthRow;
@@ -53,17 +87,27 @@ export interface SpendForecastResult {
   history: HistoryMonthRow[];
   forecast: ForecastMonthRow[];
   series: SpendSeriesPoint[];
+  /** Combined MoM actual + forecast comparison (recent history + horizon). */
+  momComparison: MomComparisonRow[];
   model: ForecastModelKind;
   modelLabel: string;
   latestDataMonth: string | null;
-  monthlyChurnDrag: number;
+  /**
+   * Sum of monthly losses for churned clients whose impact window still
+   * overlaps at least one forecast month (not a flat drag on every month).
+   */
+  activeChurnMonthlyCapacity: number;
   churnedClients: ChurnedClient[];
-  /** Sum of net forecast over horizon. */
+  /** Clients whose impact window still covers at least one forecast month. */
+  activeImpactClients: ChurnedClient[];
   netYearTotal: number;
-  /** Sum of gross forecast over horizon. */
   grossYearTotal: number;
-  /** monthlyChurnDrag * horizon. */
-  churnYearImpact: number;
+  /** Sum of per-month churn impact over the forecast horizon only. */
+  forecastChurnImpactTotal: number;
+  /** Sum of potential (gross) over forecast horizon. */
+  forecastPotentialTotal: number;
+  /** Weighted missing % across forecast horizon. */
+  forecastMissingPct: number;
 }
 
 function parseMonth(month: string): Date {
@@ -91,6 +135,42 @@ function monthsBetweenInclusive(start: string, end: string): string[] {
     if (out.length > 240) break;
   }
   return out;
+}
+
+export function churnImpactWindow(exitMonth: string): {
+  impactStartMonth: string;
+  impactEndMonth: string;
+} {
+  return {
+    impactStartMonth: shiftMonth(exitMonth, 1),
+    impactEndMonth: shiftMonth(exitMonth, CHURN_IMPACT_MONTHS),
+  };
+}
+
+/** Whether a calendar month falls inside a client's post-exit impact window. */
+export function monthInChurnWindow(
+  month: string,
+  impactStartMonth: string,
+  impactEndMonth: string
+): boolean {
+  return month >= impactStartMonth && month <= impactEndMonth;
+}
+
+export function churnImpactForMonth(
+  month: string,
+  churnedClients: ChurnedClient[]
+): number {
+  return churnedClients.reduce((sum, c) => {
+    if (monthInChurnWindow(month, c.impactStartMonth, c.impactEndMonth)) {
+      return sum + c.monthlyChurnLoss;
+    }
+    return sum;
+  }, 0);
+}
+
+function missingPct(churnImpact: number, potential: number): number {
+  if (potential <= 0) return 0;
+  return (churnImpact / potential) * 100;
 }
 
 /** Aggregate monthlySpends into a contiguous yyyy-MM → total map. */
@@ -137,7 +217,6 @@ export function forecastHoltWinters(
   }
 
   if (n < seasonLength * 1.5) {
-    // Seasonal naive when we have at least one full prior year point for that offset
     if (n >= seasonLength) {
       const values = Array.from({ length: horizon }, (_, i) => {
         const idx = n - seasonLength + (i % seasonLength);
@@ -146,7 +225,6 @@ export function forecastHoltWinters(
       return { values, model: 'seasonal-naive' };
     }
 
-    // Linear trend on short series
     const last = y[n - 1] ?? 0;
     let slope = 0;
     if (n >= 2) {
@@ -163,7 +241,6 @@ export function forecastHoltWinters(
   const beta = 0.1;
   const gamma = 0.25;
 
-  // Initialize level, trend, seasonals from first two seasons when possible
   const seasons = Math.floor(n / seasonLength);
   const seasonals = new Array(seasonLength).fill(0);
   const seasonAverages: number[] = [];
@@ -178,10 +255,7 @@ export function forecastHoltWinters(
   for (let i = 0; i < seasonLength; i++) {
     let sum = 0;
     for (let s = 0; s < seasons; s++) {
-      const denom = seasonAverages[s] || 1;
       sum += y[s * seasonLength + i] - seasonAverages[s];
-      // keep additive init even if denom unused — avoids multiplicative blow-ups
-      void denom;
     }
     seasonals[i] = sum / seasons;
   }
@@ -250,7 +324,6 @@ function buildClientSeries(spends: MonthlySpend[]): ClientMonthMeta[] {
       row.month,
       (entry.byMonth.get(row.month) || 0) + (row.actualSpendsInr || 0)
     );
-    // Prefer non-empty metadata when later rows fill it in
     if (row.brandName) entry.brandName = row.brandName;
     if (row.industry) entry.industry = row.industry;
     if (row.type) entry.type = row.type;
@@ -261,11 +334,14 @@ function buildClientSeries(spends: MonthlySpend[]): ClientMonthMeta[] {
 
 /**
  * Churn rule:
- * - A client with historical spend who has no spends for 2 consecutive months
- *   ending at (or trailing through) the latest data month is churned.
- * - Monthly loss = average spend over the 6 months immediately before
- *   the inactivity streak started.
- * - That monthly loss is applied as drag on each of the next 12 forecast months.
+ * - Client with historical spend and ≥2 consecutive months of zero spend
+ *   through the latest data month is churned.
+ * - Exit month = second month of that inactivity streak (first confirmation).
+ * - Monthly loss = avg spend over up to 6 months before inactivity started.
+ * - Impact window = 12 months after exit (exit+1 … exit+12).
+ *   e.g. exit Sep-25 → impact Oct-25 through Sep-26.
+ * - Historical actuals are never rewritten; impact is an overlay for
+ *   "could have been" / remaining forecast drag only.
  */
 export function detectChurnedClients(
   spends: MonthlySpend[],
@@ -280,15 +356,18 @@ export function detectChurnedClients(
     const months = Array.from(client.byMonth.keys()).sort();
     if (months.length === 0) continue;
 
-    const lastPositive = [...months].reverse().find((m) => (client.byMonth.get(m) || 0) > 0);
-    if (!lastPositive) continue;
+    const positiveMonths = Array.from(client.byMonth.entries())
+      .filter(([, amt]) => amt > 0)
+      .map(([m]) => m)
+      .sort();
+    if (positiveMonths.length === 0) continue;
 
-    // Build contiguous months from first activity through latest portfolio month
-    const firstMonth = months[0];
-    const timeline = monthsBetweenInclusive(firstMonth, latestDataMonth);
+    const lastPositive = positiveMonths[positiveMonths.length - 1];
+    const firstActivityMonth = positiveMonths[0];
+
+    const timeline = monthsBetweenInclusive(firstActivityMonth, latestDataMonth);
     if (timeline.length < inactiveMonths) continue;
 
-    // Trailing zero streak length at end of timeline
     let zeroStreak = 0;
     for (let i = timeline.length - 1; i >= 0; i--) {
       const amt = client.byMonth.get(timeline[i]) || 0;
@@ -300,21 +379,12 @@ export function detectChurnedClients(
 
     const inactivityStartMonth = shiftMonth(latestDataMonth, -(zeroStreak - 1));
     const exitMonth = shiftMonth(inactivityStartMonth, inactiveMonths - 1);
-
-    // Up to 6 calendar months immediately before inactivity started.
-    // Ignore months before the client first appeared so short histories
-    // are not diluted by pre-existence zeros.
-    const firstActivityMonth = lastPositive
-      ? Array.from(client.byMonth.entries())
-          .filter(([, amt]) => amt > 0)
-          .map(([m]) => m)
-          .sort()[0]
-      : null;
+    const { impactStartMonth, impactEndMonth } = churnImpactWindow(exitMonth);
 
     const lookback: MonthAmount[] = [];
     for (let i = lookbackMonths; i >= 1; i--) {
       const m = shiftMonth(inactivityStartMonth, -i);
-      if (firstActivityMonth && m < firstActivityMonth) continue;
+      if (m < firstActivityMonth) continue;
       lookback.push({ month: m, amount: client.byMonth.get(m) || 0 });
     }
     if (lookback.length === 0) continue;
@@ -333,6 +403,8 @@ export function detectChurnedClients(
       exitMonth,
       inactivityStartMonth,
       lastActiveMonth: lastPositive,
+      impactStartMonth,
+      impactEndMonth,
       monthlyChurnLoss,
       lookbackMonths: lookback,
     });
@@ -353,61 +425,113 @@ export function buildSpendForecast(
   const totals = aggregateMonthlyTotals(filtered);
   const contiguous = toContiguousSeries(totals);
 
-  const history: HistoryMonthRow[] = contiguous.map((h) => ({
-    month: h.month,
-    label: formatMonthLabel(h.month),
-    actual: h.amount,
-    isForecast: false as const,
-  }));
-
   const latestDataMonth =
     contiguous.length > 0 ? contiguous[contiguous.length - 1].month : null;
-
-  const { values, model } = forecastHoltWinters(contiguous, horizon);
 
   const churnedClients = latestDataMonth
     ? detectChurnedClients(filtered, latestDataMonth)
     : [];
-  const monthlyChurnDrag = churnedClients.reduce(
-    (s, c) => s + c.monthlyChurnLoss,
-    0
-  );
+
+  // Historical actuals stay as recorded; churn is an overlay for potential / %.
+  const history: HistoryMonthRow[] = contiguous.map((h) => {
+    const impact = churnImpactForMonth(h.month, churnedClients);
+    const potential = h.amount + impact;
+    return {
+      month: h.month,
+      label: formatMonthLabel(h.month),
+      actual: h.amount,
+      churnImpact: impact,
+      potential,
+      missingPct: missingPct(impact, potential),
+      isForecast: false as const,
+    };
+  });
+
+  const { values, model } = forecastHoltWinters(contiguous, horizon);
 
   const forecast: ForecastMonthRow[] = values.map((gross, i) => {
     const month = latestDataMonth
       ? shiftMonth(latestDataMonth, i + 1)
       : format(addMonths(new Date(), i + 1), 'yyyy-MM');
-    const churnDrag = monthlyChurnDrag;
+    // Only clients whose impact window still covers this forecast month.
+    const churnImpact = churnImpactForMonth(month, churnedClients);
+    const netForecast = Math.max(0, gross - churnImpact);
+    // Could've been = book forecast + remaining churn opportunity.
+    const potential = gross + churnImpact;
     return {
       month,
       label: formatMonthLabel(month),
       grossForecast: gross,
-      churnDrag,
-      netForecast: Math.max(0, gross - churnDrag),
+      churnImpact,
+      netForecast,
+      potential,
+      missingPct: missingPct(churnImpact, potential),
       isForecast: true as const,
     };
   });
 
+  const firstForecastMonth = forecast[0]?.month ?? null;
+  const lastForecastMonth = forecast[forecast.length - 1]?.month ?? null;
+
+  const activeImpactClients = churnedClients.filter((c) => {
+    if (!firstForecastMonth || !lastForecastMonth) return false;
+    // Window overlaps the forecast horizon at all
+    return c.impactStartMonth <= lastForecastMonth && c.impactEndMonth >= firstForecastMonth;
+  });
+
+  const activeChurnMonthlyCapacity = activeImpactClients.reduce(
+    (s, c) => s + c.monthlyChurnLoss,
+    0
+  );
+
   const grossYearTotal = forecast.reduce((s, f) => s + f.grossForecast, 0);
   const netYearTotal = forecast.reduce((s, f) => s + f.netForecast, 0);
-  const churnYearImpact = monthlyChurnDrag * horizon;
+  const forecastChurnImpactTotal = forecast.reduce((s, f) => s + f.churnImpact, 0);
+  const forecastPotentialTotal = forecast.reduce((s, f) => s + f.potential, 0);
+  const forecastMissingPct = missingPct(forecastChurnImpactTotal, forecastPotentialTotal);
+
+  const momComparison: MomComparisonRow[] = [
+    ...history.slice(-18).map((h) => ({
+      month: h.month,
+      label: h.label,
+      kind: 'actual' as const,
+      spend: h.actual,
+      grossForecast: null,
+      churnImpact: h.churnImpact,
+      potential: h.potential,
+      missingPct: h.missingPct,
+    })),
+    ...forecast.map((f) => ({
+      month: f.month,
+      label: f.label,
+      kind: 'forecast' as const,
+      spend: f.netForecast,
+      grossForecast: f.grossForecast,
+      churnImpact: f.churnImpact,
+      potential: f.potential,
+      missingPct: f.missingPct,
+    })),
+  ];
 
   return {
     history,
     forecast,
     series: [...history, ...forecast],
+    momComparison,
     model,
     modelLabel: modelLabel(model),
     latestDataMonth,
-    monthlyChurnDrag,
+    activeChurnMonthlyCapacity,
     churnedClients,
+    activeImpactClients,
     netYearTotal,
     grossYearTotal,
-    churnYearImpact,
+    forecastChurnImpactTotal,
+    forecastPotentialTotal,
+    forecastMissingPct,
   };
 }
 
-/** Helper for UI: months available for reference / as-of selection. */
 export function listDataMonths(spends: MonthlySpend[]): string[] {
   return Array.from(new Set(spends.map((s) => s.month).filter(Boolean))).sort();
 }
