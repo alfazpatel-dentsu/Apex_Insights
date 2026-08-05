@@ -15,10 +15,6 @@ export {
 } from '@/lib/spend-forecast-models';
 
 export const FORECAST_HORIZON_MONTHS = 12;
-export const CHURN_INACTIVE_MONTHS = 2;
-export const CHURN_AVG_LOOKBACK_MONTHS = 6;
-/** Churn monthly loss applies for this many months after the exit month (inclusive end = exit + 12). */
-export const CHURN_IMPACT_MONTHS = 12;
 
 /** @deprecated Use ForecastModelId */
 export type ForecastModelKind = ForecastModelId;
@@ -28,101 +24,60 @@ export interface MonthAmount {
   amount: number;
 }
 
-export interface ChurnedClient {
-  clientId: string;
-  brandName: string;
-  industry: string;
-  type: string;
-  team: string;
-  /** Second consecutive zero-spend month that confirmed churn. */
-  exitMonth: string;
-  /** First month of the trailing inactivity streak. */
-  inactivityStartMonth: string;
-  lastActiveMonth: string | null;
-  /**
-   * First month the monthly loss applies (month after exit).
-   * Example: exit Sep-25 → impact Oct-25 … Sep-26.
-   */
-  impactStartMonth: string;
-  /** Last month the monthly loss applies (exit + 12 months). */
-  impactEndMonth: string;
-  /** Six-month average spend before inactivity started. */
-  monthlyChurnLoss: number;
-  lookbackMonths: MonthAmount[];
-}
-
 export interface ForecastMonthRow {
   month: string;
   label: string;
-  /** Model prediction (book trajectory; historical actuals unchanged). */
-  grossForecast: number;
-  /** Churn losses whose 12-month post-exit window covers this month. */
-  churnImpact: number;
-  /** max(0, grossForecast - churnImpact) — planning figure after remaining churn. */
-  netForecast: number;
-  /** What spend could have been if churned clients were still active. */
-  potential: number;
-  /** Share of potential missing due to churn (0–100). */
-  missingPct: number;
+  forecast: number;
   isForecast: true;
 }
 
 export interface HistoryMonthRow {
   month: string;
   label: string;
-  /** Recorded actual — never rewritten by the model. */
   actual: number;
-  /** Opportunity cost from churned clients still inside their impact window. */
-  churnImpact: number;
-  /** actual + churnImpact */
-  potential: number;
-  /** churnImpact / potential * 100 */
-  missingPct: number;
   isForecast: false;
 }
 
-/** Unified MoM row for tables / exports (actual history + forecast horizon). */
 export interface MomComparisonRow {
   month: string;
   label: string;
   kind: 'actual' | 'forecast';
-  /** Actual spend, or net forecast after time-boxed churn. */
   spend: number;
-  /** Gross model forecast (forecast rows only). */
-  grossForecast: number | null;
-  churnImpact: number;
-  potential: number;
-  missingPct: number;
 }
 
 export type SpendSeriesPoint = HistoryMonthRow | ForecastMonthRow;
+
+export interface ForecastWidget {
+  id: string;
+  title: string;
+  value: string;
+  subtitle: string;
+  tone: 'primary' | 'success' | 'warning' | 'destructive' | 'muted';
+}
 
 export interface SpendForecastResult {
   history: HistoryMonthRow[];
   forecast: ForecastMonthRow[];
   series: SpendSeriesPoint[];
-  /** Combined MoM actual + forecast comparison (recent history + horizon). */
   momComparison: MomComparisonRow[];
   model: ForecastModelId;
   modelLabel: string;
   modelNote?: string;
   latestDataMonth: string | null;
-  /**
-   * Sum of monthly losses for churned clients whose impact window still
-   * overlaps at least one forecast month (not a flat drag on every month).
-   */
-  activeChurnMonthlyCapacity: number;
-  churnedClients: ChurnedClient[];
-  /** Clients whose impact window still covers at least one forecast month. */
-  activeImpactClients: ChurnedClient[];
-  netYearTotal: number;
-  grossYearTotal: number;
-  /** Sum of per-month churn impact over the forecast horizon only. */
-  forecastChurnImpactTotal: number;
-  /** Sum of potential (gross) over forecast horizon. */
-  forecastPotentialTotal: number;
-  /** Weighted missing % across forecast horizon. */
-  forecastMissingPct: number;
+  yearTotal: number;
+  avgMonthly: number;
+  nextMonthValue: number;
+  nextMonthLabel: string;
+  peakMonthLabel: string;
+  peakValue: number;
+  troughMonthLabel: string;
+  troughValue: number;
+  last12ActualTotal: number;
+  vsLast12Pct: number;
+  horizonGrowthPct: number;
+  vsNaivePct: number;
+  naiveYearTotal: number;
+  widgets: ForecastWidget[];
 }
 
 function parseMonth(month: string): Date {
@@ -152,40 +107,18 @@ function monthsBetweenInclusive(start: string, end: string): string[] {
   return out;
 }
 
-export function churnImpactWindow(exitMonth: string): {
-  impactStartMonth: string;
-  impactEndMonth: string;
-} {
-  return {
-    impactStartMonth: shiftMonth(exitMonth, 1),
-    impactEndMonth: shiftMonth(exitMonth, CHURN_IMPACT_MONTHS),
-  };
+function formatInrCompact(val: number): string {
+  const absVal = Math.abs(val);
+  const sign = val < 0 ? '-' : '';
+  if (absVal >= 10000000) return `₹${sign}${(absVal / 10000000).toFixed(2)}Cr`;
+  if (absVal >= 100000) return `₹${sign}${(absVal / 100000).toFixed(2)}L`;
+  return `₹${sign}${Math.round(absVal).toLocaleString('en-IN')}`;
 }
 
-/** Whether a calendar month falls inside a client's post-exit impact window. */
-export function monthInChurnWindow(
-  month: string,
-  impactStartMonth: string,
-  impactEndMonth: string
-): boolean {
-  return month >= impactStartMonth && month <= impactEndMonth;
-}
-
-export function churnImpactForMonth(
-  month: string,
-  churnedClients: ChurnedClient[]
-): number {
-  return churnedClients.reduce((sum, c) => {
-    if (monthInChurnWindow(month, c.impactStartMonth, c.impactEndMonth)) {
-      return sum + c.monthlyChurnLoss;
-    }
-    return sum;
-  }, 0);
-}
-
-function missingPct(churnImpact: number, potential: number): number {
-  if (potential <= 0) return 0;
-  return (churnImpact / potential) * 100;
+function formatPctSigned(val: number): string {
+  if (!Number.isFinite(val)) return '—';
+  const sign = val > 0 ? '+' : '';
+  return `${sign}${val.toFixed(1)}%`;
 }
 
 /** Aggregate monthlySpends into a contiguous yyyy-MM → total map. */
@@ -202,9 +135,7 @@ export function aggregateMonthlyTotals(
   return map;
 }
 
-export function toContiguousSeries(
-  totals: Map<string, number>
-): MonthAmount[] {
+export function toContiguousSeries(totals: Map<string, number>): MonthAmount[] {
   if (totals.size === 0) return [];
   const months = Array.from(totals.keys()).sort();
   const start = months[0];
@@ -216,156 +147,305 @@ export function toContiguousSeries(
 }
 
 /**
- * Holt-Winters additive seasonal forecast (period=12).
- * Prefer `runForecastModel('holt-winters', …)` for new call sites.
+ * Holt-Winters wrapper — prefer `runForecastModel('holt-winters', …)`.
  */
 export function forecastHoltWinters(
   history: MonthAmount[],
-  horizon = FORECAST_HORIZON_MONTHS,
-  _seasonLength = 12
+  horizon = FORECAST_HORIZON_MONTHS
 ): { values: number[]; model: ForecastModelId } {
   const result = runForecastModel('holt-winters', history, horizon);
   return { values: result.values, model: result.model };
-  void _seasonLength;
 }
 
 export function modelLabel(kind: ForecastModelId): string {
   return modelIdLabel(kind);
 }
 
-interface ClientMonthMeta {
-  clientId: string;
-  brandName: string;
-  industry: string;
-  type: string;
-  team: string;
-  byMonth: Map<string, number>;
+function mean(vals: number[]): number {
+  if (vals.length === 0) return 0;
+  return vals.reduce((s, v) => s + v, 0) / vals.length;
 }
 
-function buildClientSeries(spends: MonthlySpend[]): ClientMonthMeta[] {
-  const map = new Map<string, ClientMonthMeta>();
-  for (const row of spends) {
-    if (!row.clientId || !row.month) continue;
-    let entry = map.get(row.clientId);
-    if (!entry) {
-      entry = {
-        clientId: row.clientId,
-        brandName: row.brandName || row.clientId,
-        industry: row.industry || 'N/A',
-        type: row.type || 'N/A',
-        team: row.team || 'N/A',
-        byMonth: new Map(),
-      };
-      map.set(row.clientId, entry);
-    }
-    entry.byMonth.set(
-      row.month,
-      (entry.byMonth.get(row.month) || 0) + (row.actualSpendsInr || 0)
-    );
-    if (row.brandName) entry.brandName = row.brandName;
-    if (row.industry) entry.industry = row.industry;
-    if (row.type) entry.type = row.type;
-    if (row.team) entry.team = row.team;
-  }
-  return Array.from(map.values());
+function stdev(vals: number[]): number {
+  if (vals.length < 2) return 0;
+  const m = mean(vals);
+  const v = vals.reduce((s, x) => s + (x - m) ** 2, 0) / (vals.length - 1);
+  return Math.sqrt(v);
 }
 
-/**
- * Churn vs pause:
- * - **Churn**: ≥2 consecutive months with no spend, and the client is still
- *   inactive through the latest data month (never came back).
- * - **Pause**: same gap of ≥2 months, but the client later recorded spend
- *   again → not churned; no impact window is applied.
- *
- * Exit month = second month of the *current trailing* inactivity streak.
- * Monthly loss = avg spend over up to 6 months before that streak started.
- * Impact window = exit+1 … exit+12 (e.g. exit Sep-25 → through Sep-26).
- * Historical actuals are never rewritten; impact is an overlay only.
- */
-export function detectChurnedClients(
-  spends: MonthlySpend[],
-  latestDataMonth: string,
-  inactiveMonths = CHURN_INACTIVE_MONTHS,
-  lookbackMonths = CHURN_AVG_LOOKBACK_MONTHS
-): ChurnedClient[] {
-  const clients = buildClientSeries(spends);
-  const churned: ChurnedClient[] = [];
+function buildModelWidgets(args: {
+  model: ForecastModelId;
+  history: MonthAmount[];
+  forecastValues: number[];
+  forecastRows: ForecastMonthRow[];
+  yearTotal: number;
+  avgMonthly: number;
+  nextMonthValue: number;
+  nextMonthLabel: string;
+  peakMonthLabel: string;
+  peakValue: number;
+  troughMonthLabel: string;
+  troughValue: number;
+  last12ActualTotal: number;
+  vsLast12Pct: number;
+  horizonGrowthPct: number;
+  vsNaivePct: number;
+  naiveYearTotal: number;
+}): ForecastWidget[] {
+  const {
+    model,
+    history,
+    forecastValues,
+    yearTotal,
+    avgMonthly,
+    nextMonthValue,
+    nextMonthLabel,
+    peakMonthLabel,
+    peakValue,
+    troughMonthLabel,
+    troughValue,
+    last12ActualTotal,
+    vsLast12Pct,
+    horizonGrowthPct,
+    vsNaivePct,
+    naiveYearTotal,
+  } = args;
 
-  for (const client of clients) {
-    const months = Array.from(client.byMonth.keys()).sort();
-    if (months.length === 0) continue;
+  const hist = history.map((h) => h.amount);
+  const lastActual = hist[hist.length - 1] ?? 0;
+  const seasonalAmp =
+    avgMonthly > 0 ? ((peakValue - troughValue) / avgMonthly) * 100 : 0;
 
-    const positiveMonths = Array.from(client.byMonth.entries())
-      .filter(([, amt]) => amt > 0)
-      .map(([m]) => m)
-      .sort();
-    if (positiveMonths.length === 0) continue;
+  // Shared core widgets (values still differ by model)
+  const core: ForecastWidget[] = [
+    {
+      id: 'year-total',
+      title: '12-mo Forecast',
+      value: formatInrCompact(yearTotal),
+      subtitle: `${modelIdLabel(model)} · full horizon`,
+      tone: 'primary',
+    },
+    {
+      id: 'next-month',
+      title: `Next · ${nextMonthLabel}`,
+      value: formatInrCompact(nextMonthValue),
+      subtitle:
+        lastActual > 0
+          ? `${formatPctSigned(((nextMonthValue - lastActual) / lastActual) * 100)} vs last actual`
+          : 'First forecast month',
+      tone: nextMonthValue >= lastActual ? 'success' : 'warning',
+    },
+    {
+      id: 'vs-history',
+      title: 'Vs last 12 actual',
+      value: formatPctSigned(vsLast12Pct),
+      subtitle: `Actual ${formatInrCompact(last12ActualTotal)} → forecast ${formatInrCompact(yearTotal)}`,
+      tone: vsLast12Pct >= 0 ? 'success' : 'destructive',
+    },
+    {
+      id: 'vs-naive',
+      title: 'Vs YoY naive',
+      value: model === 'seasonal-naive' ? 'Baseline' : formatPctSigned(vsNaivePct),
+      subtitle:
+        model === 'seasonal-naive'
+          ? `Naive total ${formatInrCompact(naiveYearTotal)}`
+          : `Naive ${formatInrCompact(naiveYearTotal)} · this model ${formatInrCompact(yearTotal)}`,
+      tone: model === 'seasonal-naive' ? 'muted' : vsNaivePct >= 0 ? 'success' : 'warning',
+    },
+  ];
 
-    const lastPositive = positiveMonths[positiveMonths.length - 1];
-    const firstActivityMonth = positiveMonths[0];
+  // Model-specific fifth/sixth widgets so the row visibly changes
+  let specific: ForecastWidget[] = [];
 
-    // Still spending in the latest portfolio month → active (or resumed) = not churn.
-    if ((client.byMonth.get(latestDataMonth) || 0) > 0) continue;
-
-    // Any spend on/after the latest data month's window means they are not trailing-inactive.
-    // If last positive spend is too recent to form a 2-month gap, treat as pause / active.
-    if (lastPositive >= latestDataMonth) continue;
-    const earliestExitMonth = shiftMonth(lastPositive, inactiveMonths);
-    if (earliestExitMonth > latestDataMonth) continue;
-
-    const timeline = monthsBetweenInclusive(firstActivityMonth, latestDataMonth);
-    if (timeline.length < inactiveMonths) continue;
-
-    // Trailing zero streak must run all the way to latestDataMonth.
-    // If they spent again after an earlier gap, lastPositive is recent and
-    // zeroStreak < inactiveMonths → pause, not churn.
-    let zeroStreak = 0;
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const amt = client.byMonth.get(timeline[i]) || 0;
-      if (amt > 0) break;
-      zeroStreak++;
+  switch (model) {
+    case 'holt-winters': {
+      specific = [
+        {
+          id: 'hw-peak',
+          title: 'Seasonal peak',
+          value: peakMonthLabel,
+          subtitle: formatInrCompact(peakValue),
+          tone: 'success',
+        },
+        {
+          id: 'hw-amp',
+          title: 'Seasonality amp.',
+          value: formatPctSigned(seasonalAmp).replace('+', ''),
+          subtitle: `Peak−trough ÷ avg (${formatInrCompact(troughValue)} → ${formatInrCompact(peakValue)})`,
+          tone: 'primary',
+        },
+      ];
+      break;
     }
-
-    if (zeroStreak < inactiveMonths) continue;
-
-    // Confirm there is no positive spend after the streak started (resume = pause).
-    const inactivityStartMonth = shiftMonth(latestDataMonth, -(zeroStreak - 1));
-    const resumedAfterGap = positiveMonths.some((m) => m >= inactivityStartMonth);
-    if (resumedAfterGap) continue;
-
-    const exitMonth = shiftMonth(inactivityStartMonth, inactiveMonths - 1);
-    const { impactStartMonth, impactEndMonth } = churnImpactWindow(exitMonth);
-
-    const lookback: MonthAmount[] = [];
-    for (let i = lookbackMonths; i >= 1; i--) {
-      const m = shiftMonth(inactivityStartMonth, -i);
-      if (m < firstActivityMonth) continue;
-      lookback.push({ month: m, amount: client.byMonth.get(m) || 0 });
+    case 'seasonal-naive': {
+      let yoyScale = 1;
+      if (hist.length >= 24) {
+        const recent = hist.slice(-12).reduce((s, v) => s + v, 0);
+        const prior = hist.slice(-24, -12).reduce((s, v) => s + v, 0);
+        if (prior > 0) yoyScale = recent / prior;
+      }
+      specific = [
+        {
+          id: 'sn-scale',
+          title: 'YoY scale factor',
+          value: `${yoyScale.toFixed(2)}×`,
+          subtitle: 'Recent 12 ÷ prior 12 applied to last year',
+          tone: yoyScale >= 1 ? 'success' : 'warning',
+        },
+        {
+          id: 'sn-peak',
+          title: 'Repeated peak month',
+          value: peakMonthLabel,
+          subtitle: formatInrCompact(peakValue),
+          tone: 'primary',
+        },
+      ];
+      break;
     }
-    if (lookback.length === 0) continue;
-
-    const monthlyChurnLoss =
-      lookback.reduce((s, x) => s + x.amount, 0) / lookback.length;
-
-    if (monthlyChurnLoss <= 0) continue;
-
-    churned.push({
-      clientId: client.clientId,
-      brandName: client.brandName,
-      industry: client.industry,
-      type: client.type,
-      team: client.team,
-      exitMonth,
-      inactivityStartMonth,
-      lastActiveMonth: lastPositive,
-      impactStartMonth,
-      impactEndMonth,
-      monthlyChurnLoss,
-      lookbackMonths: lookback,
-    });
+    case 'linear': {
+      const n = hist.length;
+      const slope =
+        n >= 2 ? (forecastValues[forecastValues.length - 1] - nextMonthValue) / Math.max(1, forecastValues.length - 1) : 0;
+      // Better: fit slope from history end
+      const histSlope =
+        n >= 7 ? (hist[n - 1] - hist[n - 7]) / 6 : n >= 2 ? hist[n - 1] - hist[n - 2] : 0;
+      specific = [
+        {
+          id: 'lin-slope',
+          title: 'Implied MoM slope',
+          value: formatInrCompact(histSlope),
+          subtitle: 'Approx. change per month (recent history)',
+          tone: histSlope >= 0 ? 'success' : 'destructive',
+        },
+        {
+          id: 'lin-end',
+          title: 'Horizon end level',
+          value: formatInrCompact(forecastValues[forecastValues.length - 1] ?? 0),
+          subtitle: `${formatPctSigned(horizonGrowthPct)} across forecast path`,
+          tone: 'primary',
+        },
+      ];
+      break;
+    }
+    case 'polynomial': {
+      const mid = forecastValues[Math.floor(forecastValues.length / 2)] ?? 0;
+      const end = forecastValues[forecastValues.length - 1] ?? 0;
+      const firstHalf = mid - nextMonthValue;
+      const secondHalf = end - mid;
+      const accel = secondHalf - firstHalf;
+      specific = [
+        {
+          id: 'poly-curve',
+          title: 'Curvature',
+          value: accel >= 0 ? 'Accelerating' : 'Decelerating',
+          subtitle: `2nd-half Δ ${formatInrCompact(secondHalf)} vs 1st-half Δ ${formatInrCompact(firstHalf)}`,
+          tone: accel >= 0 ? 'success' : 'warning',
+        },
+        {
+          id: 'poly-avg',
+          title: 'Avg monthly F/C',
+          value: formatInrCompact(avgMonthly),
+          subtitle: 'Mean of quadratic path',
+          tone: 'primary',
+        },
+      ];
+      break;
+    }
+    case 'arima': {
+      const diffs = forecastValues.slice(1).map((v, i) => v - forecastValues[i]);
+      const momVol = stdev(diffs);
+      const momentum = diffs.length ? mean(diffs) : 0;
+      specific = [
+        {
+          id: 'arima-mom',
+          title: 'Path momentum',
+          value: formatInrCompact(momentum),
+          subtitle: 'Avg MoM change on forecast path',
+          tone: momentum >= 0 ? 'success' : 'destructive',
+        },
+        {
+          id: 'arima-vol',
+          title: 'Path volatility',
+          value: formatInrCompact(momVol),
+          subtitle: 'Stdev of MoM forecast diffs',
+          tone: 'warning',
+        },
+      ];
+      break;
+    }
+    case 'sarima': {
+      const lastYearSlice = hist.slice(-12);
+      const lastYearAvg = mean(lastYearSlice);
+      const lift =
+        lastYearAvg > 0 ? ((avgMonthly - lastYearAvg) / lastYearAvg) * 100 : 0;
+      specific = [
+        {
+          id: 'sarima-lift',
+          title: 'Seasonal lift',
+          value: formatPctSigned(lift),
+          subtitle: `F/C avg vs last-12 avg (${formatInrCompact(lastYearAvg)})`,
+          tone: lift >= 0 ? 'success' : 'destructive',
+        },
+        {
+          id: 'sarima-trough',
+          title: 'Seasonal trough',
+          value: troughMonthLabel,
+          subtitle: formatInrCompact(troughValue),
+          tone: 'muted',
+        },
+      ];
+      break;
+    }
+    case 'regression-features': {
+      const lag1 = lastActual;
+      const lag12 = hist.length >= 12 ? hist[hist.length - 12] : lag1;
+      const lagGap = lag1 - lag12;
+      specific = [
+        {
+          id: 'feat-lag',
+          title: 'Lag-1 vs Lag-12',
+          value: formatInrCompact(lagGap),
+          subtitle: `L1 ${formatInrCompact(lag1)} · L12 ${formatInrCompact(lag12)}`,
+          tone: lagGap >= 0 ? 'success' : 'warning',
+        },
+        {
+          id: 'feat-peak',
+          title: 'Featured peak',
+          value: peakMonthLabel,
+          subtitle: formatInrCompact(peakValue),
+          tone: 'primary',
+        },
+      ];
+      break;
+    }
+    case 'prophet': {
+      // Trend proxy: end - start of forecast / months
+      const trendPerMo =
+        forecastValues.length > 1
+          ? (forecastValues[forecastValues.length - 1] - forecastValues[0]) /
+            (forecastValues.length - 1)
+          : 0;
+      specific = [
+        {
+          id: 'prophet-trend',
+          title: 'Trend / month',
+          value: formatInrCompact(trendPerMo),
+          subtitle: 'Fourier+trend path slope over horizon',
+          tone: trendPerMo >= 0 ? 'success' : 'destructive',
+        },
+        {
+          id: 'prophet-amp',
+          title: 'Yearly amplitude',
+          value: formatPctSigned(seasonalAmp).replace('+', ''),
+          subtitle: 'Peak−trough relative to avg forecast',
+          tone: 'primary',
+        },
+      ];
+      break;
+    }
   }
 
-  return churned.sort((a, b) => b.monthlyChurnLoss - a.monthlyChurnLoss);
+  return [...core, ...specific];
 }
 
 export function buildSpendForecast(
@@ -385,69 +465,71 @@ export function buildSpendForecast(
   const latestDataMonth =
     contiguous.length > 0 ? contiguous[contiguous.length - 1].month : null;
 
-  const churnedClients = latestDataMonth
-    ? detectChurnedClients(filtered, latestDataMonth)
-    : [];
-
-  // Historical actuals stay as recorded; churn is an overlay for potential / %.
-  const history: HistoryMonthRow[] = contiguous.map((h) => {
-    const impact = churnImpactForMonth(h.month, churnedClients);
-    const potential = h.amount + impact;
-    return {
-      month: h.month,
-      label: formatMonthLabel(h.month),
-      actual: h.amount,
-      churnImpact: impact,
-      potential,
-      missingPct: missingPct(impact, potential),
-      isForecast: false as const,
-    };
-  });
+  const history: HistoryMonthRow[] = contiguous.map((h) => ({
+    month: h.month,
+    label: formatMonthLabel(h.month),
+    actual: h.amount,
+    isForecast: false as const,
+  }));
 
   const modelResult = runForecastModel(selectedModel, contiguous, horizon);
-  const values = modelResult.values;
-  const model = modelResult.model;
+  const naiveResult = runForecastModel('seasonal-naive', contiguous, horizon);
 
-  const forecast: ForecastMonthRow[] = values.map((gross, i) => {
+  const forecast: ForecastMonthRow[] = modelResult.values.map((value, i) => {
     const month = latestDataMonth
       ? shiftMonth(latestDataMonth, i + 1)
       : format(addMonths(new Date(), i + 1), 'yyyy-MM');
-    // Only clients whose impact window still covers this forecast month.
-    const churnImpact = churnImpactForMonth(month, churnedClients);
-    const netForecast = Math.max(0, gross - churnImpact);
-    // Could've been = book forecast + remaining churn opportunity.
-    const potential = gross + churnImpact;
     return {
       month,
       label: formatMonthLabel(month),
-      grossForecast: gross,
-      churnImpact,
-      netForecast,
-      potential,
-      missingPct: missingPct(churnImpact, potential),
+      forecast: value,
       isForecast: true as const,
     };
   });
 
-  const firstForecastMonth = forecast[0]?.month ?? null;
-  const lastForecastMonth = forecast[forecast.length - 1]?.month ?? null;
+  const yearTotal = forecast.reduce((s, f) => s + f.forecast, 0);
+  const naiveYearTotal = naiveResult.values.reduce((s, v) => s + v, 0);
+  const avgMonthly = forecast.length ? yearTotal / forecast.length : 0;
+  const nextMonthValue = forecast[0]?.forecast ?? 0;
+  const nextMonthLabel = forecast[0]?.label ?? '—';
 
-  const activeImpactClients = churnedClients.filter((c) => {
-    if (!firstForecastMonth || !lastForecastMonth) return false;
-    // Window overlaps the forecast horizon at all
-    return c.impactStartMonth <= lastForecastMonth && c.impactEndMonth >= firstForecastMonth;
+  let peak = forecast[0];
+  let trough = forecast[0];
+  for (const f of forecast) {
+    if (!peak || f.forecast > peak.forecast) peak = f;
+    if (!trough || f.forecast < trough.forecast) trough = f;
+  }
+
+  const last12 = contiguous.slice(-12);
+  const last12ActualTotal = last12.reduce((s, h) => s + h.amount, 0);
+  const vsLast12Pct =
+    last12ActualTotal > 0 ? ((yearTotal - last12ActualTotal) / last12ActualTotal) * 100 : 0;
+
+  const firstFc = forecast[0]?.forecast ?? 0;
+  const lastFc = forecast[forecast.length - 1]?.forecast ?? 0;
+  const horizonGrowthPct = firstFc > 0 ? ((lastFc - firstFc) / firstFc) * 100 : 0;
+  const vsNaivePct =
+    naiveYearTotal > 0 ? ((yearTotal - naiveYearTotal) / naiveYearTotal) * 100 : 0;
+
+  const widgets = buildModelWidgets({
+    model: modelResult.model,
+    history: contiguous,
+    forecastValues: modelResult.values,
+    forecastRows: forecast,
+    yearTotal,
+    avgMonthly,
+    nextMonthValue,
+    nextMonthLabel,
+    peakMonthLabel: peak?.label ?? '—',
+    peakValue: peak?.forecast ?? 0,
+    troughMonthLabel: trough?.label ?? '—',
+    troughValue: trough?.forecast ?? 0,
+    last12ActualTotal,
+    vsLast12Pct,
+    horizonGrowthPct,
+    vsNaivePct,
+    naiveYearTotal,
   });
-
-  const activeChurnMonthlyCapacity = activeImpactClients.reduce(
-    (s, c) => s + c.monthlyChurnLoss,
-    0
-  );
-
-  const grossYearTotal = forecast.reduce((s, f) => s + f.grossForecast, 0);
-  const netYearTotal = forecast.reduce((s, f) => s + f.netForecast, 0);
-  const forecastChurnImpactTotal = forecast.reduce((s, f) => s + f.churnImpact, 0);
-  const forecastPotentialTotal = forecast.reduce((s, f) => s + f.potential, 0);
-  const forecastMissingPct = missingPct(forecastChurnImpactTotal, forecastPotentialTotal);
 
   const momComparison: MomComparisonRow[] = [
     ...history.slice(-18).map((h) => ({
@@ -455,20 +537,12 @@ export function buildSpendForecast(
       label: h.label,
       kind: 'actual' as const,
       spend: h.actual,
-      grossForecast: null,
-      churnImpact: h.churnImpact,
-      potential: h.potential,
-      missingPct: h.missingPct,
     })),
     ...forecast.map((f) => ({
       month: f.month,
       label: f.label,
       kind: 'forecast' as const,
-      spend: f.netForecast,
-      grossForecast: f.grossForecast,
-      churnImpact: f.churnImpact,
-      potential: f.potential,
-      missingPct: f.missingPct,
+      spend: f.forecast,
     })),
   ];
 
@@ -477,18 +551,24 @@ export function buildSpendForecast(
     forecast,
     series: [...history, ...forecast],
     momComparison,
-    model,
-    modelLabel: modelLabel(model),
+    model: modelResult.model,
+    modelLabel: modelLabel(modelResult.model),
     modelNote: modelResult.note,
     latestDataMonth,
-    activeChurnMonthlyCapacity,
-    churnedClients,
-    activeImpactClients,
-    netYearTotal,
-    grossYearTotal,
-    forecastChurnImpactTotal,
-    forecastPotentialTotal,
-    forecastMissingPct,
+    yearTotal,
+    avgMonthly,
+    nextMonthValue,
+    nextMonthLabel,
+    peakMonthLabel: peak?.label ?? '—',
+    peakValue: peak?.forecast ?? 0,
+    troughMonthLabel: trough?.label ?? '—',
+    troughValue: trough?.forecast ?? 0,
+    last12ActualTotal,
+    vsLast12Pct,
+    horizonGrowthPct,
+    vsNaivePct,
+    naiveYearTotal,
+    widgets,
   };
 }
 

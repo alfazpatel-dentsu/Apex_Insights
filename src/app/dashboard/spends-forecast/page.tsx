@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Download, Loader2, Info, TrendingUp, Users, AlertTriangle, LineChart, Percent } from 'lucide-react';
+import { Download, Loader2, Info } from 'lucide-react';
 
 import { useCollection } from '@/firebase';
 import { MonthlySpend } from '@/lib/types';
@@ -54,8 +54,6 @@ const formatCurrency = (val: number) => {
   return `₹${sign}${absVal.toLocaleString('en-IN')}`;
 };
 
-const formatPct = (val: number) => `${val.toFixed(1)}%`;
-
 const formatChartAxis = (val: number) => {
   if (val == null || Number.isNaN(val)) return '';
   const absVal = Math.abs(val);
@@ -64,6 +62,22 @@ const formatChartAxis = (val: number) => {
   if (absVal >= 100000) return `${sign}${(absVal / 100000).toFixed(1)}L`;
   if (absVal >= 1000) return `${sign}${(absVal / 1000).toFixed(0)}K`;
   return `${sign}${absVal.toFixed(0)}`;
+};
+
+const TONE_BORDER: Record<string, string> = {
+  primary: 'border-t-primary',
+  success: 'border-t-[hsl(var(--success))]',
+  warning: 'border-t-amber-500',
+  destructive: 'border-t-destructive',
+  muted: 'border-t-foreground/30',
+};
+
+const TONE_TEXT: Record<string, string> = {
+  primary: 'text-primary',
+  success: 'text-[hsl(var(--success))]',
+  warning: 'text-amber-600',
+  destructive: 'text-destructive',
+  muted: 'text-secondary',
 };
 
 function downloadCsv(filename: string, rows: Record<string, string | number>[]) {
@@ -133,19 +147,13 @@ export default function SpendsForecastPage() {
         label: h.label,
         month: h.month,
         actual: h.actual,
-        potential: h.potential,
-        grossForecast: null as number | null,
-        netForecast: null as number | null,
-        churnImpact: h.churnImpact > 0 ? h.churnImpact : null,
+        forecast: null as number | null,
       })),
       ...result.forecast.map((f) => ({
         label: f.label,
         month: f.month,
         actual: null as number | null,
-        potential: f.potential,
-        grossForecast: f.grossForecast,
-        netForecast: f.netForecast,
-        churnImpact: f.churnImpact > 0 ? f.churnImpact : null,
+        forecast: f.forecast,
       })),
     ];
   }, [result]);
@@ -162,36 +170,13 @@ export default function SpendsForecastPage() {
   const exportMom = () => {
     if (!result) return;
     downloadCsv(
-      `spends-mom-churn-${result.latestDataMonth || 'export'}.csv`,
+      `spends-forecast-${result.model}-${result.latestDataMonth || 'export'}.csv`,
       result.momComparison.map((r) => ({
         Month: r.month,
         Label: r.label,
         Kind: r.kind === 'actual' ? 'Actual' : 'Forecast',
-        'Actual / Net Forecast (INR)': Math.round(r.spend),
-        'Gross Forecast (INR)': r.grossForecast != null ? Math.round(r.grossForecast) : '',
-        'Churn Impact (INR)': Math.round(r.churnImpact),
-        'Could Have Been (INR)': Math.round(r.potential),
-        'Missing %': Number(r.missingPct.toFixed(2)),
-      }))
-    );
-  };
-
-  const exportChurn = () => {
-    if (!result) return;
-    downloadCsv(
-      `churned-clients-${result.latestDataMonth || 'export'}.csv`,
-      result.churnedClients.map((c) => ({
-        'Client ID': c.clientId,
-        Brand: c.brandName,
-        Industry: c.industry,
-        Type: c.type,
-        Team: c.team,
-        'Last Active Month': c.lastActiveMonth || '',
-        'Exit Month': c.exitMonth,
-        'Impact Start': c.impactStartMonth,
-        'Impact End': c.impactEndMonth,
-        'Monthly Churn Loss (INR)': Math.round(c.monthlyChurnLoss),
-        'Window Total (INR)': Math.round(c.monthlyChurnLoss * 12),
+        'Spend (INR)': Math.round(r.spend),
+        Model: result.modelLabel,
       }))
     );
   };
@@ -205,11 +190,13 @@ export default function SpendsForecastPage() {
     );
   }
 
+  const activeOption = FORECAST_MODEL_OPTIONS.find((o) => o.id === forecastModel);
+
   return (
     <div className="flex flex-col gap-6 min-w-0 pb-10">
       <PageHeader
         title="Spends Forecast"
-        description="12-month MoM forecast with switchable models. Historical actuals stay as uploaded. Churn applies only while a client stays inactive (2+ months with no spend); resumed spend = pause. Impact runs for 12 months after exit while still churned."
+        description="Pure MoM spend forecasting — switch models to compare methods. No churn adjustment; numbers come only from the selected model and historical spends."
       >
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 border border-white/20">
@@ -271,16 +258,7 @@ export default function SpendsForecastPage() {
             onClick={exportMom}
             disabled={!result?.momComparison.length}
           >
-            <Download className="h-3 w-3 mr-1" /> MoM CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 rounded-none text-[10px] font-black uppercase tracking-widest"
-            onClick={exportChurn}
-            disabled={!result?.churnedClients.length}
-          >
-            <Download className="h-3 w-3 mr-1" /> Churn CSV
+            <Download className="h-3 w-3 mr-1" /> Forecast CSV
           </Button>
         </div>
       </PageHeader>
@@ -310,98 +288,56 @@ export default function SpendsForecastPage() {
       <div className="flex items-start gap-2 rounded-none border border-foreground/15 bg-white/50 dark:bg-white/5 px-3 py-2 text-xs text-secondary">
         <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
         <p>
-          <span className="font-semibold text-foreground">Model:</span>{' '}
-          {result?.modelLabel || '—'}
-          {' — '}
+          <span className="font-semibold text-foreground">{result?.modelLabel || activeOption?.label}:</span>{' '}
           {modelDescription(forecastModel)}
           {result?.modelNote ? ` (${result.modelNote})` : ''}
           {result?.latestDataMonth
-            ? ` · Actuals through ${formatMonthLabel(result.latestDataMonth)} (unchanged)`
+            ? ` · History through ${formatMonthLabel(result.latestDataMonth)} (${result.history.length} months)`
             : ' · No monthly spends found'}
-          . Churn = still inactive after ≥2 consecutive zero months (resumed spend = pause, not churn).
+          .
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 min-w-0">
-        <Card className="glass-card min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5" /> Gross 12-mo Forecast
-            </CardDescription>
-            <CardTitle className="text-2xl md:text-3xl font-black font-headline break-all leading-[1.05]">
-              {formatCurrency(result?.grossYearTotal || 0)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-[11px] text-secondary">Model book trajectory</CardContent>
-        </Card>
-
-        <Card className="glass-card min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-[10px] font-black uppercase text-destructive flex items-center gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5" /> Horizon Churn Impact
-            </CardDescription>
-            <CardTitle className="text-2xl md:text-3xl font-black font-headline break-all leading-[1.05] text-destructive">
-              {formatCurrency(result?.forecastChurnImpactTotal || 0)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-[11px] text-secondary">
-            Sum of time-boxed impact on forecast months only
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">
-              <LineChart className="h-3.5 w-3.5" /> Net 12-mo Forecast
-            </CardDescription>
-            <CardTitle className="text-2xl md:text-3xl font-black font-headline break-all leading-[1.05]">
-              {formatCurrency(result?.netYearTotal || 0)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-[11px] text-secondary">
-            Gross − remaining in-window churn
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">
-              <Percent className="h-3.5 w-3.5" /> Missing vs Potential
-            </CardDescription>
-            <CardTitle className="text-2xl md:text-3xl font-black font-headline break-all leading-[1.05]">
-              {formatPct(result?.forecastMissingPct || 0)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-[11px] text-secondary">
-            Of {formatCurrency(result?.forecastPotentialTotal || 0)} could-have-been
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-[10px] font-black uppercase text-primary flex items-center gap-1.5">
-              <Users className="h-3.5 w-3.5" /> Active Churn Windows
-            </CardDescription>
-            <CardTitle className="text-2xl md:text-3xl font-black font-headline break-all leading-[1.05]">
-              {result?.activeImpactClients.length || 0}
-              <span className="text-base font-bold text-secondary ml-1">
-                / {result?.churnedClients.length || 0}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-[11px] text-secondary">
-            Still impacting forecast · {formatCurrency(result?.activeChurnMonthlyCapacity || 0)}/mo capacity
-          </CardContent>
-        </Card>
+      {/* Model-specific widgets — titles/values change with the selected engine */}
+      <div
+        key={forecastModel}
+        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4 min-w-0"
+      >
+        {(result?.widgets || []).map((w) => (
+          <Card
+            key={`${forecastModel}-${w.id}`}
+            className={cn(
+              'glass-card min-w-0 overflow-hidden border-t-4',
+              TONE_BORDER[w.tone] || TONE_BORDER.primary
+            )}
+          >
+            <CardHeader className="pb-2">
+              <CardDescription
+                className={cn(
+                  'text-[10px] font-black uppercase tracking-widest',
+                  TONE_TEXT[w.tone] || TONE_TEXT.primary
+                )}
+              >
+                {w.title}
+              </CardDescription>
+              <CardTitle className="text-xl md:text-2xl font-black font-headline break-all leading-[1.1]">
+                {w.value}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-[11px] text-secondary leading-snug">
+              {w.subtitle}
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Card className="glass-card min-w-0">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-black uppercase tracking-widest">
-            MoM Actual / Forecast vs Potential
+            MoM Actual vs {activeOption?.shortLabel || 'Forecast'}
           </CardTitle>
           <CardDescription className="text-xs">
-            Bars = actual · Amber dashed = gross forecast · Green = net after in-window churn · Violet = could’ve been if churned clients stayed
+            Bars = historical actuals · Line = {result?.modelLabel} forecast (pure model output)
           </CardDescription>
         </CardHeader>
         <CardContent className="h-[380px] min-w-0 pt-2">
@@ -433,30 +369,8 @@ export default function SpendsForecastPage() {
                 />
                 <Line
                   type="monotone"
-                  dataKey="potential"
-                  name="Could've been"
-                  stroke="hsl(280 40% 45%)"
-                  strokeWidth={2}
-                  strokeDasharray="2 3"
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="grossForecast"
-                  name="Gross forecast"
-                  stroke="hsl(38 100% 45%)"
-                  strokeWidth={2}
-                  strokeDasharray="5 4"
-                  dot={{ r: 3 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="netForecast"
-                  name="Net after churn"
+                  dataKey="forecast"
+                  name={`${activeOption?.shortLabel || 'Forecast'}`}
                   stroke="hsl(163 100% 32%)"
                   strokeWidth={2.5}
                   dot={{ r: 3 }}
@@ -472,143 +386,55 @@ export default function SpendsForecastPage() {
       <Card className="glass-card min-w-0 overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-black uppercase tracking-widest">
-            MoM Spends · Churn Opportunity
+            12-Month Forecast · {activeOption?.shortLabel}
           </CardTitle>
           <CardDescription className="text-xs">
-            Actual months keep uploaded numbers. Forecast months apply churn only while each client’s impact window is open. Could’ve been = spend + in-window churn impact. Missing % = impact ÷ potential.
+            Pure {result?.modelLabel} projection — no churn overlay
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto max-h-[480px] overflow-y-auto">
+        <CardContent className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-[10px] font-black uppercase sticky top-0 bg-background">Month</TableHead>
-                <TableHead className="text-[10px] font-black uppercase sticky top-0 bg-background">Kind</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right sticky top-0 bg-background">
-                  Actual / Forecast
-                </TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right sticky top-0 bg-background">
-                  Churn Impact
-                </TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right sticky top-0 bg-background">
-                  Could&apos;ve Been
-                </TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right sticky top-0 bg-background">
-                  Missing %
-                </TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right sticky top-0 bg-background">
-                  Net after Churn
-                </TableHead>
+                <TableHead className="text-[10px] font-black uppercase">Month</TableHead>
+                <TableHead className="text-[10px] font-black uppercase">Kind</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right">Spend</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right">Share of F/C year</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(result?.momComparison || []).map((r) => (
-                <TableRow
-                  key={`${r.kind}-${r.month}`}
-                  className={cn(r.kind === 'forecast' && 'bg-primary/[0.03]')}
-                >
-                  <TableCell className="font-mono text-xs font-bold">{r.label}</TableCell>
+              {(result?.forecast || []).map((f) => (
+                <TableRow key={f.month} className="bg-primary/[0.03]">
+                  <TableCell className="font-mono text-xs font-bold">{f.label}</TableCell>
                   <TableCell className="text-[10px] font-black uppercase tracking-wider text-secondary">
-                    {r.kind === 'actual' ? 'Actual' : 'Forecast'}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-xs">
-                    {r.kind === 'actual'
-                      ? formatCurrency(r.spend)
-                      : formatCurrency(r.grossForecast ?? r.spend)}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      'text-right font-mono text-xs',
-                      r.churnImpact > 0 ? 'text-destructive font-bold' : 'text-secondary'
-                    )}
-                  >
-                    {r.churnImpact > 0 ? formatCurrency(r.churnImpact) : '—'}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-xs">
-                    {formatCurrency(r.potential)}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      'text-right font-mono text-xs',
-                      r.missingPct > 0 ? 'text-destructive font-bold' : 'text-secondary'
-                    )}
-                  >
-                    {r.missingPct > 0 ? formatPct(r.missingPct) : '—'}
+                    Forecast
                   </TableCell>
                   <TableCell className="text-right font-mono text-xs font-bold">
-                    {r.kind === 'forecast' ? formatCurrency(r.spend) : '—'}
+                    {formatCurrency(f.forecast)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs text-secondary">
+                    {result && result.yearTotal > 0
+                      ? `${((f.forecast / result.yearTotal) * 100).toFixed(1)}%`
+                      : '—'}
                   </TableCell>
                 </TableRow>
               ))}
-              {(result?.momComparison.length || 0) === 0 && (
+              {result?.forecast.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
-                    No MoM rows
+                  <TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-8">
+                    No forecast rows
                   </TableCell>
                 </TableRow>
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card className="glass-card min-w-0 overflow-hidden">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-black uppercase tracking-widest">
-            Churned Clients
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Exit after 2 consecutive zero-spend months with no return · Resumed spend = pause (excluded) · Loss = up to 6-month average before inactivity · Impact = 12 months after exit while still churned
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto max-h-[420px] overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-[10px] font-black uppercase">Client</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Exit</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Impact Window</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Mo. Loss</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-center">On Horizon</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(result?.churnedClients || []).map((c) => {
-                const onHorizon = (result?.activeImpactClients || []).some(
-                  (a) => a.clientId === c.clientId
-                );
-                return (
-                  <TableRow key={c.clientId}>
-                    <TableCell className="min-w-0">
-                      <div className="font-bold text-xs truncate">{c.brandName}</div>
-                      <div className="text-[10px] text-secondary font-mono truncate">
-                        {c.clientId} · {c.industry} · {c.type}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs whitespace-nowrap">
-                      {formatMonthLabel(c.exitMonth)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs whitespace-nowrap">
-                      {formatMonthLabel(c.impactStartMonth)} → {formatMonthLabel(c.impactEndMonth)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-xs font-bold text-destructive">
-                      {formatCurrency(c.monthlyChurnLoss)}
-                    </TableCell>
-                    <TableCell className="text-center text-[10px] font-black uppercase">
-                      {onHorizon ? (
-                        <span className="text-destructive">Yes</span>
-                      ) : (
-                        <span className="text-secondary">Ended</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {(result?.churnedClients.length || 0) === 0 && (
+              {result && result.forecast.length > 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-xs text-muted-foreground py-8">
-                      No clients currently match churn (still inactive after ≥2 zero months). Resumed / paused clients are excluded.
-                    </TableCell>
+                  <TableCell className="font-black text-xs uppercase" colSpan={2}>
+                    Horizon total
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs font-black">
+                    {formatCurrency(result.yearTotal)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">100%</TableCell>
                 </TableRow>
               )}
             </TableBody>
