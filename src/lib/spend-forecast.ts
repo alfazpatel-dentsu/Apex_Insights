@@ -333,15 +333,16 @@ function buildClientSeries(spends: MonthlySpend[]): ClientMonthMeta[] {
 }
 
 /**
- * Churn rule:
- * - Client with historical spend and ≥2 consecutive months of zero spend
- *   through the latest data month is churned.
- * - Exit month = second month of that inactivity streak (first confirmation).
- * - Monthly loss = avg spend over up to 6 months before inactivity started.
- * - Impact window = 12 months after exit (exit+1 … exit+12).
- *   e.g. exit Sep-25 → impact Oct-25 through Sep-26.
- * - Historical actuals are never rewritten; impact is an overlay for
- *   "could have been" / remaining forecast drag only.
+ * Churn vs pause:
+ * - **Churn**: ≥2 consecutive months with no spend, and the client is still
+ *   inactive through the latest data month (never came back).
+ * - **Pause**: same gap of ≥2 months, but the client later recorded spend
+ *   again → not churned; no impact window is applied.
+ *
+ * Exit month = second month of the *current trailing* inactivity streak.
+ * Monthly loss = avg spend over up to 6 months before that streak started.
+ * Impact window = exit+1 … exit+12 (e.g. exit Sep-25 → through Sep-26).
+ * Historical actuals are never rewritten; impact is an overlay only.
  */
 export function detectChurnedClients(
   spends: MonthlySpend[],
@@ -365,9 +366,21 @@ export function detectChurnedClients(
     const lastPositive = positiveMonths[positiveMonths.length - 1];
     const firstActivityMonth = positiveMonths[0];
 
+    // Still spending in the latest portfolio month → active (or resumed) = not churn.
+    if ((client.byMonth.get(latestDataMonth) || 0) > 0) continue;
+
+    // Any spend on/after the latest data month's window means they are not trailing-inactive.
+    // If last positive spend is too recent to form a 2-month gap, treat as pause / active.
+    if (lastPositive >= latestDataMonth) continue;
+    const earliestExitMonth = shiftMonth(lastPositive, inactiveMonths);
+    if (earliestExitMonth > latestDataMonth) continue;
+
     const timeline = monthsBetweenInclusive(firstActivityMonth, latestDataMonth);
     if (timeline.length < inactiveMonths) continue;
 
+    // Trailing zero streak must run all the way to latestDataMonth.
+    // If they spent again after an earlier gap, lastPositive is recent and
+    // zeroStreak < inactiveMonths → pause, not churn.
     let zeroStreak = 0;
     for (let i = timeline.length - 1; i >= 0; i--) {
       const amt = client.byMonth.get(timeline[i]) || 0;
@@ -377,7 +390,11 @@ export function detectChurnedClients(
 
     if (zeroStreak < inactiveMonths) continue;
 
+    // Confirm there is no positive spend after the streak started (resume = pause).
     const inactivityStartMonth = shiftMonth(latestDataMonth, -(zeroStreak - 1));
+    const resumedAfterGap = positiveMonths.some((m) => m >= inactivityStartMonth);
+    if (resumedAfterGap) continue;
+
     const exitMonth = shiftMonth(inactivityStartMonth, inactiveMonths - 1);
     const { impactStartMonth, impactEndMonth } = churnImpactWindow(exitMonth);
 

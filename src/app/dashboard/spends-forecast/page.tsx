@@ -205,7 +205,7 @@ export default function SpendsForecastPage() {
     <div className="flex flex-col gap-6 min-w-0 pb-10">
       <PageHeader
         title="Spends Forecast"
-        description="12-month MoM forecast (Holt-Winters). Historical actuals stay as uploaded. Churn impact runs for 12 months after exit (e.g. exit Sep-25 → through Sep-26) and is shown as opportunity cost vs potential."
+        description="12-month MoM forecast (Holt-Winters). Historical actuals stay as uploaded. Churn applies only while a client stays inactive (2+ months with no spend); if they resume later it is treated as a pause, not churn. Impact runs for 12 months after exit while still churned."
       >
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 border border-white/20">
@@ -270,7 +270,7 @@ export default function SpendsForecastPage() {
           {result?.latestDataMonth
             ? ` · Actuals through ${formatMonthLabel(result.latestDataMonth)} (unchanged)`
             : ' · No monthly spends found'}
-          . Churn = 2 consecutive zero months; monthly loss = up to 6-month pre-exit average; impact window = exit+1 … exit+12. Forecast months inside that window still carry the drag (e.g. Zalora exit Sep-25 impacts through Sep-26).
+          . Churn = still inactive after ≥2 consecutive zero months (resumed spend = pause, not churn). Monthly loss = up to 6-month pre-exit average; impact window = exit+1 … exit+12 while still churned.
         </p>
       </div>
 
@@ -510,7 +510,7 @@ export default function SpendsForecastPage() {
             Churned Clients
           </CardTitle>
           <CardDescription className="text-xs">
-            Exit after 2 consecutive zero-spend months · Loss = up to 6-month average before inactivity · Impact = 12 months after exit
+            Exit after 2 consecutive zero-spend months with no return · Resumed spend = pause (excluded) · Loss = up to 6-month average before inactivity · Impact = 12 months after exit while still churned
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto max-h-[420px] overflow-y-auto">
@@ -559,8 +559,8 @@ export default function SpendsForecastPage() {
               {(result?.churnedClients.length || 0) === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-xs text-muted-foreground py-8">
-                    No clients currently match the 2-month inactivity churn rule.
-                  </TableCell>
+                      No clients currently match churn (still inactive after ≥2 zero months). Resumed / paused clients are excluded.
+                    </TableCell>
                 </TableRow>
               )}
             </TableBody>

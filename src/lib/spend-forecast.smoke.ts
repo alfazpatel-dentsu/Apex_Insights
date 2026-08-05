@@ -105,6 +105,36 @@ assert(
 assert(result.momComparison.some((r) => r.kind === 'actual' && r.month === '2026-07'), 'mom has Jul');
 assert(result.momComparison.some((r) => r.kind === 'forecast' && r.month === '2026-09'), 'mom has Sep fc');
 
+// --- Pause (not churn): gap of ≥2 months, then client resumes spending ---
+const pauseRows: MonthlySpend[] = [];
+for (let i = 0; i < 25; i++) {
+  pauseRows.push(spend('KEEP2', shiftMonth('2024-07', i), 50 * 1_00_00_000, 'Keeper2'));
+}
+// Active early 2025, pause Aug–Oct 2025, resume Nov-25 through Jul-26
+for (const m of ['2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07']) {
+  pauseRows.push(spend('PAUSE1', m, CR, 'PausedCo'));
+}
+for (const m of [
+  '2025-11', '2025-12',
+  '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07',
+]) {
+  pauseRows.push(spend('PAUSE1', m, CR, 'PausedCo'));
+}
+
+const pausedDetected = detectChurnedClients(pauseRows, '2026-07');
+assert(
+  pausedDetected.every((c) => c.clientId !== 'PAUSE1'),
+  'resumed client must not be treated as churned'
+);
+assert(pausedDetected.length === 0, `expected 0 churned in pause set, got ${pausedDetected.length}`);
+
+const pauseResult = buildSpendForecast(pauseRows);
+assert(
+  pauseResult.churnedClients.every((c) => c.clientId !== 'PAUSE1'),
+  'forecast must exclude resumed / paused client'
+);
+assert(pauseResult.forecastChurnImpactTotal === 0, 'no churn impact after resume');
+
 console.log('spend-forecast smoke checks passed');
 console.log({
   exit: churned[0].exitMonth,
@@ -113,4 +143,5 @@ console.log({
   sepImpact: sep!.churnImpact,
   octImpact: oct!.churnImpact,
   forecastMissingPct: result.forecastMissingPct.toFixed(2) + '%',
+  pauseExcluded: true,
 });
