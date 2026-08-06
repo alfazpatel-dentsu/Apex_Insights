@@ -12,7 +12,8 @@ import {
   ShieldCheck,
   ArrowRight,
   Briefcase,
-  ListChecks
+  ListChecks,
+  ChartLine
 } from "@phosphor-icons/react";
 import { useMemo, useState, useEffect, useCallback } from "react";
 
@@ -22,6 +23,7 @@ const items = [
   { label: "KPI Tracker", href: "/dashboard/kpi-tracking", group: "Navigate", icon: Target },
   { label: "Spend Planner", href: "/dashboard/spends", group: "Navigate", icon: Coins },
   { label: "Spends Dashboard", href: "/dashboard/spends-dashboard", group: "Navigate", icon: PresentationChart },
+  { label: "Spends Forecast", href: "/dashboard/spends-forecast", group: "Navigate", icon: ChartLine },
   { label: "Weekly Business Review", href: "/dashboard/wbr", group: "Navigate", icon: ClipboardText },
   { label: "Action Items", href: "/dashboard/actions", group: "Navigate", icon: ListChecks },
   { label: "Administration", href: "/dashboard/admin", group: "Navigate", icon: ShieldCheck },

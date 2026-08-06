@@ -49,6 +49,7 @@ const pageOptions = [
   { id: 'tracker', label: 'KPI Tracker' },
   { id: 'spends', label: 'Spends Update' },
   { id: 'dashboard', label: 'Spends Dashboard' },
+  { id: 'forecast', label: 'Spends Forecast' },
   { id: 'wbr', label: 'Weekly Review' },
   { id: 'actions', label: 'Action Items' },
   { id: 'admin', label: 'Administration' },

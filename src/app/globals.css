@@ -127,3 +127,30 @@
 input:focus, select:focus, textarea:focus {
   @apply ring-0 border-brand border-[2px] outline-none !important;
 }
+
+/* Compact react-day-picker (overrides default 40px cells) */
+.rdp.rdp-compact,
+.rdp-compact.rdp {
+  --rdp-cell-size: 32px;
+  --rdp-caption-font-size: 12px;
+  --rdp-accent-color: hsl(var(--primary));
+  --rdp-background-color: hsl(var(--primary) / 0.12);
+  margin: 0;
+}
+
+.rdp-compact .rdp-months {
+  justify-content: center;
+}
+
+/* Native date fields used in dialogs — keep them compact */
+input[type="date"] {
+  min-height: 2.5rem;
+  max-width: 100%;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+}

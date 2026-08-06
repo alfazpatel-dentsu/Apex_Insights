@@ -34,6 +34,7 @@ import {
   Clock,
   ArrowRight,
   GripVertical,
+  MessageSquareText,
 } from 'lucide-react';
 import { format, parseISO, isValid, isPast, isToday } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -642,6 +643,46 @@ function ActionCard({
           {item.clientName || 'Global / Aztec'}
         </span>
       </div>
+
+      {(() => {
+        const history = item.commentHistory || [];
+        const latest =
+          history.length > 0
+            ? [...history].sort(
+                (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              )[0]
+            : item.comment
+              ? {
+                  text: item.comment,
+                  createdAt: item.updatedAt || item.createdAt,
+                }
+              : null;
+        if (!latest?.text) return null;
+        let dateLabel = '';
+        try {
+          const d = parseISO(latest.createdAt);
+          if (isValid(d)) dateLabel = format(d, 'dd MMM yyyy');
+        } catch {
+          /* ignore */
+        }
+        const count = history.length > 0 ? history.length : item.comment ? 1 : 0;
+        return (
+          <div className="rounded-none border border-ink/10 bg-foreground/[0.02] px-2.5 py-2 space-y-1">
+            <div className="flex items-center gap-1.5 text-secondary">
+              <MessageSquareText className="h-3 w-3 shrink-0" />
+              <span className="text-[9px] font-black uppercase tracking-widest">
+                {dateLabel || 'Comment'}
+              </span>
+              {count > 1 && (
+                <span className="ml-auto text-[9px] font-mono font-bold">{count} notes</span>
+              )}
+            </div>
+            <p className="text-[11px] font-medium leading-snug text-foreground/80 line-clamp-2">
+              {latest.text}
+            </p>
+          </div>
+        );
+      })()}
 
       <div className="flex items-center justify-between gap-2">
         <Badge

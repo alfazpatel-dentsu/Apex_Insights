@@ -42,6 +42,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         // e.g. /dashboard/spends-dashboard should not be caught by /dashboard/spends
         const routeMapping = [
           { path: '/dashboard/spends-dashboard', key: 'dashboard' },
+          { path: '/dashboard/spends-forecast', key: 'forecast' },
           { path: '/dashboard/spends', key: 'spends' },
           { path: '/dashboard/business-snapshot', key: 'snapshot' },
           { path: '/dashboard/sales-tracker', key: 'sales' },
