@@ -35,9 +35,11 @@ SHEETS_TAB_NAME=ActionItems
 ## Deploy
 
 ```bash
-cd functions && npm install && npm run build && cd ..
+cd functions && npm ci && npm run build && cd ..
 firebase deploy --only functions
 ```
+
+(`firebase.json` also runs `npm ci` + `build` automatically on deploy.)
 
 Deploys:
 
