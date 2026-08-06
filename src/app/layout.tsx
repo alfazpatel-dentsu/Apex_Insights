@@ -1,7 +1,5 @@
 import { IBM_Plex_Sans, IBM_Plex_Mono, Archivo } from "next/font/google";
 import "./globals.css";
-import "react-date-picker/dist/DatePicker.css";
-import "react-calendar/dist/Calendar.css";
 import { Toaster } from "@/components/ui/sonner";
 import { Toaster as ShadcnToaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
