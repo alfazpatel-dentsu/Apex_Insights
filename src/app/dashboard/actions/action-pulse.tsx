@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   addDays,
   differenceInCalendarDays,
@@ -10,9 +10,11 @@ import {
   parseISO,
   startOfDay,
 } from 'date-fns';
-import { ArrowUpRight, Warning, Lightning, UsersThree, CalendarBlank } from '@phosphor-icons/react';
+import { ArrowUpRight, Warning, Lightning, UsersThree, CalendarBlank, X } from '@phosphor-icons/react';
 import { ActionItem, ActionPriority, ActionStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+type PulseStatKey = 'open' | 'overdue' | 'today' | 'week' | 'critical' | 'completed';
 
 const priorityRank: Record<ActionPriority, number> = {
   Critical: 0,
@@ -27,6 +29,15 @@ const statusInk: Record<ActionStatus, string> = {
   Observation: 'bg-secondary',
   Overdue: 'bg-destructive',
   Completed: 'bg-success',
+};
+
+const STAT_FOCUS_COPY: Record<PulseStatKey, { title: string; subtitle: string }> = {
+  open: { title: 'All open work', subtitle: 'Every active task in the current view.' },
+  overdue: { title: 'Past due', subtitle: 'Open tasks that missed their date.' },
+  today: { title: 'Must land today', subtitle: 'Open tasks due before end of day.' },
+  week: { title: 'Next 7 days', subtitle: 'Open tasks landing this week.' },
+  critical: { title: 'Priority pressure', subtitle: 'High and critical open tasks.' },
+  completed: { title: 'Closed work', subtitle: 'Completed tasks in the current view.' },
 };
 
 function parseDue(dueDate?: string) {
@@ -59,6 +70,25 @@ function bucketFor(item: ActionItem, today: Date): PulseBucket {
   return 'later';
 }
 
+function matchesPulseFilter(item: ActionItem, filter: PulseStatKey, today: Date): boolean {
+  if (filter === 'completed') return item.status === 'Completed';
+  if (item.status === 'Completed') return false;
+  if (filter === 'open') return true;
+  if (filter === 'critical') return item.priority === 'Critical' || item.priority === 'High';
+  return bucketFor(item, today) === filter;
+}
+
+function sortFocusItems(a: ActionItem, b: ActionItem, today: Date) {
+  const ba = bucketFor(a, today);
+  const bb = bucketFor(b, today);
+  const bucketRank = { overdue: 0, today: 1, week: 2, later: 3, undated: 4, done: 5 };
+  const br = bucketRank[ba] - bucketRank[bb];
+  if (br !== 0) return br;
+  const pr = priorityRank[a.priority] - priorityRank[b.priority];
+  if (pr !== 0) return pr;
+  return (a.dueDate || '9999').localeCompare(b.dueDate || '9999');
+}
+
 export function ActionPulseView({
   items,
   onOpen,
@@ -67,6 +97,7 @@ export function ActionPulseView({
   onOpen: (item: ActionItem) => void;
 }) {
   const today = startOfDay(new Date());
+  const [activeStat, setActiveStat] = useState<PulseStatKey | null>(null);
 
   const openItems = useMemo(
     () => items.filter((i) => i.status !== 'Completed'),
@@ -90,7 +121,11 @@ export function ActionPulseView({
   }, [today]);
 
   const runwayTasks = useMemo(() => {
-    return openItems
+    const source =
+      activeStat && activeStat !== 'completed'
+        ? openItems.filter((item) => matchesPulseFilter(item, activeStat, today))
+        : openItems;
+    return source
       .map((item) => {
         const due = parseDue(item.dueDate);
         if (!due) return null;
@@ -104,7 +139,7 @@ export function ActionPulseView({
       dayIndex: number;
       due: Date;
     }>;
-  }, [openItems, runwayDays]);
+  }, [openItems, runwayDays, activeStat, today]);
 
   const ownerLoad = useMemo(() => {
     const map = new Map<string, { name: string; open: number; overdue: number; critical: number }>();
@@ -133,30 +168,74 @@ export function ActionPulseView({
   }, [openItems, today]);
 
   const focusQueue = useMemo(() => {
-    return [...openItems]
-      .sort((a, b) => {
-        const ba = bucketFor(a, today);
-        const bb = bucketFor(b, today);
-        const bucketRank = { overdue: 0, today: 1, week: 2, later: 3, undated: 4, done: 5 };
-        const br = bucketRank[ba] - bucketRank[bb];
-        if (br !== 0) return br;
-        const pr = priorityRank[a.priority] - priorityRank[b.priority];
-        if (pr !== 0) return pr;
-        return (a.dueDate || '9999').localeCompare(b.dueDate || '9999');
-      })
-      .slice(0, 12);
-  }, [openItems, today]);
+    const source = activeStat
+      ? items.filter((item) => matchesPulseFilter(item, activeStat, today))
+      : openItems;
+    const sorted = [...source].sort((a, b) => sortFocusItems(a, b, today));
+    return activeStat ? sorted : sorted.slice(0, 12);
+  }, [items, openItems, today, activeStat]);
+
+  const focusCopy = activeStat
+    ? STAT_FOCUS_COPY[activeStat]
+    : {
+        title: 'What needs attention',
+        subtitle: 'Sorted by urgency, then priority. Click any row to edit.',
+      };
+
+  const toggleStat = (key: PulseStatKey) => {
+    setActiveStat((prev) => (prev === key ? null : key));
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       {/* Signal strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-px bg-ink border border-ink overflow-hidden">
-        <PulseStat label="Open" value={stats.open} hint="Active tasks" />
-        <PulseStat label="Overdue" value={stats.overdue} hint="Past due" tone="destructive" />
-        <PulseStat label="Due today" value={stats.todayCount} hint="Must land today" tone="warning" />
-        <PulseStat label="This week" value={stats.week} hint="Next 7 days" />
-        <PulseStat label="High / critical" value={stats.critical} hint="Priority pressure" tone="brand" />
-        <PulseStat label="Completed" value={`${stats.completion}%`} hint={`${stats.done} closed`} tone="success" />
+        <PulseStat
+          label="Open"
+          value={stats.open}
+          hint="Active tasks"
+          active={activeStat === 'open'}
+          onClick={() => toggleStat('open')}
+        />
+        <PulseStat
+          label="Overdue"
+          value={stats.overdue}
+          hint="Past due"
+          tone="destructive"
+          active={activeStat === 'overdue'}
+          onClick={() => toggleStat('overdue')}
+        />
+        <PulseStat
+          label="Due today"
+          value={stats.todayCount}
+          hint="Must land today"
+          tone="warning"
+          active={activeStat === 'today'}
+          onClick={() => toggleStat('today')}
+        />
+        <PulseStat
+          label="This week"
+          value={stats.week}
+          hint="Next 7 days"
+          active={activeStat === 'week'}
+          onClick={() => toggleStat('week')}
+        />
+        <PulseStat
+          label="High / critical"
+          value={stats.critical}
+          hint="Priority pressure"
+          tone="brand"
+          active={activeStat === 'critical'}
+          onClick={() => toggleStat('critical')}
+        />
+        <PulseStat
+          label="Completed"
+          value={`${stats.completion}%`}
+          hint={`${stats.done} closed`}
+          tone="success"
+          active={activeStat === 'completed'}
+          onClick={() => toggleStat('completed')}
+        />
       </div>
 
       {/* Due runway */}
@@ -171,7 +250,9 @@ export function ActionPulseView({
               Where work lands in time
             </h3>
             <p className="text-[11px] text-secondary max-w-xl">
-              Open tasks plotted by completion date — past due sits left of today; the next two weeks stretch right.
+              {activeStat && activeStat !== 'completed'
+                ? `Showing ${STAT_FOCUS_COPY[activeStat].title.toLowerCase()} on the runway.`
+                : 'Open tasks plotted by completion date — past due sits left of today; the next two weeks stretch right.'}
             </p>
           </div>
           <div className="flex items-center gap-4 text-[9px] font-black uppercase tracking-widest text-secondary">
@@ -261,15 +342,28 @@ export function ActionPulseView({
               <p className="terminal-overline flex items-center gap-2">
                 <Lightning className="h-3.5 w-3.5" weight="fill" />
                 Focus queue
+                {activeStat && (
+                  <span className="text-brand">· {activeStat.replace('critical', 'high / critical')}</span>
+                )}
               </p>
-              <h3 className="text-2xl font-black tracking-tighter uppercase">What needs attention</h3>
-              <p className="text-[11px] text-secondary">Sorted by urgency, then priority. Click any row to edit.</p>
+              <h3 className="text-2xl font-black tracking-tighter uppercase">{focusCopy.title}</h3>
+              <p className="text-[11px] text-secondary">{focusCopy.subtitle}</p>
             </div>
+            {activeStat && (
+              <button
+                type="button"
+                onClick={() => setActiveStat(null)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 border border-ink/15 text-[9px] font-black uppercase tracking-widest text-secondary hover:border-ink hover:text-foreground transition-colors"
+              >
+                <X className="h-3 w-3" weight="bold" />
+                Clear
+              </button>
+            )}
           </div>
           <div className="divide-y divide-ink/10">
             {focusQueue.length === 0 ? (
               <p className="p-10 text-center text-[10px] font-black uppercase tracking-widest text-secondary/60">
-                All clear — no open tasks in view
+                {activeStat ? 'No tasks match this filter' : 'All clear — no open tasks in view'}
               </p>
             ) : (
               focusQueue.map((item, idx) => {
@@ -385,14 +479,27 @@ function PulseStat({
   value,
   hint,
   tone = 'ink',
+  active = false,
+  onClick,
 }: {
   label: string;
   value: number | string;
   hint: string;
   tone?: 'ink' | 'destructive' | 'warning' | 'success' | 'brand';
+  active?: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="bg-white p-5 md:p-6 space-y-2 min-h-[110px]">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'bg-white p-5 md:p-6 space-y-2 min-h-[110px] text-left w-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+        'hover:bg-cream/80',
+        active && 'bg-cream ring-2 ring-inset ring-brand'
+      )}
+    >
       <p className="text-[9px] font-black uppercase tracking-[0.2em] text-secondary">{label}</p>
       <p
         className={cn(
@@ -406,6 +513,6 @@ function PulseStat({
         {value}
       </p>
       <p className="text-[9px] font-bold uppercase tracking-widest text-secondary/70">{hint}</p>
-    </div>
+    </button>
   );
 }
