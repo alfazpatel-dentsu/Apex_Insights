@@ -39,11 +39,57 @@ export async function getSheetsClient(config: SheetsSyncConfig): Promise<sheets_
   return google.sheets({version: "v4", auth});
 }
 
+async function getSheetId(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string
+): Promise<number> {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties",
+  });
+  const match = meta.data.sheets?.find((s) => s.properties?.title === sheetName);
+  const sheetId = match?.properties?.sheetId;
+  if (sheetId === null || sheetId === undefined) {
+    const titles =
+      meta.data.sheets
+        ?.map((s) => s.properties?.title)
+        .filter(Boolean)
+        .join(", ") || "(none)";
+    throw new Error(
+      `Sheet tab "${sheetName}" not found. Available tabs: ${titles}. Rename a tab to "${sheetName}" or set SHEETS_TAB_NAME.`
+    );
+  }
+  return sheetId;
+}
+
+/** Create the target tab if missing (e.g. Sheet still named Sheet1). */
+export async function ensureSheetTab(
+  sheets: sheets_v4.Sheets,
+  config: SheetsSyncConfig
+): Promise<void> {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: config.spreadsheetId,
+    fields: "sheets.properties",
+  });
+  const exists = meta.data.sheets?.some((s) => s.properties?.title === config.sheetName);
+  if (exists) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: config.spreadsheetId,
+    requestBody: {
+      requests: [{addSheet: {properties: {title: config.sheetName}}}],
+    },
+  });
+}
+
 /** Ensure header row exists (creates/overwrites row 1 if empty or mismatched). */
 export async function ensureHeaderRow(
   sheets: sheets_v4.Sheets,
   config: SheetsSyncConfig
 ): Promise<void> {
+  await ensureSheetTab(sheets, config);
+
   const range = `${config.sheetName}!1:1`;
   const existing = await sheets.spreadsheets.values.get({
     spreadsheetId: config.spreadsheetId,
@@ -110,23 +156,6 @@ export async function upsertActionItemRow(
     requestBody: {values: [row]},
   });
   return "appended";
-}
-
-async function getSheetId(
-  sheets: sheets_v4.Sheets,
-  spreadsheetId: string,
-  sheetName: string
-): Promise<number> {
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId,
-    fields: "sheets.properties",
-  });
-  const match = meta.data.sheets?.find((s) => s.properties?.title === sheetName);
-  const sheetId = match?.properties?.sheetId;
-  if (sheetId === null || sheetId === undefined) {
-    throw new Error(`Sheet tab "${sheetName}" not found in spreadsheet`);
-  }
-  return sheetId;
 }
 
 export async function deleteActionItemRow(

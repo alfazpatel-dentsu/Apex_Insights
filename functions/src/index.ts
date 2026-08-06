@@ -98,14 +98,24 @@ export const backfillActionItemsToSheet = onCall(
       throw new HttpsError("permission-denied", "Admin role required");
     }
 
-    const config = syncConfig();
-    const sheets = await getSheetsClient(config);
-    const snap = await db.collection("actionItems").get();
-    const rows = snap.docs.map((doc) =>
-      actionItemToRow(doc.id, doc.data() as ActionItemDoc)
-    );
-    const written = await replaceAllActionItemRows(sheets, config, rows);
-    logger.info("actionItems backfill complete", {written});
-    return {written, spreadsheetId: config.spreadsheetId, sheetName: config.sheetName};
+    try {
+      const config = syncConfig();
+      const sheets = await getSheetsClient(config);
+      const snap = await db.collection("actionItems").get();
+      const rows = snap.docs.map((doc) =>
+        actionItemToRow(doc.id, doc.data() as ActionItemDoc)
+      );
+      const written = await replaceAllActionItemRows(sheets, config, rows);
+      logger.info("actionItems backfill complete", {written});
+      return {written, spreadsheetId: config.spreadsheetId, sheetName: config.sheetName};
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("actionItems backfill failed", {message, err});
+      // Surface actionable detail to Admins (callable otherwise collapses to "internal")
+      throw new HttpsError(
+        "failed-precondition",
+        message.slice(0, 400) || "Sheets backfill failed"
+      );
+    }
   }
 );

@@ -8,7 +8,7 @@ Live mirror of Firestore `actionItems/{id}` into a Google Sheet via:
 
 1. Google Sheet with tab **ActionItems** and header row:
    `id | taskName | description | assignedTo | section | clientName | status | priority | dueDate | comment | createdAt | updatedAt`
-2. Service account `action-items-sheets-sync@vdc200007-ppclientcentre-prod.iam.gserviceaccount.com`
+2. Service account `ction-items-sheets-sync@vdc200007-ppclientcentre-prod.iam.gserviceaccount.com`
 3. Sheet shared with that SA as **Editor**
 4. JSON key downloaded for that SA
 
