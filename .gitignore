@@ -52,4 +52,5 @@ functions/node_modules
 **/*-sheets-sync*.json
 functions/.secret.local
 functions/.env
-functions/.env.*
+functions/.env.local
+!functions/.env.example
