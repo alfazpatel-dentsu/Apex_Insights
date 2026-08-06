@@ -14,6 +14,14 @@ export type ActionSection = "CLIENT ENGAGEMENT" | "SALES" | "OPERATIONS" | "AZTE
 export type ActionStatus = "Work-In Progress" | "Completed" | "Overdue" | "On-Hold" | "Observation";
 export type ActionPriority = "Low" | "Medium" | "High" | "Critical";
 
+export interface ActionCommentEntry {
+    id: string;
+    text: string;
+    /** ISO timestamp when the comment was added */
+    createdAt: string;
+    author?: string;
+}
+
 export interface ActionItem {
     id: string;
     taskName: string;
@@ -22,7 +30,10 @@ export interface ActionItem {
     section: ActionSection;
     clientId?: string;
     clientName?: string;
+    /** Latest comment text (kept for backward compatibility / quick display). */
     comment: string;
+    /** Append-only history of comments with dates (newest last in storage). */
+    commentHistory?: ActionCommentEntry[];
     status: ActionStatus;
     priority: ActionPriority;
     dueDate?: string;
