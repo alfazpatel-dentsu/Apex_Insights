@@ -109,7 +109,13 @@ export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, i
 /** Build comment history when saving: preserve past entries and append new text. */
 export function buildActionCommentHistory(
   existing: ActionItem | null | undefined,
-  nextCommentRaw: string | undefined
+  nextCommentRaw: string | undefined,
+  options?: {
+    /** Optional backfill note (e.g. earlier comment that was never versioned). */
+    pastComment?: string;
+    /** ISO or yyyy-MM-dd date for the past comment. */
+    pastCommentAt?: string;
+  }
 ): { comment: string; commentHistory: ActionCommentEntry[] } {
   const nextComment = (nextCommentRaw || '').trim();
   const prevComment = (existing?.comment || '').trim();
@@ -124,9 +130,32 @@ export function buildActionCommentHistory(
     });
   }
 
+  const pastText = (options?.pastComment || '').trim();
+  if (pastText) {
+    let pastAt = new Date().toISOString();
+    if (options?.pastCommentAt) {
+      const raw = options.pastCommentAt.trim();
+      // Accept yyyy-MM-dd from <input type="date"> or full ISO
+      const parsed = raw.length <= 10 ? new Date(`${raw}T12:00:00`) : new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) pastAt = parsed.toISOString();
+    }
+    const dup = history.some(
+      (h) => h.text.trim() === pastText && h.createdAt.slice(0, 10) === pastAt.slice(0, 10)
+    );
+    if (!dup) {
+      history.push({
+        id: `past-${Date.now()}`,
+        text: pastText,
+        createdAt: pastAt,
+      });
+    }
+  }
+
   if (nextComment) {
-    const last = history[history.length - 1];
-    const isDuplicate = last && last.text.trim() === nextComment;
+    const lastByTime = [...history].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    ).pop();
+    const isDuplicate = lastByTime && lastByTime.text.trim() === nextComment;
     if (!isDuplicate) {
       history.push({
         id: `c-${Date.now()}`,
@@ -135,6 +164,10 @@ export function buildActionCommentHistory(
       });
     }
   }
+
+  history = history.sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
 
   const latest =
     nextComment ||

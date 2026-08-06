@@ -29,7 +29,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection } from '@/firebase';
 import { saveActionItem, buildActionCommentHistory } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, MessageSquareText } from 'lucide-react';
+import { Loader2, MessageSquareText, History } from 'lucide-react';
 import { resolveActionStatus } from '@/lib/normalize';
 import { format, parseISO, isValid } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -43,6 +43,8 @@ const actionSchema = z.object({
   clientId: z.string().optional(),
   clientName: z.string().optional(),
   comment: z.string().optional(),
+  pastComment: z.string().optional(),
+  pastCommentDate: z.string().optional(),
   status: z.enum(["Work-In Progress", "Completed", "Overdue", "On-Hold", "Observation"]),
   priority: z.enum(["Low", "Medium", "High", "Critical"]),
   dueDate: z.string().optional(),
@@ -136,6 +138,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       clientId: clientId || '',
       clientName: clientName || '',
       comment: '',
+      pastComment: '',
+      pastCommentDate: '',
       status: 'Work-In Progress',
       priority: 'Medium',
       dueDate: '',
@@ -157,8 +161,9 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         section: action.section,
         clientId: action.clientId || '',
         clientName: action.clientName || '',
-        // Leave empty so edits add a new dated comment instead of rewriting history
         comment: '',
+        pastComment: '',
+        pastCommentDate: '',
         status: resolveActionStatus(action.status, action.dueDate),
         priority: action.priority,
         dueDate: action.dueDate || '',
@@ -172,6 +177,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         clientId: clientId || '',
         clientName: clientName || '',
         comment: '',
+        pastComment: '',
+        pastCommentDate: '',
         status: 'Work-In Progress',
         priority: 'Medium',
         dueDate: '',
@@ -189,12 +196,17 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       }
 
       const status = resolveActionStatus(data.status, data.dueDate);
-      const { comment, commentHistory } = buildActionCommentHistory(action, data.comment);
+      const { comment, commentHistory } = buildActionCommentHistory(action, data.comment, {
+        pastComment: data.pastComment,
+        pastCommentAt: data.pastCommentDate,
+      });
+
+      const { pastComment: _p, pastCommentDate: _d, ...rest } = data;
 
       await saveActionItem(
         firestore,
         {
-          ...data,
+          ...rest,
           status,
           clientName: finalClientName,
           comment,
@@ -337,6 +349,43 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
               )} />
 
               {action && (
+                <div className="rounded-none border border-dashed border-foreground/15 bg-foreground/[0.02] p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <History className="h-3.5 w-3.5 text-secondary" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-secondary">
+                      Log an earlier comment
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-secondary leading-relaxed">
+                    Before comment history, only the latest note was stored — older overwrites can’t be recovered automatically.
+                    If you still have an earlier update, add it here with its original date.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
+                    <FormField control={form.control} name="pastCommentDate" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" className="rounded-none bg-background/50 border-none h-10 shadow-inner px-3 font-mono text-xs font-bold" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="pastComment" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Past note</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            className="rounded-none bg-background/50 border-none min-h-[72px] shadow-inner p-3 text-sm font-medium leading-relaxed resize-none"
+                            placeholder="Earlier comment text…"
+                            {...field}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )} />
+                  </div>
+                </div>
+              )}
+
+              {action && (
                 <div className="rounded-none border border-foreground/10 bg-foreground/[0.02]">
                   <div className="flex items-center gap-2 px-4 py-3 border-b border-foreground/5">
                     <MessageSquareText className="h-3.5 w-3.5 text-primary" />
@@ -350,7 +399,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                   {pastComments.length === 0 ? (
                     <p className="px-4 py-6 text-xs text-secondary italic">No past comments yet.</p>
                   ) : (
-                    <ScrollArea className="max-h-[220px]">
+                    <ScrollArea className="max-h-[280px]">
                       <ul className="divide-y divide-foreground/5">
                         {pastComments.map((entry, idx) => (
                           <li
