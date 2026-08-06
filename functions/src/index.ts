@@ -22,6 +22,7 @@ setGlobalOptions({
 });
 
 const sheetsSpreadsheetId = defineString("SHEETS_SPREADSHEET_ID", {
+  default: "1NnLAuCjA4ZeaH116jzbVVajkYX3lytxbZVxOGocLWSs",
   description: "Google Sheet ID from the spreadsheet URL",
 });
 
