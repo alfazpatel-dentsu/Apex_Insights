@@ -24,13 +24,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData } from '@/lib/types';
+import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection } from '@/firebase';
-import { saveActionItem } from '@/lib/firestore-actions';
+import { saveActionItem, buildActionCommentHistory } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MessageSquareText } from 'lucide-react';
 import { resolveActionStatus } from '@/lib/normalize';
+import { format, parseISO, isValid } from 'date-fns';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 const actionSchema = z.object({
   taskName: z.string().min(1, 'Task name is required'),
@@ -59,6 +62,36 @@ const sections: ActionSection[] = ["CLIENT ENGAGEMENT", "SALES", "OPERATIONS", "
 const statuses: ActionStatus[] = ["Work-In Progress", "On-Hold", "Observation", "Overdue", "Completed"];
 const priorities: ActionPriority[] = ["Low", "Medium", "High", "Critical"];
 
+function formatCommentDate(iso: string): string {
+  try {
+    const d = parseISO(iso);
+    if (!isValid(d)) return iso;
+    return format(d, 'dd MMM yyyy · HH:mm');
+  } catch {
+    return iso;
+  }
+}
+
+/** Resolve display history: stored history, or legacy single comment. */
+function resolveCommentHistory(action?: ActionItem | null): ActionCommentEntry[] {
+  if (!action) return [];
+  const history = action.commentHistory || [];
+  if (history.length > 0) {
+    return [...history].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+  const legacy = (action.comment || '').trim();
+  if (!legacy) return [];
+  return [
+    {
+      id: `legacy-${action.id}`,
+      text: legacy,
+      createdAt: action.updatedAt || action.createdAt || new Date().toISOString(),
+    },
+  ];
+}
+
 export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName, action }: AddActionItemDialogProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -67,7 +100,6 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const { data: explicitClients } = useCollection<Client>('clients');
   const { data: kpiRecords } = useCollection<KpiData>('kpis');
 
-  // DISCOVERY RITUAL: Merge registered clients with ones found in KPI records
   const discoveredClients = useMemo(() => {
     const uniqueList: { uniqueId: string, name: string }[] = [];
     const seenIds = new Set<string>();
@@ -91,6 +123,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
     }
     return uniqueList.sort((a, b) => a.name.localeCompare(b.name));
   }, [explicitClients, kpiRecords]);
+
+  const pastComments = useMemo(() => resolveCommentHistory(action), [action]);
 
   const form = useForm<ActionFormValues>({
     resolver: zodResolver(actionSchema),
@@ -123,7 +157,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         section: action.section,
         clientId: action.clientId || '',
         clientName: action.clientName || '',
-        comment: action.comment || '',
+        // Leave empty so edits add a new dated comment instead of rewriting history
+        comment: '',
         status: resolveActionStatus(action.status, action.dueDate),
         priority: action.priority,
         dueDate: action.dueDate || '',
@@ -147,7 +182,6 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const onSubmit = async (data: ActionFormValues) => {
     setIsSaving(true);
     try {
-      // Find client name if clientId changed manually
       let finalClientName = data.clientName;
       if (data.clientId && !data.clientName) {
           const found = discoveredClients?.find(c => c.uniqueId === data.clientId);
@@ -155,9 +189,18 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       }
 
       const status = resolveActionStatus(data.status, data.dueDate);
+      const { comment, commentHistory } = buildActionCommentHistory(action, data.comment);
+
       await saveActionItem(
         firestore,
-        { ...data, status, clientName: finalClientName },
+        {
+          ...data,
+          status,
+          clientName: finalClientName,
+          comment,
+          commentHistory,
+          createdAt: action?.createdAt,
+        },
         action?.id
       );
       toast({ title: action ? "Task updated" : "Task created" });
@@ -280,10 +323,60 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
 
               <FormField control={form.control} name="comment" render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60 px-2">Comments / Intelligence</FormLabel>
-                  <FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[100px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" placeholder="Latest update..." {...field} /></FormControl>
+                  <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60 px-2">
+                    {action ? 'Add New Comment' : 'Comments / Intelligence'}
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea
+                      className="rounded-none bg-foreground/[0.03] border-none min-h-[100px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none"
+                      placeholder={action ? 'Write a new update… (saved with today’s date)' : 'Latest update...'}
+                      {...field}
+                    />
+                  </FormControl>
                 </FormItem>
               )} />
+
+              {action && (
+                <div className="rounded-none border border-foreground/10 bg-foreground/[0.02]">
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-foreground/5">
+                    <MessageSquareText className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-secondary">
+                      Comment History
+                    </span>
+                    <span className="ml-auto text-[10px] font-mono font-bold text-secondary">
+                      {pastComments.length}
+                    </span>
+                  </div>
+                  {pastComments.length === 0 ? (
+                    <p className="px-4 py-6 text-xs text-secondary italic">No past comments yet.</p>
+                  ) : (
+                    <ScrollArea className="max-h-[220px]">
+                      <ul className="divide-y divide-foreground/5">
+                        {pastComments.map((entry, idx) => (
+                          <li
+                            key={entry.id}
+                            className={cn('px-4 py-3 space-y-1.5', idx === 0 && 'bg-primary/[0.03]')}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">
+                                {formatCommentDate(entry.createdAt)}
+                              </span>
+                              {idx === 0 && (
+                                <span className="text-[9px] font-black uppercase tracking-widest text-secondary">
+                                  Latest
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap text-foreground/90">
+                              {entry.text}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </ScrollArea>
+                  )}
+                </div>
+              )}
             </div>
 
             <DialogFooter className="pt-6 border-t border-foreground/5">
@@ -299,3 +392,4 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
     </Dialog>
   );
 }
+

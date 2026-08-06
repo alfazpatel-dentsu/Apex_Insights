@@ -5,7 +5,7 @@ import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, Auth }
 import { firebaseConfig } from '@/firebase/config';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem } from './types';
+import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem, ActionCommentEntry } from './types';
 import { format, parse, isValid, startOfWeek, addDays, subMonths, subYears, startOfYear, subWeeks, endOfMonth, startOfMonth } from 'date-fns';
 import { generateBusinessSnapshot } from '@/ai/flows/business-snapshot-flow';
 import { canonicalizeChannel } from './normalize';
@@ -105,6 +105,45 @@ export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, i
         throw e;
     }
 };
+
+/** Build comment history when saving: preserve past entries and append new text. */
+export function buildActionCommentHistory(
+  existing: ActionItem | null | undefined,
+  nextCommentRaw: string | undefined
+): { comment: string; commentHistory: ActionCommentEntry[] } {
+  const nextComment = (nextCommentRaw || '').trim();
+  const prevComment = (existing?.comment || '').trim();
+  let history: ActionCommentEntry[] = [...(existing?.commentHistory || [])];
+
+  // One-time backfill: legacy items only had a single `comment` field
+  if (existing && prevComment && history.length === 0) {
+    history.push({
+      id: `legacy-${existing.id}`,
+      text: prevComment,
+      createdAt: existing.updatedAt || existing.createdAt || new Date().toISOString(),
+    });
+  }
+
+  if (nextComment) {
+    const last = history[history.length - 1];
+    const isDuplicate = last && last.text.trim() === nextComment;
+    if (!isDuplicate) {
+      history.push({
+        id: `c-${Date.now()}`,
+        text: nextComment,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  const latest =
+    nextComment ||
+    history[history.length - 1]?.text ||
+    prevComment ||
+    '';
+
+  return { comment: latest, commentHistory: history };
+}
 
 export const deleteActionItem = async (db: Firestore, id: string) => {
     try {
