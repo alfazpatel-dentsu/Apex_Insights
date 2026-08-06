@@ -393,10 +393,10 @@ export default function WbrEditPage() {
 
   const processedMonthlySpends = useMemo(() => {
     const data: Record<string, Record<string, number>> = {};
+    // LOB is not applied to spends — spends have no reliable LOB granularity
     monthlySpends.filter(s => {
-      const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
       const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
-      return lobMatch && channelMatch;
+      return channelMatch;
     }).forEach(s => {
       const channel = canonicalizeChannel(s.channelVendor);
       const amount = Number(s.actualSpendsInr) || 0;
@@ -405,19 +405,18 @@ export default function WbrEditPage() {
       data[s.month]['Total'] = (data[s.month]['Total'] || 0) + amount;
     });
     return data;
-  }, [monthlySpends, selectedLobFilter, selectedChannelFilter]);
+  }, [monthlySpends, selectedChannelFilter]);
 
   const expandedChannels = useMemo(() => {
     const set = new Set<string>();
     monthlySpends.filter(s => {
-      const lobMatch = selectedLobFilter === 'all' || s.subEntity === selectedLobFilter;
       const channelMatch = selectedChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedChannelFilter;
-      return lobMatch && channelMatch;
+      return channelMatch;
     }).forEach(s => {
       if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor));
     });
     return Array.from(set).sort();
-  }, [monthlySpends, selectedLobFilter, selectedChannelFilter]);
+  }, [monthlySpends, selectedChannelFilter]);
 
   // WEEKLY GRID DATA
   const weeksInRange = useMemo(() => {
@@ -478,10 +477,10 @@ export default function WbrEditPage() {
 
   const processedWeeklySpends = useMemo(() => {
     const data: Record<string, Record<string, number>> = {};
+    // LOB is not applied to spends — spends have no reliable LOB granularity
     weeklySpends.filter(s => {
-      const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
       const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
-      return lobMatch && channelMatch;
+      return channelMatch;
     }).forEach(s => {
       const channel = canonicalizeChannel(s.channelVendor);
       const amount = Number(s.spendsInr) || 0;
@@ -506,19 +505,18 @@ export default function WbrEditPage() {
       }
     });
     return data;
-  }, [weeklySpends, selectedWeeklyLobFilter, selectedWeeklyChannelFilter]);
+  }, [weeklySpends, selectedWeeklyChannelFilter]);
 
   const expandedWeeklyChannels = useMemo(() => {
     const set = new Set<string>();
     weeklySpends.filter(s => {
-      const lobMatch = selectedWeeklyLobFilter === 'all' || s.subEntity === selectedWeeklyLobFilter;
       const channelMatch = selectedWeeklyChannelFilter === 'all' || canonicalizeChannel(s.channelVendor) === selectedWeeklyChannelFilter;
-      return lobMatch && channelMatch;
+      return channelMatch;
     }).forEach(s => {
       if (s.channelVendor) set.add(canonicalizeChannel(s.channelVendor));
     });
     return Array.from(set).sort();
-  }, [weeklySpends, selectedWeeklyLobFilter, selectedWeeklyChannelFilter]);
+  }, [weeklySpends, selectedWeeklyChannelFilter]);
 
   const getWeeklyColor = (achieved: number, target: number, prevAchieved: number | null, direction: 'ASC' | 'DESC' = 'ASC') => {
     if (target > 0) {
