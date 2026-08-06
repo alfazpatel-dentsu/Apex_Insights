@@ -23,6 +23,7 @@ The VM update script handles this automatically when `src/app` is missing.
 | Next.js dev server | Yes | `npm run dev` — Turbopack, port **3000** |
 | Firebase Auth + Firestore | Yes (cloud) | Hardcoded project `vdc200007-ppclientcentre-prod` in `src/firebase/config.ts`; no local emulator config |
 | Gemini API | Optional | Only for Business Snapshot AI refresh; set `GEMINI_API_KEY` or `GOOGLE_GENAI_API_KEY` in `.env` |
+| Cloud Functions (Sheets sync) | Optional | `functions/` — live `actionItems` → Google Sheets; see `functions/README.md` |
 
 Optional: `npm run genkit:dev` for Genkit AI flow debugging (separate process, not needed for normal app use).
 
