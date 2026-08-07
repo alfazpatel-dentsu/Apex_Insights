@@ -96,7 +96,7 @@ export default function AdminPage() {
     setIsSheetsBackfilling(true);
     try {
       const functions = getFunctions(app, "us-central1");
-      const backfill = httpsCallable(functions, "backfillActionItemsToSheet");
+      const backfill = httpsCallable(functions, "backfillActionItemsSheet");
       const result = await backfill();
       const data = result.data as { written?: number; sheetName?: string };
       toast({
@@ -104,10 +104,15 @@ export default function AdminPage() {
         description: `Wrote ${data.written ?? 0} action items to tab ${data.sheetName || "ActionItems"}.`,
       });
     } catch (error: any) {
+      const detail =
+        error?.details ||
+        error?.customData?.message ||
+        error?.message ||
+        "Deploy 1st gen functions (see functions/README.md).";
       toast({
         variant: "destructive",
         title: "Sheets backfill failed",
-        description: error?.message || "Deploy Cloud Functions and set SHEETS secrets first. See functions/README.md.",
+        description: typeof detail === "string" ? detail : String(detail),
       });
     } finally {
       setIsSheetsBackfilling(false);

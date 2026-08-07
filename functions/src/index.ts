@@ -1,8 +1,6 @@
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
-import {setGlobalOptions} from "firebase-functions/v2";
-import {onDocumentWritten} from "firebase-functions/v2/firestore";
-import {onCall, HttpsError} from "firebase-functions/v2/https";
+import * as functions from "firebase-functions/v1";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {logger} from "firebase-functions";
 import {actionItemToRow, ActionItemDoc} from "./action-item-row";
@@ -14,12 +12,15 @@ import {
   SheetsSyncConfig,
 } from "./sheets";
 
-initializeApp();
+/**
+ * 1st gen Functions (same generation as existing acceptInvite).
+ * Avoids 2nd gen Eventarc / Cloud Run invoker IAM that requires Owner.
+ *
+ * Names differ from the failed 2nd gen deploy so we don't collide with
+ * any half-created Cloud Run services.
+ */
 
-setGlobalOptions({
-  region: "us-central1",
-  maxInstances: 10,
-});
+initializeApp();
 
 const sheetsSpreadsheetId = defineString("SHEETS_SPREADSHEET_ID", {
   default: "1NnLAuCjA4ZeaH116jzbVVajkYX3lytxbZVxOGocLWSs",
@@ -49,53 +50,50 @@ function syncConfig(): SheetsSyncConfig {
   };
 }
 
-/**
- * Live sync: any create/update/delete on actionItems/{id} mirrors to Google Sheets.
- */
-export const syncActionItemToSheet = onDocumentWritten(
-  {
-    document: "actionItems/{id}",
+const regional = functions.region("us-central1");
+
+/** Live sync: create/update/delete on actionItems/{id} → Google Sheets. */
+export const mirrorActionItemToSheet = regional
+  .runWith({
     secrets: [sheetsServiceAccountJson],
-  },
-  async (event) => {
-    const id = event.params.id as string;
+    timeoutSeconds: 120,
+    memory: "256MB",
+  })
+  .firestore.document("actionItems/{id}")
+  .onWrite(async (change, context) => {
+    const id = context.params.id as string;
     const config = syncConfig();
     const sheets = await getSheetsClient(config);
 
-    const after = event.data?.after;
-    if (!after?.exists) {
+    if (!change.after.exists) {
       const removed = await deleteActionItemRow(sheets, config, id);
       logger.info("actionItems delete mirrored to Sheets", {id, removed});
       return;
     }
 
-    const data = after.data() as ActionItemDoc;
+    const data = change.after.data() as ActionItemDoc;
     const row = actionItemToRow(id, data);
     const result = await upsertActionItemRow(sheets, config, row);
     logger.info("actionItems upsert mirrored to Sheets", {id, result});
-  }
-);
+  });
 
-/**
- * One-time / on-demand full rebuild of the Sheet from Firestore.
- * Call as an authenticated Admin user via Firebase callable.
- */
-export const backfillActionItemsToSheet = onCall(
-  {
+/** Admin-only full Sheet rebuild from Firestore. */
+export const backfillActionItemsSheet = regional
+  .runWith({
     secrets: [sheetsServiceAccountJson],
     timeoutSeconds: 300,
-    memory: "512MiB",
-  },
-  async (request) => {
-    if (!request.auth?.uid) {
-      throw new HttpsError("unauthenticated", "Sign in required");
+    memory: "512MB",
+  })
+  .https.onCall(async (_data, context) => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError("unauthenticated", "Sign in required");
     }
 
     const db = getFirestore();
-    const userSnap = await db.doc(`users/${request.auth.uid}`).get();
+    const userSnap = await db.doc(`users/${context.auth.uid}`).get();
     const role = userSnap.data()?.role;
     if (role !== "Admin") {
-      throw new HttpsError("permission-denied", "Admin role required");
+      throw new functions.https.HttpsError("permission-denied", "Admin role required");
     }
 
     try {
@@ -111,11 +109,9 @@ export const backfillActionItemsToSheet = onCall(
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error("actionItems backfill failed", {message, err});
-      // Surface actionable detail to Admins (callable otherwise collapses to "internal")
-      throw new HttpsError(
+      throw new functions.https.HttpsError(
         "failed-precondition",
         message.slice(0, 400) || "Sheets backfill failed"
       );
     }
-  }
-);
+  });
