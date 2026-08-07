@@ -35,7 +35,12 @@ const sheetsServiceAccountJsonB64 = defineString("SHEETS_SERVICE_ACCOUNT_JSON_B6
 
 function syncConfig(): SheetsSyncConfig {
   const spreadsheetId = sheetsSpreadsheetId.value()?.trim();
-  const b64 = sheetsServiceAccountJsonB64.value()?.trim();
+  // Strip whitespace/newlines/quotes — .env pastes often wrap and break base64
+  const b64 = (sheetsServiceAccountJsonB64.value() || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, "");
+
   if (!spreadsheetId) {
     throw new Error("SHEETS_SPREADSHEET_ID is not set");
   }
@@ -48,9 +53,21 @@ function syncConfig(): SheetsSyncConfig {
   let serviceAccountJson: string;
   try {
     serviceAccountJson = Buffer.from(b64, "base64").toString("utf8").trim();
-    JSON.parse(serviceAccountJson);
   } catch {
-    throw new Error("SHEETS_SERVICE_ACCOUNT_JSON_B64 is not valid base64 JSON");
+    throw new Error("SHEETS_SERVICE_ACCOUNT_JSON_B64 could not be base64-decoded");
+  }
+
+  try {
+    const parsed = JSON.parse(serviceAccountJson) as {client_email?: string; private_key?: string};
+    if (!parsed?.client_email || !parsed?.private_key) {
+      throw new Error("decoded JSON missing client_email or private_key");
+    }
+  } catch (e: unknown) {
+    const hint = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `SHEETS_SERVICE_ACCOUNT_JSON_B64 is not valid service-account JSON after decode (${hint}). ` +
+        `Regenerate with: base64 -w 0 key.json  and put on ONE line in .env with no quotes.`
+    );
   }
 
   return {
