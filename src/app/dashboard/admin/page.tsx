@@ -27,22 +27,20 @@ import { UserProfile } from "@/lib/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { useCollection, useFirestore, useUser, useDoc, useAuth, useFirebaseApp } from "@/firebase";
-import { saveUserRoleAndPermissions, createUser, deleteUser, purgeOtherUsers, resendInvitationEmail, purgeCollection, clearAllKpiData, clearAllSpendsData } from "@/lib/firestore-actions";
+import { useCollection, useFirestore, useUser, useDoc, useAuth } from "@/firebase";
+import { saveUserRoleAndPermissions, createUser, deleteUser, purgeOtherUsers, resendInvitationEmail, purgeCollection, clearAllKpiData, clearAllSpendsData, backfillActionItemsToSheet } from "@/lib/firestore-actions";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { EditUserRoleDialog } from "./edit-user-role-dialog";
 import { AddUserDialog } from "./add-user-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { openDialogFromMenu } from "@/lib/utils";
 import { updateDoc, doc } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export default function AdminPage() {
   const firestore = useFirestore();
   const auth = useAuth();
-  const app = useFirebaseApp();
   const { toast } = useToast();
   const { user: authUser, loading: authLoading } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(authUser ? `users/${authUser.uid}` : null);
@@ -95,24 +93,16 @@ export default function AdminPage() {
   const handleSheetsBackfill = async () => {
     setIsSheetsBackfilling(true);
     try {
-      const functions = getFunctions(app, "us-central1");
-      const backfill = httpsCallable(functions, "backfillActionItemsSheet");
-      const result = await backfill();
-      const data = result.data as { written?: number; sheetName?: string };
+      const touched = await backfillActionItemsToSheet(firestore);
       toast({
-        title: "Sheets backfill complete",
-        description: `Wrote ${data.written ?? 0} action items to tab ${data.sheetName || "ActionItems"}.`,
+        title: "Sheets backfill queued",
+        description: `Touched ${touched} action items. Cloud Function mirrorActionItemToSheet will sync each row to the Sheet shortly.`,
       });
     } catch (error: any) {
-      const detail =
-        error?.details ||
-        error?.customData?.message ||
-        error?.message ||
-        "Deploy 1st gen functions (see functions/README.md).";
       toast({
         variant: "destructive",
         title: "Sheets backfill failed",
-        description: typeof detail === "string" ? detail : String(detail),
+        description: error?.message || "Could not update action items for Sheets sync.",
       });
     } finally {
       setIsSheetsBackfilling(false);
@@ -396,7 +386,7 @@ export default function AdminPage() {
                 <h3 className="text-lg font-black uppercase tracking-tighter">Google Sheets Sync</h3>
               </div>
               <p className="text-[10px] font-mono text-secondary uppercase tracking-widest leading-relaxed">
-                Live sync runs via Cloud Function on every action-item write. Use backfill once after deploy (or anytime you need a full rebuild).
+                Live sync runs via Cloud Function on every action-item write. Backfill touches all items so each row syncs (no callable / Owner IAM).
               </p>
             </div>
             <MaintenanceButton
