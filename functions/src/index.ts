@@ -1,7 +1,7 @@
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import * as functions from "firebase-functions/v1";
-import {defineSecret, defineString} from "firebase-functions/params";
+import {defineString} from "firebase-functions/params";
 import {logger} from "firebase-functions";
 import {actionItemToRow, ActionItemDoc} from "./action-item-row";
 import {
@@ -16,8 +16,8 @@ import {
  * 1st gen Functions (same generation as existing acceptInvite).
  * Avoids 2nd gen Eventarc / Cloud Run invoker IAM that requires Owner.
  *
- * Names differ from the failed 2nd gen deploy so we don't collide with
- * any half-created Cloud Run services.
+ * Service account JSON is passed as a base64 defineString param (not Secret
+ * Manager) so deploy does not need secretmanager.secrets.setIamPolicy.
  */
 
 initializeApp();
@@ -32,17 +32,31 @@ const sheetsTabName = defineString("SHEETS_TAB_NAME", {
   description: "Tab/sheet name that holds action item rows",
 });
 
-const sheetsServiceAccountJson = defineSecret("SHEETS_SERVICE_ACCOUNT_JSON");
+/** Base64 of the Sheets writer service-account JSON (single line, no Secret Manager). */
+const sheetsServiceAccountJsonB64 = defineString("SHEETS_SERVICE_ACCOUNT_JSON_B64", {
+  description: "Base64-encoded Google service account JSON for Sheets API",
+});
 
 function syncConfig(): SheetsSyncConfig {
   const spreadsheetId = sheetsSpreadsheetId.value()?.trim();
-  const serviceAccountJson = sheetsServiceAccountJson.value()?.trim();
+  const b64 = sheetsServiceAccountJsonB64.value()?.trim();
   if (!spreadsheetId) {
     throw new Error("SHEETS_SPREADSHEET_ID is not set");
   }
-  if (!serviceAccountJson) {
-    throw new Error("SHEETS_SERVICE_ACCOUNT_JSON secret is not set");
+  if (!b64) {
+    throw new Error(
+      "SHEETS_SERVICE_ACCOUNT_JSON_B64 is not set — add it to functions/.env.vdc200007-ppclientcentre-prod"
+    );
   }
+
+  let serviceAccountJson: string;
+  try {
+    serviceAccountJson = Buffer.from(b64, "base64").toString("utf8").trim();
+    JSON.parse(serviceAccountJson);
+  } catch {
+    throw new Error("SHEETS_SERVICE_ACCOUNT_JSON_B64 is not valid base64 JSON");
+  }
+
   return {
     spreadsheetId,
     sheetName: sheetsTabName.value() || "ActionItems",
@@ -55,7 +69,6 @@ const regional = functions.region("us-central1");
 /** Live sync: create/update/delete on actionItems/{id} → Google Sheets. */
 export const mirrorActionItemToSheet = regional
   .runWith({
-    secrets: [sheetsServiceAccountJson],
     timeoutSeconds: 120,
     memory: "256MB",
   })
@@ -80,7 +93,6 @@ export const mirrorActionItemToSheet = regional
 /** Admin-only full Sheet rebuild from Firestore. */
 export const backfillActionItemsSheet = regional
   .runWith({
-    secrets: [sheetsServiceAccountJson],
     timeoutSeconds: 300,
     memory: "512MB",
   })

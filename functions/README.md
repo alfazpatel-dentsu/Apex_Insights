@@ -1,39 +1,54 @@
 # Action Items → Google Sheets (Cloud Functions)
 
-Live mirror of Firestore `actionItems/{id}` into a Google Sheet via:
-
 `Firestore onWrite` → **1st gen** Cloud Function → Sheets API
 
-> Uses **1st gen** Functions (same as `acceptInvite`) so deploy works with Editor
-> without Eventarc / Cloud Run invoker Owner permissions.
-> Codebase name: `action-items-sheets` (does not touch `acceptInvite`).
+Uses codebase `action-items-sheets` (does not touch `acceptInvite`).
 
-## Prerequisites
+## Why no Secret Manager?
 
-1. Google Sheet tab **ActionItems** (auto-created if missing)
-2. Service account `ction-items-sheets-sync@vdc200007-ppclientcentre-prod.iam.gserviceaccount.com` shared on the Sheet as **Editor**
-3. Secret `SHEETS_SERVICE_ACCOUNT_JSON` already set
-4. Compute SA has **Secret Manager Secret Accessor** (already done)
+Org IAM blocks `secretmanager.secrets.setIamPolicy` without Owner.
+The Sheets service-account JSON is stored as a **base64 function param** in
+`functions/.env.vdc200007-ppclientcentre-prod` (gitignored) instead.
+
+## One-time: add the SA key as base64
+
+```bash
+# Download a NEW JSON key for ction-items-sheets-sync@... (rotate if exposed)
+# Then:
+base64 -w 0 /path/to/sa-key.json
+# copy the single-line output
+```
+
+Edit (or create) `functions/.env.vdc200007-ppclientcentre-prod`:
+
+```
+SHEETS_SPREADSHEET_ID=1NnLAuCjA4ZeaH116jzbVVajkYX3lytxbZVxOGocLWSs
+SHEETS_TAB_NAME=ActionItems
+SHEETS_SERVICE_ACCOUNT_JSON_B64=paste_base64_here
+```
+
+Then delete the local JSON key file.
+
+Sheet must stay shared with  
+`ction-items-sheets-sync@vdc200007-ppclientcentre-prod.iam.gserviceaccount.com` as **Editor**.
 
 ## Deploy
 
 ```bash
 cd ~/studio
-git pull origin cursor/sheets-sync-v1-functions-f139   # or main after merge
-cd functions && npm ci && npm run build && cd ..
+git fetch origin && git checkout cursor/sheets-sync-v1-functions-f139
+# ensure .env.vdc200007-ppclientcentre-prod has the B64 line (above)
 
-# Deploy ONLY this codebase (won't delete acceptInvite)
-firebase deploy --only functions:action-items-sheets
+cd functions && npm ci && npm run build && cd ..
+firebase deploy --only functions
 ```
 
-If prompted about deleting `acceptInvite`, choose **No**.
-
-Expected functions:
+If asked to delete `acceptInvite` → **No**.
 
 | Function | Purpose |
 |----------|---------|
-| `mirrorActionItemToSheet` | Live upsert/delete on every `actionItems` write |
-| `backfillActionItemsSheet` | Callable — Admin-only full Sheet rebuild |
+| `mirrorActionItemToSheet` | Live upsert/delete |
+| `backfillActionItemsSheet` | Admin full rebuild |
 
 ```bash
 firebase functions:list
@@ -42,8 +57,3 @@ firebase functions:list
 ## Backfill
 
 Admin → **Backfill Action Items to Sheet**
-
-## Verify
-
-1. Create / edit / delete an action item → Sheet row updates (key = `id`)
-2. Logs: `firebase functions:log --only mirrorActionItemToSheet`
