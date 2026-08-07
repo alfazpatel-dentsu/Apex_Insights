@@ -154,6 +154,37 @@ export const deleteActionItem = async (db: Firestore, id: string) => {
     }
 };
 
+/**
+ * Queue a Sheets backfill without a callable Cloud Function (no invoker IAM).
+ * Touches each actionItems doc so mirrorActionItemToSheet onWrite syncs rows.
+ */
+export const backfillActionItemsToSheet = async (db: Firestore): Promise<number> => {
+    const snap = await getDocs(collection(db, 'actionItems'));
+    const docs = snap.docs;
+    const CHUNK = 400;
+    const stamp = new Date().toISOString();
+
+    for (let i = 0; i < docs.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        docs.slice(i, i + CHUNK).forEach((d) => {
+            batch.update(d.ref, {
+                updatedAt: stamp,
+                sheetsBackfillAt: stamp,
+            });
+        });
+        await batch.commit().catch(async (err) => {
+            errorEmitter.emit(
+                'permission-error',
+                new FirestorePermissionError({ path: '/actionItems', operation: 'update' })
+            );
+            throw err;
+        });
+        await throttle();
+    }
+
+    return docs.length;
+};
+
 export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultMonthStr: string, onProgress?: (progress: number) => void) => {
     const uploadedMonths = new Set<string>();
     let processedCount = 0;

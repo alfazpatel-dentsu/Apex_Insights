@@ -1,5 +1,4 @@
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
 import * as functions from "firebase-functions/v1";
 import {defineString} from "firebase-functions/params";
 import {logger} from "firebase-functions";
@@ -7,17 +6,14 @@ import {actionItemToRow, ActionItemDoc} from "./action-item-row";
 import {
   deleteActionItemRow,
   getSheetsClient,
-  replaceAllActionItemRows,
   upsertActionItemRow,
   SheetsSyncConfig,
 } from "./sheets";
 
 /**
- * 1st gen Functions (same generation as existing acceptInvite).
- * Avoids 2nd gen Eventarc / Cloud Run invoker IAM that requires Owner.
- *
- * Service account JSON is passed as a base64 defineString param (not Secret
- * Manager) so deploy does not need secretmanager.secrets.setIamPolicy.
+ * 1st gen Firestore trigger only (no HTTPS callable).
+ * Callables need invoker IAM (Owner). Backfill is done from the Admin UI by
+ * touching actionItems docs so this trigger runs for each row.
  */
 
 initializeApp();
@@ -64,10 +60,9 @@ function syncConfig(): SheetsSyncConfig {
   };
 }
 
-const regional = functions.region("us-central1");
-
 /** Live sync: create/update/delete on actionItems/{id} → Google Sheets. */
-export const mirrorActionItemToSheet = regional
+export const mirrorActionItemToSheet = functions
+  .region("us-central1")
   .runWith({
     timeoutSeconds: 120,
     memory: "256MB",
@@ -88,42 +83,4 @@ export const mirrorActionItemToSheet = regional
     const row = actionItemToRow(id, data);
     const result = await upsertActionItemRow(sheets, config, row);
     logger.info("actionItems upsert mirrored to Sheets", {id, result});
-  });
-
-/** Admin-only full Sheet rebuild from Firestore. */
-export const backfillActionItemsSheet = regional
-  .runWith({
-    timeoutSeconds: 300,
-    memory: "512MB",
-  })
-  .https.onCall(async (_data, context) => {
-    if (!context.auth?.uid) {
-      throw new functions.https.HttpsError("unauthenticated", "Sign in required");
-    }
-
-    const db = getFirestore();
-    const userSnap = await db.doc(`users/${context.auth.uid}`).get();
-    const role = userSnap.data()?.role;
-    if (role !== "Admin") {
-      throw new functions.https.HttpsError("permission-denied", "Admin role required");
-    }
-
-    try {
-      const config = syncConfig();
-      const sheets = await getSheetsClient(config);
-      const snap = await db.collection("actionItems").get();
-      const rows = snap.docs.map((doc) =>
-        actionItemToRow(doc.id, doc.data() as ActionItemDoc)
-      );
-      const written = await replaceAllActionItemRows(sheets, config, rows);
-      logger.info("actionItems backfill complete", {written});
-      return {written, spreadsheetId: config.spreadsheetId, sheetName: config.sheetName};
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error("actionItems backfill failed", {message, err});
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        message.slice(0, 400) || "Sheets backfill failed"
-      );
-    }
   });
