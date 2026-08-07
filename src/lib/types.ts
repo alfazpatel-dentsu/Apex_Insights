@@ -32,7 +32,7 @@ export interface ActionItem {
     clientName?: string;
     /** Latest comment text (kept for backward compatibility / quick display). */
     comment: string;
-    /** Append-only history of comments with dates (newest last in storage). */
+    /** History of comments with dates (newest last in storage). Entries can be deleted. */
     commentHistory?: ActionCommentEntry[];
     status: ActionStatus;
     priority: ActionPriority;
