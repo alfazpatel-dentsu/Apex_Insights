@@ -2,65 +2,48 @@
 
 Live mirror of Firestore `actionItems/{id}` into a Google Sheet via:
 
-`Firestore onWrite` → Cloud Function → Sheets API
+`Firestore onWrite` → **1st gen** Cloud Function → Sheets API
 
-## Prerequisites (you already did these)
+> Uses **1st gen** Functions (same as `acceptInvite`) so deploy works with Editor
+> without Eventarc / Cloud Run invoker Owner permissions.
+> Codebase name: `action-items-sheets` (does not touch `acceptInvite`).
 
-1. Google Sheet with tab **ActionItems** and header row:
-   `id | taskName | description | assignedTo | section | clientName | status | priority | dueDate | comment | createdAt | updatedAt`
-2. Service account `ction-items-sheets-sync@vdc200007-ppclientcentre-prod.iam.gserviceaccount.com`
-3. Sheet shared with that SA as **Editor**
-4. JSON key downloaded for that SA
+## Prerequisites
 
-## One-time setup before deploy
-
-From the **repo root**, logged into Firebase CLI as a project owner/editor:
-
-```bash
-# 1) Spreadsheet + tab params (copy example env, fill Sheet ID)
-cp functions/.env.example functions/.env
-# Edit functions/.env — set SHEETS_SPREADSHEET_ID from the Sheet URL
-
-# 2) Store the service account JSON as a secret (paste entire file contents when prompted)
-firebase functions:secrets:set SHEETS_SERVICE_ACCOUNT_JSON
-```
-
-`functions/.env` is gitignored. Example:
-
-```
-SHEETS_SPREADSHEET_ID=1AbC...yourId...xyz
-SHEETS_TAB_NAME=ActionItems
-```
+1. Google Sheet tab **ActionItems** (auto-created if missing)
+2. Service account `ction-items-sheets-sync@vdc200007-ppclientcentre-prod.iam.gserviceaccount.com` shared on the Sheet as **Editor**
+3. Secret `SHEETS_SERVICE_ACCOUNT_JSON` already set
+4. Compute SA has **Secret Manager Secret Accessor** (already done)
 
 ## Deploy
 
 ```bash
-cd functions && npm install && npm run build && cd ..
-firebase deploy --only functions
+cd ~/studio
+git pull origin cursor/sheets-sync-v1-functions-f139   # or main after merge
+cd functions && npm ci && npm run build && cd ..
+
+# Deploy ONLY this codebase (won't delete acceptInvite)
+firebase deploy --only functions:action-items-sheets
 ```
 
-Deploys:
+If prompted about deleting `acceptInvite`, choose **No**.
+
+Expected functions:
 
 | Function | Purpose |
 |----------|---------|
-| `syncActionItemToSheet` | Live upsert/delete on every `actionItems` write |
-| `backfillActionItemsToSheet` | Callable — Admin-only full Sheet rebuild |
+| `mirrorActionItemToSheet` | Live upsert/delete on every `actionItems` write |
+| `backfillActionItemsSheet` | Callable — Admin-only full Sheet rebuild |
 
-## Backfill existing rows
-
-After deploy, open **Administration** in the app and click **Backfill Action Items to Sheet** (Admin only).
-
-Or from a signed-in Admin browser console:
-
-```js
-import { getFunctions, httpsCallable } from "firebase/functions";
-const fn = httpsCallable(getFunctions(undefined, "us-central1"), "backfillActionItemsToSheet");
-const res = await fn();
-console.log(res.data); // { written, spreadsheetId, sheetName }
+```bash
+firebase functions:list
 ```
+
+## Backfill
+
+Admin → **Backfill Action Items to Sheet**
 
 ## Verify
 
-1. Create / edit / delete an action item in the app
-2. Confirm the Sheet row updates (matched by `id` in column A)
-3. Check logs: `firebase functions:log --only syncActionItemToSheet`
+1. Create / edit / delete an action item → Sheet row updates (key = `id`)
+2. Logs: `firebase functions:log --only mirrorActionItemToSheet`
