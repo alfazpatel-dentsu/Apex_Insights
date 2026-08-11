@@ -33,6 +33,7 @@ import { where } from 'firebase/firestore';
 import { useCollection } from '@/firebase';
 import { MonthlySpend, WeeklySpend } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
+import { buildWowSpendsTrend, toSpendNumber } from '@/lib/spend-week';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -502,12 +503,22 @@ export default function SpendsAnalyticsPage() {
 
   const wowChartData = useMemo(() => {
     if (!weeklyData) return [];
+    // Overall: shared helper keeps Snapshot 12-Week Momentum in lockstep.
+    if (wowDimension === 'overall') {
+      const rows = buildWowSpendsTrend(weeklyData, 12).map((row) => ({
+        week: row.week,
+        timestamp: row.timestamp,
+        Total: row.spend,
+      }));
+      return withPeriodDeltas(rows);
+    }
+
     const groups: Record<string, Record<string, number>> = {};
     weeklyData.forEach(item => {
       const week = item.week;
-      const dimKey = wowDimension === 'overall' ? 'Total' : (item[wowDimension as keyof WeeklySpend] as string || 'N/A');
+      const dimKey = (item[wowDimension as keyof WeeklySpend] as string || 'N/A');
       if (!groups[week]) groups[week] = {};
-      groups[week][dimKey] = (groups[week][dimKey] || 0) + item.spendsInr;
+      groups[week][dimKey] = (groups[week][dimKey] || 0) + toSpendNumber(item.spendsInr);
     });
     const rows = Object.entries(groups).map(([week, values]) => {
       let label = week;
