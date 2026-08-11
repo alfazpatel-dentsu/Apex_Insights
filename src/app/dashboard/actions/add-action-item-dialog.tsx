@@ -14,6 +14,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Form,
   FormControl,
   FormField,
@@ -27,9 +37,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection } from '@/firebase';
-import { saveActionItem, buildActionCommentHistory } from '@/lib/firestore-actions';
+import {
+  saveActionItem,
+  buildActionCommentHistory,
+  deleteActionComment,
+  normalizeActionCommentHistory,
+} from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, MessageSquareText } from 'lucide-react';
+import { Loader2, MessageSquareText, Trash2 } from 'lucide-react';
 import { resolveActionStatus } from '@/lib/normalize';
 import { format, parseISO, isValid } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -96,6 +111,9 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
+  const [localHistory, setLocalHistory] = useState<ActionCommentEntry[]>([]);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [isDeletingComment, setIsDeletingComment] = useState(false);
   
   const { data: explicitClients } = useCollection<Client>('clients');
   const { data: kpiRecords } = useCollection<KpiData>('kpis');
@@ -124,7 +142,13 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
     return uniqueList.sort((a, b) => a.name.localeCompare(b.name));
   }, [explicitClients, kpiRecords]);
 
-  const pastComments = useMemo(() => resolveCommentHistory(action), [action]);
+  const pastComments = useMemo(
+    () =>
+      [...localHistory].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    [localHistory]
+  );
 
   const form = useForm<ActionFormValues>({
     resolver: zodResolver(actionSchema),
@@ -143,13 +167,18 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   });
 
   const handleOpenChange = useCallback((open: boolean) => {
-    if (!open) setIsSaving(false);
+    if (!open) {
+      setIsSaving(false);
+      setDeletingCommentId(null);
+      setIsDeletingComment(false);
+    }
     onOpenChange(open);
   }, [onOpenChange]);
 
   useEffect(() => {
     if (!isOpen) return;
     if (action) {
+      setLocalHistory(resolveCommentHistory(action));
       form.reset({
         taskName: action.taskName,
         description: action.description || '',
@@ -164,6 +193,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         dueDate: action.dueDate || '',
       });
     } else {
+      setLocalHistory([]);
       form.reset({
         taskName: '',
         description: '',
@@ -179,6 +209,48 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
     }
   }, [isOpen, action?.id, clientId, clientName, form]);
 
+  // Keep local history in sync when Firestore refreshes the open action
+  useEffect(() => {
+    if (!isOpen || !action) return;
+    setLocalHistory(resolveCommentHistory(action));
+  }, [isOpen, action?.commentHistory, action?.comment, action?.updatedAt]);
+
+  const confirmDeleteComment = async () => {
+    if (!action || !deletingCommentId) return;
+    setIsDeletingComment(true);
+    try {
+      const base: ActionItem = {
+        ...action,
+        commentHistory: normalizeActionCommentHistory({
+          ...action,
+          commentHistory: [...localHistory].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          ),
+        }),
+      };
+      const { commentHistory } = await deleteActionComment(
+        firestore,
+        base,
+        deletingCommentId
+      );
+      setLocalHistory(
+        [...commentHistory].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+      );
+      toast({ title: 'Comment deleted' });
+      setDeletingCommentId(null);
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Delete failed',
+        description: e.message,
+      });
+    } finally {
+      setIsDeletingComment(false);
+    }
+  };
+
   const onSubmit = async (data: ActionFormValues) => {
     setIsSaving(true);
     try {
@@ -189,7 +261,20 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       }
 
       const status = resolveActionStatus(data.status, data.dueDate);
-      const { comment, commentHistory } = buildActionCommentHistory(action, data.comment);
+      const chronologicalHistory = [...localHistory].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      const existingForHistory = action
+        ? {
+            ...action,
+            commentHistory: chronologicalHistory,
+            comment: chronologicalHistory[chronologicalHistory.length - 1]?.text || '',
+          }
+        : action;
+      const { comment, commentHistory } = buildActionCommentHistory(
+        existingForHistory,
+        data.comment
+      );
 
       await saveActionItem(
         firestore,
@@ -213,6 +298,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   };
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-none glass">
         <DialogHeader>
@@ -355,19 +441,33 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                         {pastComments.map((entry, idx) => (
                           <li
                             key={entry.id}
-                            className={cn('px-4 py-3 space-y-1.5', idx === 0 && 'bg-primary/[0.03]')}
+                            className={cn('px-4 py-3 space-y-1.5 group', idx === 0 && 'bg-primary/[0.03]')}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">
                                 {formatCommentDate(entry.createdAt)}
                               </span>
-                              {idx === 0 && (
-                                <span className="text-[9px] font-black uppercase tracking-widest text-secondary">
-                                  Latest
-                                </span>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {idx === 0 && (
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-secondary">
+                                    Latest
+                                  </span>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 rounded-none text-secondary hover:text-destructive hover:bg-destructive/10 opacity-70 group-hover:opacity-100"
+                                  aria-label="Delete comment"
+                                  title="Delete comment"
+                                  onClick={() => setDeletingCommentId(entry.id)}
+                                  disabled={isDeletingComment || isSaving}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
                             </div>
-                            <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap text-foreground/90">
+                            <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap text-foreground/90 pr-8">
                               {entry.text}
                             </p>
                           </li>
@@ -381,7 +481,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
 
             <DialogFooter className="pt-6 border-t border-foreground/5">
                 <Button type="button" variant="ghost" className="rounded-none h-12 px-6 font-bold" onClick={() => handleOpenChange(false)}>Cancel</Button>
-                <Button type="submit" className="rounded-none h-12 px-10 font-black shadow-primary/20 uppercase tracking-widest text-[10px]" disabled={isSaving}>
+                <Button type="submit" className="rounded-none h-12 px-10 font-black shadow-primary/20 uppercase tracking-widest text-[10px]" disabled={isSaving || isDeletingComment}>
                   {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   Save Task
                 </Button>
@@ -390,6 +490,46 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         </Form>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog
+      open={!!deletingCommentId}
+      onOpenChange={(open) => {
+        if (!open && !isDeletingComment) setDeletingCommentId(null);
+      }}
+    >
+      <AlertDialogContent className="rounded-none glass">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="font-headline text-2xl font-black uppercase tracking-tighter">
+            Delete Comment
+          </AlertDialogTitle>
+          <AlertDialogDescription className="text-foreground/70 font-bold uppercase text-[10px] tracking-widest leading-relaxed">
+            This will permanently remove this comment from the action item history.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="pt-6">
+          <AlertDialogCancel
+            className="rounded-none h-12 px-6 font-bold uppercase text-[10px] tracking-widest"
+            disabled={isDeletingComment}
+          >
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="rounded-none h-12 px-8 font-black uppercase tracking-widest text-[10px] bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={isDeletingComment}
+            onClick={(e) => {
+              e.preventDefault();
+              void confirmDeleteComment();
+            }}
+          >
+            {isDeletingComment ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : null}
+            Delete Comment
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 
