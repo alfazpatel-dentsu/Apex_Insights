@@ -443,13 +443,19 @@ export default function BusinessSnapshotPage() {
   const stats = useMemo(() => {
     if (!monthlySpends || !weeklySpends || !mounted) return null;
     const allMonths = Array.from(new Set(monthlySpends.map(d => d.month))).sort().reverse();
-    let targetMonth = '';
+    let latestSpendMonth = '';
     for (const m of allMonths) {
       if (monthlySpends.filter(d => d.month === m).reduce((a, b) => a + toSpendNumber(b.actualSpendsInr), 0) > 0) {
-        targetMonth = m; break;
+        latestSpendMonth = m; break;
       }
     }
-    if (!targetMonth) return null;
+    if (!latestSpendMonth) return null;
+
+    // Advance the review period with the calendar so the subtitle (and monthly
+    // cards) move to the current month automatically once the month rolls over,
+    // instead of staying stuck on the last uploaded spends month.
+    const calendarMonth = format(new Date(), 'yyyy-MM');
+    const targetMonth = calendarMonth >= latestSpendMonth ? calendarMonth : latestSpendMonth;
 
     const getDetails = (data: (MonthlySpend | WeeklySpend)[]) => {
       const spendMap: Record<string, number> = {};
