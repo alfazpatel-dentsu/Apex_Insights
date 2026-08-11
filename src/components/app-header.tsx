@@ -1,9 +1,10 @@
 'use client';
 
-import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut } from "@phosphor-icons/react";
+import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut, UserCircle } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CommandPalette } from "@/components/command-palette";
+import { ProfileManagementDialog } from "@/components/profile-management-dialog";
 import { useUser, useDoc, useAuth } from "@/firebase";
 import { UserProfile } from "@/lib/types";
 import { format, getWeek } from "date-fns";
@@ -27,6 +28,7 @@ import {
 
 export function AppHeader() {
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [now, setNow] = useState<string | null>(null);
   const [snapshotLabel, setSnapshotLabel] = useState<string | null>(null);
   const { user } = useUser();
@@ -179,6 +181,14 @@ export function AppHeader() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
+              className="cursor-pointer gap-2"
+              data-testid="topbar-profile-btn"
+              onClick={() => setProfileOpen(true)}
+            >
+              <UserCircle size={14} />
+              Profile management
+            </DropdownMenuItem>
+            <DropdownMenuItem
               className="cursor-pointer gap-2 text-destructive focus:text-destructive"
               onClick={handleSignOut}
             >
@@ -190,6 +200,7 @@ export function AppHeader() {
       </header>
 
       <CommandPalette open={open} onOpenChange={setOpen} />
+      <ProfileManagementDialog isOpen={profileOpen} onOpenChange={setProfileOpen} />
     </>
   );
 }
