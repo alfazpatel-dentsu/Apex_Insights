@@ -106,6 +106,23 @@ export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, i
     }
 };
 
+/** Normalize comment history: backfill legacy single `comment` when history is empty. */
+export function normalizeActionCommentHistory(
+  existing: ActionItem | null | undefined
+): ActionCommentEntry[] {
+  if (!existing) return [];
+  const history: ActionCommentEntry[] = [...(existing.commentHistory || [])];
+  const prevComment = (existing.comment || '').trim();
+  if (prevComment && history.length === 0) {
+    history.push({
+      id: `legacy-${existing.id}`,
+      text: prevComment,
+      createdAt: existing.updatedAt || existing.createdAt || new Date().toISOString(),
+    });
+  }
+  return history;
+}
+
 /** Build comment history when saving: preserve past entries and append new text. */
 export function buildActionCommentHistory(
   existing: ActionItem | null | undefined,
@@ -113,16 +130,7 @@ export function buildActionCommentHistory(
 ): { comment: string; commentHistory: ActionCommentEntry[] } {
   const nextComment = (nextCommentRaw || '').trim();
   const prevComment = (existing?.comment || '').trim();
-  let history: ActionCommentEntry[] = [...(existing?.commentHistory || [])];
-
-  // One-time backfill: legacy items only had a single `comment` field
-  if (existing && prevComment && history.length === 0) {
-    history.push({
-      id: `legacy-${existing.id}`,
-      text: prevComment,
-      createdAt: existing.updatedAt || existing.createdAt || new Date().toISOString(),
-    });
-  }
+  let history = normalizeActionCommentHistory(existing);
 
   if (nextComment) {
     const last = history[history.length - 1];
@@ -144,6 +152,28 @@ export function buildActionCommentHistory(
 
   return { comment: latest, commentHistory: history };
 }
+
+/** Remove one comment from history and refresh the latest `comment` field. */
+export function removeActionComment(
+  existing: ActionItem,
+  commentId: string
+): { comment: string; commentHistory: ActionCommentEntry[] } {
+  const history = normalizeActionCommentHistory(existing).filter(
+    (entry) => entry.id !== commentId
+  );
+  const latest = history[history.length - 1]?.text || '';
+  return { comment: latest, commentHistory: history };
+}
+
+export const deleteActionComment = async (
+  db: Firestore,
+  actionItem: ActionItem,
+  commentId: string
+) => {
+  const { comment, commentHistory } = removeActionComment(actionItem, commentId);
+  await saveActionItem(db, { comment, commentHistory }, actionItem.id);
+  return { comment, commentHistory };
+};
 
 export const deleteActionItem = async (db: Firestore, id: string) => {
     try {

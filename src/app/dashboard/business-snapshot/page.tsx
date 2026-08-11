@@ -21,14 +21,25 @@ import {
   Warning, 
   Clock 
 } from "@phosphor-icons/react";
-import { format, parse, subMonths, subWeeks, startOfWeek, addDays, isValid, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
+import { format, parse, subMonths, isValid } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
 import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, type ClientPath } from '@/lib/kpi-rag';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
+import {
+  aggregateSpendByWeekStart,
+  buildWowSpendsTrend,
+  formatWeekStartLabel,
+  parseSpendWeekDate,
+  resolveWowWeekPair,
+  spendWeekStartKey,
+  toSpendNumber,
+} from '@/lib/spend-week';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { where, query, collection, getDocs, orderBy, limit, startAfter, documentId, type Firestore, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
@@ -53,6 +64,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 function normalizeClid(clientId?: string | null): string | null {
   const id = (clientId || '').trim();
   return id || null;
+}
+
+/** Large accounts optionally excluded from Snapshot 12-Week Momentum. */
+const MOMENTUM_EXCLUDE_CLIENT_IDS = new Set(['CLID0081', 'CLID0084']);
+
+function isMomentumExcludedClient(row: Pick<WeeklySpend, 'clientId'>): boolean {
+  const id = (row.clientId || '').trim().toUpperCase();
+  return MOMENTUM_EXCLUDE_CLIENT_IDS.has(id);
 }
 
 const formatCurrency = (val: number) => {
@@ -211,7 +230,7 @@ export default function BusinessSnapshotPage() {
 
   // INTELLIGENCE STATE
   const [newsFeed, setNewsFeed] = useState<any[]>([]);
-  const [momentumData, setMomentumData] = useState<any[]>([]);
+  const [excludeMomentumLargeClients, setExcludeMomentumLargeClients] = useState(false);
   const [channelSpends, setChannelSpends] = useState<any[]>([]);
   const [channelSpendWeekLabel, setChannelSpendWeekLabel] = useState<string | null>(null);
   const [pipelineData, setPipelineData] = useState<any[]>([]);
@@ -231,9 +250,13 @@ export default function BusinessSnapshotPage() {
 
   useEffect(() => {
     setMounted(true);
-    // Weekly/momentum: recent window
-    const weeklyStart = format(subMonths(new Date(), 6), 'yyyy-MM');
-    setStatsWindow([where('month', '>=', weeklyStart)]);
+    // Match Spends Dashboard weekly window (prev year Jan → current year Dec)
+    // so 12-Week Momentum sees the same rows as WoW Spends Trend.
+    const year = new Date().getFullYear();
+    setStatsWindow([
+      where('month', '>=', `${year - 1}-01`),
+      where('month', '<=', `${year}-12`),
+    ]);
     // Monthly: include prior-year YTD so Annual can compare same months YoY
     const ytdCompareStart = format(new Date(new Date().getFullYear() - 1, 0, 1), 'yyyy-MM');
     setMonthlyWindow([where('month', '>=', ytdCompareStart)]);
@@ -241,6 +264,14 @@ export default function BusinessSnapshotPage() {
 
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', monthlyWindow);
   const { data: weeklySpends, loading: wLoading } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
+
+  // 12-Week Momentum — same series as Spends Dashboard WoW, with optional large-client exclude
+  const momentumData = useMemo(() => {
+    const rows = excludeMomentumLargeClients
+      ? (weeklySpends || []).filter((s) => !isMomentumExcludedClient(s))
+      : weeklySpends;
+    return buildWowSpendsTrend(rows, 12).map(({ week, spend }) => ({ week, spend }));
+  }, [weeklySpends, excludeMomentumLargeClients]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -317,53 +348,25 @@ export default function BusinessSnapshotPage() {
           }
         }));
 
-        // 3. MOMENTUM & CHANNEL SPENDS
-        const spendByWeekStart: Record<string, number> = {};
+        // 3. CHANNEL SPENDS (latest week present — same week keys as Dashboard WoW)
+        const momentum = buildWowSpendsTrend(weeklySpends, 12);
+        const lastWeekKey = momentum[momentum.length - 1]?.weekKey || '';
         const channelTotals: Record<string, number> = {};
-        
-        const weeksArr = Array.from(new Set(weeklySpends?.map(s => s.week))).sort((a,b) => {
-          try { return parse(a, 'dd-MM-yyyy', new Date()).getTime() - parse(b, 'dd-MM-yyyy', new Date()).getTime(); } catch(e) { return 0; }
-        });
-        const lastWeekLabel = weeksArr[weeksArr.length - 1] || '';
-
-        weeklySpends?.forEach(s => {
-          try {
-            const d = parse(s.week, 'dd-MM-yyyy', new Date());
-            if (isValid(d)) {
-              const weekStartKey = format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-              spendByWeekStart[weekStartKey] = (spendByWeekStart[weekStartKey] || 0) + (s.spendsInr || 0);
-              
-              if (s.week === lastWeekLabel) {
-                const channel = canonicalizeChannel(s.channelVendor);
-                channelTotals[channel] = (channelTotals[channel] || 0) + (s.spendsInr || 0);
-              }
-            }
-          } catch(e) {}
+        (weeklySpends || []).forEach((s) => {
+          if (s.week !== lastWeekKey) return;
+          const channel = canonicalizeChannel(s.channelVendor);
+          channelTotals[channel] = (channelTotals[channel] || 0) + toSpendNumber(s.spendsInr);
         });
 
-        const momentum: any[] = [];
-        for (let i = 11; i >= 0; i--) {
-          const weekStart = startOfWeek(subWeeks(new Date(), i), { weekStartsOn: 1 });
-          const weekStartKey = format(weekStart, 'yyyy-MM-dd');
-          momentum.push({
-            week: format(weekStart, 'dd MMM'),
-            spend: spendByWeekStart[weekStartKey] || 0,
-          });
-        }
-        setMomentumData(momentum);
-        
         setChannelSpends(Object.entries(channelTotals).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value));
-        if (lastWeekLabel) {
-          try {
-            const weekDate = parse(lastWeekLabel, 'dd-MM-yyyy', new Date());
-            setChannelSpendWeekLabel(
-              isValid(weekDate)
-                ? `Week of ${format(startOfWeek(weekDate, { weekStartsOn: 1 }), 'dd MMM yyyy')}`
-                : `Week of ${lastWeekLabel}`
-            );
-          } catch {
-            setChannelSpendWeekLabel(`Week of ${lastWeekLabel}`);
-          }
+        if (lastWeekKey) {
+          const weekDate = parseSpendWeekDate(lastWeekKey);
+          const weekStart = weekDate ? spendWeekStartKey(lastWeekKey) : null;
+          setChannelSpendWeekLabel(
+            weekStart
+              ? `Week of ${formatWeekStartLabel(weekStart, 'dd MMM yyyy')}`
+              : `Week of ${lastWeekKey}`
+          );
         } else {
           setChannelSpendWeekLabel(null);
         }
@@ -442,7 +445,7 @@ export default function BusinessSnapshotPage() {
     const allMonths = Array.from(new Set(monthlySpends.map(d => d.month))).sort().reverse();
     let targetMonth = '';
     for (const m of allMonths) {
-      if (monthlySpends.filter(d => d.month === m).reduce((a, b) => a + (b.actualSpendsInr || 0), 0) > 0) {
+      if (monthlySpends.filter(d => d.month === m).reduce((a, b) => a + toSpendNumber(b.actualSpendsInr), 0) > 0) {
         targetMonth = m; break;
       }
     }
@@ -452,7 +455,7 @@ export default function BusinessSnapshotPage() {
       const spendMap: Record<string, number> = {};
       const metaMap: Record<string, any> = {};
       data.forEach(d => {
-        const val = 'actualSpendsInr' in d ? d.actualSpendsInr : d.spendsInr;
+        const val = toSpendNumber('actualSpendsInr' in d ? d.actualSpendsInr : d.spendsInr);
         spendMap[d.brandName] = (spendMap[d.brandName] || 0) + val;
         if (!metaMap[d.brandName]) metaMap[d.brandName] = { type: d.type || 'PERFORMANCE', team: d.team || 'N/A' };
       });
@@ -475,15 +478,19 @@ export default function BusinessSnapshotPage() {
     const prevMonthData = getDetails(monthlySpends.filter(d => d.month === format(subMonths(parse(targetMonth, 'yyyy-MM', new Date()), 1), 'yyyy-MM')));
     const mShifts = calcShifts(currMonthData, prevMonthData);
 
-    const weeks = Array.from(new Set(weeklySpends.map(s => s.week))).sort((a, b) => {
-      try { return parse(b, 'dd-MM-yyyy', new Date()).getTime() - parse(a, 'dd-MM-yyyy', new Date()).getTime(); } catch(e) { return 0; }
-    });
-    const lastW = weeks[0] || '';
-    const prevW = lastW ? format(subWeeks(parse(lastW, 'dd-MM-yyyy', new Date()), 1), 'dd-MM-yyyy') : '';
-    
-    const currWData = getDetails(weeklySpends.filter(d => d.week === lastW));
-    const prevWData = getDetails(weeklySpends.filter(d => d.week === prevW));
+    // WoW: match weeks by Monday week-start, not exact week label strings.
+    // Uploads often store mid-week "as of" dates; format(subWeeks(lastLabel))
+    // then misses the prior week even when data exists.
+    const { keys: weekStartKeys, rowsByKey } = aggregateSpendByWeekStart(weeklySpends);
+    const { currentKey: lastWeekStartKey, previousKey: prevWeekStartKey } =
+      resolveWowWeekPair(weekStartKeys);
+
+    const currWData = getDetails(rowsByKey[lastWeekStartKey] || []);
+    const prevWData = getDetails(rowsByKey[prevWeekStartKey] || []);
     const wShifts = calcShifts(currWData, prevWData);
+    const weeklyDateLabel = lastWeekStartKey
+      ? formatWeekStartLabel(lastWeekStartKey, 'dd-MM-yyyy')
+      : '';
 
     const year = targetMonth.split('-')[0];
     const prevYear = String(Number(year) - 1);
@@ -496,8 +503,8 @@ export default function BusinessSnapshotPage() {
     // Compare YTD through the latest uploaded month vs the same months last year
     const ytdCurrRows = monthlySpends.filter(d => isSamePeriodYtd(d.month, year));
     const ytdPrevRows = monthlySpends.filter(d => isSamePeriodYtd(d.month, prevYear));
-    const yearlyTotal = ytdCurrRows.reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
-    const prevYearlyTotal = ytdPrevRows.reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+    const yearlyTotal = ytdCurrRows.reduce((a, b) => a + toSpendNumber(b.actualSpendsInr), 0);
+    const prevYearlyTotal = ytdPrevRows.reduce((a, b) => a + toSpendNumber(b.actualSpendsInr), 0);
     const yShifts = calcShifts(getDetails(ytdCurrRows), getDetails(ytdPrevRows));
     const ytdThroughLabel = format(parse(targetMonth, 'yyyy-MM', new Date()), 'MMM');
 
@@ -512,7 +519,7 @@ export default function BusinessSnapshotPage() {
       prevWeeklyTotal: Object.values(prevWData.spendMap).reduce((a, b) => a + b, 0),
       wGainers: wShifts.gainers,
       wLosers: wShifts.losers,
-      weeklyDate: lastW,
+      weeklyDate: weeklyDateLabel,
       yearlyTotal,
       prevYearlyTotal,
       yGainers: yShifts.gainers,
@@ -766,12 +773,31 @@ export default function BusinessSnapshotPage() {
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
             <div className="lg:col-span-2 bg-white border border-ink p-10 space-y-8">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <span className="text-[9px] font-black uppercase tracking-[0.3em] text-secondary">WEEKLY SPENDS PULSE</span>
                   <h2 className="text-3xl font-black tracking-tighter uppercase mt-1">12-Week Momentum</h2>
                 </div>
-                <div className="flex items-center gap-6"><div className="h-2 w-2 rounded-full bg-destructive" /><span className="text-[9px] font-black uppercase tracking-widest text-secondary">SPEND</span></div>
+                <div className="flex flex-col items-end gap-3">
+                  <div className="flex items-center gap-6">
+                    <div className="h-2 w-2 rounded-full bg-destructive" />
+                    <span className="text-[9px] font-black uppercase tracking-widest text-secondary">SPEND</span>
+                  </div>
+                  <div className="flex items-center gap-3 border border-ink/10 bg-cream/60 px-3 py-2">
+                    <Switch
+                      id="exclude-momentum-large-clients"
+                      checked={excludeMomentumLargeClients}
+                      onCheckedChange={setExcludeMomentumLargeClients}
+                      className="rounded-none data-[state=checked]:bg-brand data-[state=unchecked]:bg-ink/20"
+                    />
+                    <Label
+                      htmlFor="exclude-momentum-large-clients"
+                      className="cursor-pointer text-[9px] font-black uppercase tracking-widest text-secondary leading-tight"
+                    >
+                      Exclude Myntra &amp; OLA
+                    </Label>
+                  </div>
+                </div>
               </div>
               <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
