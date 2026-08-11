@@ -161,6 +161,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       setIsSaving(false);
       setDeletingCommentId(null);
       setIsDeletingComment(false);
+      releaseRadixPointerLock();
     }
     onOpenChange(open);
   }, [onOpenChange]);
