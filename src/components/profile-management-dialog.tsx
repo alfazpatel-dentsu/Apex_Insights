@@ -215,7 +215,7 @@ export function ProfileManagementDialog({ isOpen, onOpenChange }: ProfileManagem
                 <Button
                   type="submit"
                   className="rounded-none uppercase tracking-widest text-xs font-bold"
-                  disabled={isSavingProfile}
+                  disabled={isSavingProfile || !user || !firestore}
                   data-testid="profile-save-name-btn"
                 >
                   {isSavingProfile ? (
