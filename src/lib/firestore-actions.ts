@@ -1,7 +1,17 @@
 'use client';
 import { collection, doc, Firestore, getDocs, query, where, writeBatch, setDoc, updateDoc, deleteDoc, orderBy, limit, getDoc, serverTimestamp } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, Auth } from 'firebase/auth';
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+  updateProfile,
+  Auth,
+  User,
+} from 'firebase/auth';
 import { firebaseConfig } from '@/firebase/config';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -356,6 +366,27 @@ export const registerUser = async (db: Firestore, auth: Auth, userData: any) => 
 
 export const resendInvitationEmail = async (auth: Auth, email: string) => {
     try { await sendPasswordResetEmail(auth, email); return true; } catch (error: any) { throw error; }
+};
+
+export const updateUserDisplayName = async (db: Firestore, user: User, displayName: string) => {
+    const trimmed = displayName.trim();
+    if (!trimmed) throw new Error('Display name is required.');
+    await updateProfile(user, { displayName: trimmed });
+    await updateDoc(doc(db, 'users', user.uid), { displayName: trimmed }).catch((e) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `/users/${user.uid}`,
+            operation: 'update',
+            requestResourceData: { displayName: trimmed },
+        }));
+        throw e;
+    });
+};
+
+export const changeUserPassword = async (user: User, currentPassword: string, newPassword: string) => {
+    if (!user.email) throw new Error('Your account does not have an email address.');
+    const credential = EmailAuthProvider.credential(user.email, currentPassword);
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, newPassword);
 };
 
 export const deleteUser = async (db: Firestore, userId: string) => {
