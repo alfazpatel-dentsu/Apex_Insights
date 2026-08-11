@@ -14,16 +14,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Form,
   FormControl,
   FormField,
@@ -48,7 +38,7 @@ import { Loader2, MessageSquareText, Trash2 } from 'lucide-react';
 import { resolveActionStatus } from '@/lib/normalize';
 import { format, parseISO, isValid } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
+import { cn, releaseRadixPointerLock } from '@/lib/utils';
 
 const actionSchema = z.object({
   taskName: z.string().min(1, 'Task name is required'),
@@ -171,6 +161,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       setIsSaving(false);
       setDeletingCommentId(null);
       setIsDeletingComment(false);
+      releaseRadixPointerLock();
     }
     onOpenChange(open);
   }, [onOpenChange]);
@@ -215,6 +206,12 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
     setLocalHistory(resolveCommentHistory(action));
   }, [isOpen, action?.commentHistory, action?.comment, action?.updatedAt]);
 
+  const cancelDeleteComment = useCallback(() => {
+    if (isDeletingComment) return;
+    setDeletingCommentId(null);
+    releaseRadixPointerLock();
+  }, [isDeletingComment]);
+
   const confirmDeleteComment = async () => {
     if (!action || !deletingCommentId) return;
     setIsDeletingComment(true);
@@ -240,6 +237,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       );
       toast({ title: 'Comment deleted' });
       setDeletingCommentId(null);
+      releaseRadixPointerLock();
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -298,7 +296,6 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   };
 
   return (
-    <>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-none glass">
         <DialogHeader>
@@ -438,40 +435,79 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                   ) : (
                     <ScrollArea className="max-h-[220px]">
                       <ul className="divide-y divide-foreground/5">
-                        {pastComments.map((entry, idx) => (
+                        {pastComments.map((entry, idx) => {
+                          const isConfirming = deletingCommentId === entry.id;
+                          return (
                           <li
                             key={entry.id}
-                            className={cn('px-4 py-3 space-y-1.5 group', idx === 0 && 'bg-primary/[0.03]')}
+                            className={cn(
+                              'px-4 py-3 space-y-1.5 group',
+                              idx === 0 && 'bg-primary/[0.03]',
+                              isConfirming && 'bg-destructive/5 ring-1 ring-inset ring-destructive/30'
+                            )}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">
                                 {formatCommentDate(entry.createdAt)}
                               </span>
                               <div className="flex items-center gap-2">
-                                {idx === 0 && (
+                                {idx === 0 && !isConfirming && (
                                   <span className="text-[9px] font-black uppercase tracking-widest text-secondary">
                                     Latest
                                   </span>
                                 )}
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 rounded-none text-secondary hover:text-destructive hover:bg-destructive/10 opacity-70 group-hover:opacity-100"
-                                  aria-label="Delete comment"
-                                  title="Delete comment"
-                                  onClick={() => setDeletingCommentId(entry.id)}
-                                  disabled={isDeletingComment || isSaving}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                                {!isConfirming ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-none text-secondary hover:text-destructive hover:bg-destructive/10 opacity-70 group-hover:opacity-100"
+                                    aria-label="Delete comment"
+                                    title="Delete comment"
+                                    onClick={() => setDeletingCommentId(entry.id)}
+                                    disabled={isDeletingComment || isSaving || !!deletingCommentId}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : null}
                               </div>
                             </div>
                             <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap text-foreground/90 pr-8">
                               {entry.text}
                             </p>
+                            {isConfirming ? (
+                              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-destructive/20">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-destructive">
+                                  Delete this comment permanently?
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    className="h-9 rounded-none px-4 font-bold uppercase text-[10px] tracking-widest"
+                                    onClick={cancelDeleteComment}
+                                    disabled={isDeletingComment}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    className="h-9 rounded-none px-4 font-black uppercase text-[10px] tracking-widest"
+                                    onClick={() => void confirmDeleteComment()}
+                                    disabled={isDeletingComment}
+                                  >
+                                    {isDeletingComment ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
+                                    ) : null}
+                                    Delete
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : null}
                           </li>
-                        ))}
+                          );
+                        })}
                       </ul>
                     </ScrollArea>
                   )}
@@ -490,46 +526,6 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         </Form>
       </DialogContent>
     </Dialog>
-
-    <AlertDialog
-      open={!!deletingCommentId}
-      onOpenChange={(open) => {
-        if (!open && !isDeletingComment) setDeletingCommentId(null);
-      }}
-    >
-      <AlertDialogContent className="rounded-none glass">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="font-headline text-2xl font-black uppercase tracking-tighter">
-            Delete Comment
-          </AlertDialogTitle>
-          <AlertDialogDescription className="text-foreground/70 font-bold uppercase text-[10px] tracking-widest leading-relaxed">
-            This will permanently remove this comment from the action item history.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="pt-6">
-          <AlertDialogCancel
-            className="rounded-none h-12 px-6 font-bold uppercase text-[10px] tracking-widest"
-            disabled={isDeletingComment}
-          >
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            className="rounded-none h-12 px-8 font-black uppercase tracking-widest text-[10px] bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={isDeletingComment}
-            onClick={(e) => {
-              e.preventDefault();
-              void confirmDeleteComment();
-            }}
-          >
-            {isDeletingComment ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : null}
-            Delete Comment
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    </>
   );
 }
 

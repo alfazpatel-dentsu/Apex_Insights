@@ -1,23 +1,19 @@
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
 import * as functions from "firebase-functions/v1";
-import {defineSecret, defineString} from "firebase-functions/params";
+import {defineString} from "firebase-functions/params";
 import {logger} from "firebase-functions";
 import {actionItemToRow, ActionItemDoc} from "./action-item-row";
 import {
   deleteActionItemRow,
   getSheetsClient,
-  replaceAllActionItemRows,
   upsertActionItemRow,
   SheetsSyncConfig,
 } from "./sheets";
 
 /**
- * 1st gen Functions (same generation as existing acceptInvite).
- * Avoids 2nd gen Eventarc / Cloud Run invoker IAM that requires Owner.
- *
- * Names differ from the failed 2nd gen deploy so we don't collide with
- * any half-created Cloud Run services.
+ * 1st gen Firestore trigger only (no HTTPS callable).
+ * Callables need invoker IAM (Owner). Backfill is done from the Admin UI by
+ * touching actionItems docs so this trigger runs for each row.
  */
 
 initializeApp();
@@ -32,17 +28,48 @@ const sheetsTabName = defineString("SHEETS_TAB_NAME", {
   description: "Tab/sheet name that holds action item rows",
 });
 
-const sheetsServiceAccountJson = defineSecret("SHEETS_SERVICE_ACCOUNT_JSON");
+/** Base64 of the Sheets writer service-account JSON (single line, no Secret Manager). */
+const sheetsServiceAccountJsonB64 = defineString("SHEETS_SERVICE_ACCOUNT_JSON_B64", {
+  description: "Base64-encoded Google service account JSON for Sheets API",
+});
 
 function syncConfig(): SheetsSyncConfig {
   const spreadsheetId = sheetsSpreadsheetId.value()?.trim();
-  const serviceAccountJson = sheetsServiceAccountJson.value()?.trim();
+  // Strip whitespace/newlines/quotes — .env pastes often wrap and break base64
+  const b64 = (sheetsServiceAccountJsonB64.value() || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, "");
+
   if (!spreadsheetId) {
     throw new Error("SHEETS_SPREADSHEET_ID is not set");
   }
-  if (!serviceAccountJson) {
-    throw new Error("SHEETS_SERVICE_ACCOUNT_JSON secret is not set");
+  if (!b64) {
+    throw new Error(
+      "SHEETS_SERVICE_ACCOUNT_JSON_B64 is not set — add it to functions/.env.vdc200007-ppclientcentre-prod"
+    );
   }
+
+  let serviceAccountJson: string;
+  try {
+    serviceAccountJson = Buffer.from(b64, "base64").toString("utf8").trim();
+  } catch {
+    throw new Error("SHEETS_SERVICE_ACCOUNT_JSON_B64 could not be base64-decoded");
+  }
+
+  try {
+    const parsed = JSON.parse(serviceAccountJson) as {client_email?: string; private_key?: string};
+    if (!parsed?.client_email || !parsed?.private_key) {
+      throw new Error("decoded JSON missing client_email or private_key");
+    }
+  } catch (e: unknown) {
+    const hint = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `SHEETS_SERVICE_ACCOUNT_JSON_B64 is not valid service-account JSON after decode (${hint}). ` +
+        `Regenerate with: base64 -w 0 key.json  and put on ONE line in .env with no quotes.`
+    );
+  }
+
   return {
     spreadsheetId,
     sheetName: sheetsTabName.value() || "ActionItems",
@@ -50,12 +77,10 @@ function syncConfig(): SheetsSyncConfig {
   };
 }
 
-const regional = functions.region("us-central1");
-
 /** Live sync: create/update/delete on actionItems/{id} → Google Sheets. */
-export const mirrorActionItemToSheet = regional
+export const mirrorActionItemToSheet = functions
+  .region("us-central1")
   .runWith({
-    secrets: [sheetsServiceAccountJson],
     timeoutSeconds: 120,
     memory: "256MB",
   })
@@ -75,43 +100,4 @@ export const mirrorActionItemToSheet = regional
     const row = actionItemToRow(id, data);
     const result = await upsertActionItemRow(sheets, config, row);
     logger.info("actionItems upsert mirrored to Sheets", {id, result});
-  });
-
-/** Admin-only full Sheet rebuild from Firestore. */
-export const backfillActionItemsSheet = regional
-  .runWith({
-    secrets: [sheetsServiceAccountJson],
-    timeoutSeconds: 300,
-    memory: "512MB",
-  })
-  .https.onCall(async (_data, context) => {
-    if (!context.auth?.uid) {
-      throw new functions.https.HttpsError("unauthenticated", "Sign in required");
-    }
-
-    const db = getFirestore();
-    const userSnap = await db.doc(`users/${context.auth.uid}`).get();
-    const role = userSnap.data()?.role;
-    if (role !== "Admin") {
-      throw new functions.https.HttpsError("permission-denied", "Admin role required");
-    }
-
-    try {
-      const config = syncConfig();
-      const sheets = await getSheetsClient(config);
-      const snap = await db.collection("actionItems").get();
-      const rows = snap.docs.map((doc) =>
-        actionItemToRow(doc.id, doc.data() as ActionItemDoc)
-      );
-      const written = await replaceAllActionItemRows(sheets, config, rows);
-      logger.info("actionItems backfill complete", {written});
-      return {written, spreadsheetId: config.spreadsheetId, sheetName: config.sheetName};
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error("actionItems backfill failed", {message, err});
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        message.slice(0, 400) || "Sheets backfill failed"
-      );
-    }
   });
