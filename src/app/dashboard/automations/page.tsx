@@ -124,7 +124,7 @@ export default function AutomationsPage() {
       const detail =
         error?.details ||
         error?.message ||
-        'Deploy email functions and set SMTP_PASS for aztec_alerts@dentsu.com.';
+        'Deploy email functions and configure Microsoft Graph (MS_GRAPH_TENANT_ID, MS_GRAPH_CLIENT_ID, MS_GRAPH_CLIENT_SECRET).';
       toast({
         variant: 'destructive',
         title: 'Test email failed',
@@ -255,9 +255,10 @@ export default function AutomationsPage() {
               </div>
             </dl>
             <p className="text-[11px] text-secondary leading-relaxed">
-              Outbound alerts use Microsoft 365 SMTP (<code className="font-mono">smtp.office365.com</code>) for the shared mailbox. Set the{' '}
-              <code className="font-mono">SMTP_PASS</code> Functions secret, then deploy. See{' '}
-              <code className="font-mono">functions/README.md</code>.
+              Outbound alerts use <strong>Microsoft Graph</strong> (Entra app registration)
+              so Okta login is not required. IT provides Tenant ID, Client ID, and Client Secret;
+              store the secret as <code className="font-mono">MS_GRAPH_CLIENT_SECRET</code>, then deploy.
+              See <code className="font-mono">functions/README.md</code>.
             </p>
           </div>
 

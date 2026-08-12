@@ -1,22 +1,26 @@
 import {getFirestore} from "firebase-admin/firestore";
 import {defineSecret, defineString} from "firebase-functions/params";
 
-export const SMTP_HOST = defineString("SMTP_HOST", {
-  default: "smtp.office365.com",
-  description: "SMTP host for aztec_alerts@dentsu.com (Microsoft 365 / Office 365)",
+/** Entra ID (Azure AD) tenant ID for Microsoft Graph client-credentials. */
+export const MS_GRAPH_TENANT_ID = defineString("MS_GRAPH_TENANT_ID", {
+  default: "",
+  description: "Entra tenant ID (Directory ID) for Graph mail send",
 });
 
-export const SMTP_PORT = defineString("SMTP_PORT", {
-  default: "587",
-  description: "SMTP port (587 STARTTLS for Office 365)",
+/** App registration application (client) ID. */
+export const MS_GRAPH_CLIENT_ID = defineString("MS_GRAPH_CLIENT_ID", {
+  default: "",
+  description: "Entra app registration client ID",
 });
 
-export const SMTP_USER = defineString("SMTP_USER", {
+/** App registration client secret. */
+export const MS_GRAPH_CLIENT_SECRET = defineSecret("MS_GRAPH_CLIENT_SECRET");
+
+/** Mailbox UPN to send as (must allow Mail.Send via the app). */
+export const MS_GRAPH_SENDER = defineString("MS_GRAPH_SENDER", {
   default: "aztec_alerts@dentsu.com",
-  description: "Office 365 mailbox UPN used for SMTP AUTH / From address",
+  description: "Office 365 mailbox that appears in the From field",
 });
-
-export const SMTP_PASS = defineSecret("SMTP_PASS");
 
 export const EMAIL_FROM_NAME = defineString("EMAIL_FROM_NAME", {
   default: "AZTEC Alerts",
@@ -59,7 +63,7 @@ export const EMAIL_SETTINGS_PATH = "settings/emailAutomations";
 export async function loadEmailAutomationSettings(): Promise<EmailAutomationSettings> {
   const defaults: EmailAutomationSettings = {
     ...DEFAULT_EMAIL_AUTOMATIONS,
-    fromEmail: SMTP_USER.value()?.trim() || DEFAULT_EMAIL_AUTOMATIONS.fromEmail,
+    fromEmail: MS_GRAPH_SENDER.value()?.trim() || DEFAULT_EMAIL_AUTOMATIONS.fromEmail,
     fromName: EMAIL_FROM_NAME.value()?.trim() || DEFAULT_EMAIL_AUTOMATIONS.fromName,
     appBaseUrl: (APP_BASE_URL.value()?.trim() || DEFAULT_EMAIL_AUTOMATIONS.appBaseUrl).replace(/\/$/, ""),
     enabled: {...DEFAULT_EMAIL_AUTOMATIONS.enabled},
@@ -89,4 +93,12 @@ export function isAutomationEnabled(
   key: EmailAutomationKey
 ): boolean {
   return settings.enabled?.[key] !== false;
+}
+
+export function graphCredentialsConfigured(): boolean {
+  return Boolean(
+    MS_GRAPH_TENANT_ID.value()?.trim() &&
+      MS_GRAPH_CLIENT_ID.value()?.trim() &&
+      MS_GRAPH_CLIENT_SECRET.value()?.trim()
+  );
 }

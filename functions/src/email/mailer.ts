@@ -1,12 +1,12 @@
-import nodemailer from "nodemailer";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {logger} from "firebase-functions";
 import {
-  SMTP_HOST,
-  SMTP_PASS,
-  SMTP_PORT,
-  SMTP_USER,
   EmailAutomationSettings,
+  graphCredentialsConfigured,
+  MS_GRAPH_CLIENT_ID,
+  MS_GRAPH_CLIENT_SECRET,
+  MS_GRAPH_SENDER,
+  MS_GRAPH_TENANT_ID,
 } from "./config";
 import {EmailContent} from "./templates";
 
@@ -24,6 +24,108 @@ function normalizeRecipients(to: string | string[]): string[] {
   return [...new Set(list.map((e) => e.trim().toLowerCase()).filter(Boolean))];
 }
 
+let cachedToken: {value: string; expiresAtMs: number} | null = null;
+
+async function getGraphAccessToken(): Promise<string> {
+  const now = Date.now();
+  if (cachedToken && cachedToken.expiresAtMs > now + 60_000) {
+    return cachedToken.value;
+  }
+
+  const tenant = MS_GRAPH_TENANT_ID.value()?.trim();
+  const clientId = MS_GRAPH_CLIENT_ID.value()?.trim();
+  const clientSecret = MS_GRAPH_CLIENT_SECRET.value()?.trim();
+  if (!tenant || !clientId || !clientSecret) {
+    throw new Error("Microsoft Graph credentials are not configured");
+  }
+
+  const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: "https://graph.microsoft.com/.default",
+    grant_type: "client_credentials",
+  });
+
+  const res = await fetch(tokenUrl, {
+    method: "POST",
+    headers: {"Content-Type": "application/x-www-form-urlencoded"},
+    body,
+  });
+  const json = (await res.json()) as {
+    access_token?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  };
+
+  if (!res.ok || !json.access_token) {
+    throw new Error(
+      `Graph token failed: ${json.error || res.status} ${json.error_description || ""}`.trim()
+    );
+  }
+
+  const expiresInSec = Number(json.expires_in || 3600);
+  cachedToken = {
+    value: json.access_token,
+    expiresAtMs: now + expiresInSec * 1000,
+  };
+  return json.access_token;
+}
+
+async function graphSendMail(params: {
+  sender: string;
+  fromName: string;
+  recipients: string[];
+  content: EmailContent;
+}): Promise<void> {
+  const token = await getGraphAccessToken();
+  const sender = encodeURIComponent(params.sender);
+  const url = `https://graph.microsoft.com/v1.0/users/${sender}/sendMail`;
+
+  const payload = {
+    message: {
+      subject: params.content.subject,
+      body: {
+        contentType: "HTML",
+        content: params.content.html || params.content.text,
+      },
+      toRecipients: params.recipients.map((address) => ({
+        emailAddress: {address},
+      })),
+      from: {
+        emailAddress: {
+          address: params.sender,
+          name: params.fromName,
+        },
+      },
+      replyTo: [
+        {
+          emailAddress: {
+            address: params.sender,
+            name: params.fromName,
+          },
+        },
+      ],
+    },
+    saveToSentItems: true,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Graph sendMail failed (${res.status}): ${text.slice(0, 400)}`);
+  }
+}
+
 export async function sendAlertEmail(options: SendAlertOptions): Promise<{
   sent: boolean;
   skipped?: string;
@@ -34,12 +136,11 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
     return {sent: false, skipped: "no-recipients"};
   }
 
-  const pass = SMTP_PASS.value()?.trim();
-  if (!pass) {
-    logger.error("SMTP_PASS secret is empty — cannot send alert email", {
+  if (!graphCredentialsConfigured()) {
+    logger.error("Microsoft Graph credentials missing — cannot send alert email", {
       dedupeKey: options.dedupeKey,
     });
-    return {sent: false, skipped: "smtp-not-configured"};
+    return {sent: false, skipped: "graph-not-configured"};
   }
 
   const db = getFirestore();
@@ -56,6 +157,7 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
       to: recipients,
       subject: options.content.subject,
       from: options.settings.fromEmail,
+      provider: "microsoft-graph",
       createdAt: FieldValue.serverTimestamp(),
       meta: options.meta || {},
     });
@@ -63,45 +165,34 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
     return {sent: false, skipped: "already-sent"};
   }
 
-  const host = SMTP_HOST.value()?.trim() || "smtp.office365.com";
-  const port = Number(SMTP_PORT.value()?.trim() || "587");
-  const user = SMTP_USER.value()?.trim() || options.settings.fromEmail;
-
-  // Office 365: smtp.office365.com:587 with STARTTLS (not implicit SSL on 465).
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    requireTLS: port === 587,
-    auth: {user, pass},
-  });
+  const sender =
+    MS_GRAPH_SENDER.value()?.trim() ||
+    options.settings.fromEmail ||
+    "aztec_alerts@dentsu.com";
 
   try {
-    const info = await transporter.sendMail({
-      from: `"${options.settings.fromName}" <${options.settings.fromEmail}>`,
-      to: recipients.join(", "),
-      subject: options.content.subject,
-      text: options.content.text,
-      html: options.content.html,
-      replyTo: options.settings.fromEmail,
+    await graphSendMail({
+      sender,
+      fromName: options.settings.fromName || "AZTEC Alerts",
+      recipients,
+      content: options.content,
     });
 
     await logRef.set(
       {
         status: "sent",
-        messageId: info.messageId || null,
         sentAt: FieldValue.serverTimestamp(),
       },
       {merge: true}
     );
 
-    logger.info("Alert email sent", {
+    logger.info("Alert email sent via Microsoft Graph", {
       dedupeKey: options.dedupeKey,
       to: recipients,
-      messageId: info.messageId,
+      from: sender,
     });
 
-    return {sent: true, messageId: info.messageId};
+    return {sent: true};
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     await logRef.set(

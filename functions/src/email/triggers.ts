@@ -5,7 +5,7 @@ import {ActionItemDoc} from "../action-item-row";
 import {
   isAutomationEnabled,
   loadEmailAutomationSettings,
-  SMTP_PASS,
+  MS_GRAPH_CLIENT_SECRET,
 } from "./config";
 import {listAdminEmails, resolveUserEmail, sendAlertEmail} from "./mailer";
 import {
@@ -116,7 +116,7 @@ async function notifyTaskAssigned(id: string, data: ActionItemDoc): Promise<void
 export const onActionItemEmailAutomations = functions
   .region("us-central1")
   .runWith({
-    secrets: [SMTP_PASS],
+    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 60,
     memory: "256MB",
   })
@@ -157,7 +157,7 @@ export const onActionItemEmailAutomations = functions
 export const onUserEmailAutomations = functions
   .region("us-central1")
   .runWith({
-    secrets: [SMTP_PASS],
+    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 60,
     memory: "256MB",
   })
@@ -230,7 +230,7 @@ export const onUserEmailAutomations = functions
 export const sweepOverdueActionItemEmails = functions
   .region("us-central1")
   .runWith({
-    secrets: [SMTP_PASS],
+    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 300,
     memory: "512MB",
   })
@@ -281,7 +281,7 @@ export const sweepOverdueActionItemEmails = functions
 export const sendTestAlertEmail = functions
   .region("us-central1")
   .runWith({
-    secrets: [SMTP_PASS],
+    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 60,
     memory: "256MB",
   })
@@ -322,10 +322,10 @@ export const sendTestAlertEmail = functions
       meta: {type: "test"},
     });
 
-    if (!result.sent && result.skipped === "smtp-not-configured") {
+    if (!result.sent && result.skipped === "graph-not-configured") {
       throw new functions.https.HttpsError(
         "failed-precondition",
-        "SMTP_PASS secret is not configured. Set it for aztec_alerts@dentsu.com and redeploy."
+        "Microsoft Graph is not configured. Set MS_GRAPH_TENANT_ID, MS_GRAPH_CLIENT_ID, and secret MS_GRAPH_CLIENT_SECRET, then redeploy."
       );
     }
 

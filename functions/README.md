@@ -18,7 +18,8 @@
 
 ## Email automations (from `aztec_alerts@dentsu.com`)
 
-All product alert emails are sent via SMTP as:
+All product alert emails are sent with **Microsoft Graph** (client credentials).  
+This works with **Okta** — no mailbox password / SMTP AUTH is required.
 
 **From:** `AZTEC Alerts <aztec_alerts@dentsu.com>`
 
@@ -37,56 +38,58 @@ CTA links use the Firebase Hosting custom domain:
 
 Toggles live in Firestore `settings/emailAutomations` (UI: **Automations** page) and in mail audit log `mailLog/{dedupeKey}`.
 
-### SMTP setup (Microsoft 365 / Office 365 mailbox)
+### Setup for IT (Entra ID / Microsoft 365) — Option 2
 
-Defaults target **Office 365**:
+Ask Identity / M365 admin to:
 
-| Setting | Value |
-|---------|--------|
-| Host | `smtp.office365.com` |
-| Port | `587` (STARTTLS) |
-| User / From | `aztec_alerts@dentsu.com` |
+1. Confirm mailbox **`aztec_alerts@dentsu.com`** exists (shared or user mailbox).
+2. In **Entra ID (Azure AD)** → **App registrations** → **New registration**  
+   - Name example: `AZTEC Control Center Alerts`  
+   - Accounts: this organizational directory only  
+3. Note **Application (client) ID** and **Directory (tenant) ID**.
+4. **Certificates & secrets** → **New client secret** → copy the **Value** once (this is `MS_GRAPH_CLIENT_SECRET`).
+5. **API permissions** → **Add a permission** → **Microsoft Graph** → **Application permissions** → add **`Mail.Send`** → **Grant admin consent**.
+6. (Recommended) Restrict the app so it can only send as this mailbox using an Exchange **Application Access Policy** (limits `Mail.Send` to `aztec_alerts@dentsu.com`).
+7. Send these three values to the Firebase admin (securely):
+   - Tenant ID  
+   - Client ID  
+   - Client secret  
 
-1. Ensure mailbox **aztec_alerts@dentsu.com** exists in Microsoft 365 (user mailbox or licensed shared mailbox that can sign in).
-2. In the Microsoft 365 admin / Exchange admin center, **enable Authenticated SMTP (SMTP AUTH)** for that mailbox (often off by default on new tenants).
-3. Set the mailbox password (or an app password if your tenant requires MFA for SMTP).
-4. Set the Functions secret (once per project):
+### Setup in Firebase (after IT provides values)
+
+1. Create `functions/.env` (do not commit):
 
 ```bash
-firebase functions:secrets:set SMTP_PASS
-# paste the Office 365 mailbox / app password when prompted
-```
-
-5. Optional params (defaults already match Office 365):
-
-```text
-SMTP_HOST=smtp.office365.com
-SMTP_PORT=587
-SMTP_USER=aztec_alerts@dentsu.com
+MS_GRAPH_TENANT_ID=<tenant-id-from-IT>
+MS_GRAPH_CLIENT_ID=<client-id-from-IT>
+MS_GRAPH_SENDER=aztec_alerts@dentsu.com
 EMAIL_FROM_NAME=AZTEC Alerts
 APP_BASE_URL=https://azteccontrolcenter.dentsu.com
 ```
 
-If IT prefers a licensed user with **Send As** on the shared mailbox, set `SMTP_USER` to that user’s UPN and keep `fromEmail` as `aztec_alerts@dentsu.com` (requires Send As permission in Exchange).
+2. Store the client secret:
 
-6. Grant the Functions runtime SA **Secret Manager Secret Accessor** on `SMTP_PASS` (same as Sheets secret).
+```bash
+firebase functions:secrets:set MS_GRAPH_CLIENT_SECRET
+# paste the Entra client secret when prompted
+```
 
-7. Deploy:
+3. Grant the Functions runtime service account **Secret Manager Secret Accessor** on `MS_GRAPH_CLIENT_SECRET`.
+
+4. Deploy:
 
 ```bash
 cd functions && npm ci && npm run build && cd ..
-firebase deploy --only functions:action-items-sheets
+firebase deploy --only functions:action-items-sheets,firestore:rules
 ```
 
 If prompted about deleting `acceptInvite`, choose **No**.
 
-8. In the app (Admin → **Automations**), send a **Test email** and confirm it arrives From `aztec_alerts@dentsu.com`.
-
-**Note:** If the tenant has blocked basic SMTP AUTH entirely, you’ll need either SMTP AUTH re-enabled for this mailbox or a move to OAuth2 / Microsoft Graph sendMail — the current implementation uses SMTP AUTH + password.
+5. In the app (Admin → **Automations**), send a **Test email** and confirm From `aztec_alerts@dentsu.com`.
 
 ### Auth password-reset emails
 
-Invite / reset emails from Firebase Auth (`sendPasswordResetEmail`) are separate from these alerts. To also brand those with `aztec_alerts@dentsu.com`, configure **Firebase Authentication → Templates → SMTP settings** in the Firebase console with the same Office 365 SMTP host (`smtp.office365.com:587`). Product alert emails above do **not** depend on that.
+Invite / reset emails from Firebase Auth (`sendPasswordResetEmail`) are separate from these alerts. Branding those with `aztec_alerts@dentsu.com` needs Firebase Auth SMTP (or a custom invite flow) and is **not** covered by Graph automations above.
 
 ---
 
