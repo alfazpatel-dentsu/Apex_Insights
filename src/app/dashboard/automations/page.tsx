@@ -255,7 +255,7 @@ export default function AutomationsPage() {
               </div>
             </dl>
             <p className="text-[11px] text-secondary leading-relaxed">
-              Outbound alerts use Google Workspace SMTP for the shared mailbox. Set the{' '}
+              Outbound alerts use Microsoft 365 SMTP (<code className="font-mono">smtp.office365.com</code>) for the shared mailbox. Set the{' '}
               <code className="font-mono">SMTP_PASS</code> Functions secret, then deploy. See{' '}
               <code className="font-mono">functions/README.md</code>.
             </p>

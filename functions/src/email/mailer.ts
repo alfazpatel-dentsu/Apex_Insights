@@ -63,14 +63,16 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
     return {sent: false, skipped: "already-sent"};
   }
 
-  const host = SMTP_HOST.value()?.trim() || "smtp.gmail.com";
+  const host = SMTP_HOST.value()?.trim() || "smtp.office365.com";
   const port = Number(SMTP_PORT.value()?.trim() || "587");
   const user = SMTP_USER.value()?.trim() || options.settings.fromEmail;
 
+  // Office 365: smtp.office365.com:587 with STARTTLS (not implicit SSL on 465).
   const transporter = nodemailer.createTransport({
     host,
     port,
     secure: port === 465,
+    requireTLS: port === 587,
     auth: {user, pass},
   });
 

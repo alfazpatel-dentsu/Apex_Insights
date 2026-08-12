@@ -2,18 +2,18 @@ import {getFirestore} from "firebase-admin/firestore";
 import {defineSecret, defineString} from "firebase-functions/params";
 
 export const SMTP_HOST = defineString("SMTP_HOST", {
-  default: "smtp.gmail.com",
-  description: "SMTP host for aztec_alerts@dentsu.com (Google Workspace)",
+  default: "smtp.office365.com",
+  description: "SMTP host for aztec_alerts@dentsu.com (Microsoft 365 / Office 365)",
 });
 
 export const SMTP_PORT = defineString("SMTP_PORT", {
   default: "587",
-  description: "SMTP port (587 STARTTLS recommended)",
+  description: "SMTP port (587 STARTTLS for Office 365)",
 });
 
 export const SMTP_USER = defineString("SMTP_USER", {
   default: "aztec_alerts@dentsu.com",
-  description: "Shared mailbox used as SMTP auth user / From address",
+  description: "Office 365 mailbox UPN used for SMTP AUTH / From address",
 });
 
 export const SMTP_PASS = defineSecret("SMTP_PASS");
