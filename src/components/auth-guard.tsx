@@ -49,6 +49,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           { path: '/dashboard/wbr', key: 'wbr' },
           { path: '/dashboard/kpi-tracking', key: 'tracker' },
           { path: '/dashboard/actions', key: 'actions' },
+          { path: '/dashboard/automations', key: 'automations' },
           { path: '/dashboard/admin', key: 'admin' },
         ];
 

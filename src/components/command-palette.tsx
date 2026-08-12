@@ -13,7 +13,8 @@ import {
   ArrowRight,
   Briefcase,
   ListChecks,
-  ChartLine
+  ChartLine,
+  Lightning
 } from "@phosphor-icons/react";
 import { useMemo, useState, useEffect, useCallback } from "react";
 
@@ -26,6 +27,7 @@ const items = [
   { label: "Spends Forecast", href: "/dashboard/spends-forecast", group: "Navigate", icon: ChartLine },
   { label: "Weekly Business Review", href: "/dashboard/wbr", group: "Navigate", icon: ClipboardText },
   { label: "Action Items", href: "/dashboard/actions", group: "Navigate", icon: ListChecks },
+  { label: "Automations", href: "/dashboard/automations", group: "Navigate", icon: Lightning },
   { label: "Administration", href: "/dashboard/admin", group: "Navigate", icon: ShieldCheck },
   { label: "Export current view (CSV)", href: "/dashboard/business-snapshot", group: "Actions", icon: ArrowRight, hint: "Download" },
   { label: "Invite team member", href: "/dashboard/admin", group: "Actions", icon: ArrowRight, hint: "New" },
