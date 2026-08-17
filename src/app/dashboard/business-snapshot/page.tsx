@@ -274,12 +274,13 @@ export default function BusinessSnapshotPage() {
       const channel = canonicalizeChannel(row.channelVendor);
       totals[channel] = (totals[channel] || 0) + toSpendNumber(row.spendsInr);
     });
+    const latestLabel = formatLatestWeekDateLabel(rowsByKey[lastKey], 'dd MMM yyyy');
     return {
       channels: Object.entries(totals)
         .map(([name, value]) => ({ name, value }))
         .filter((row) => row.value !== 0)
         .sort((a, b) => b.value - a.value),
-      label: `Week of ${formatWeekStartLabel(lastKey, 'dd MMM yyyy')}`,
+      label: latestLabel ? `Week of ${latestLabel}` : null,
     };
   }, [weeklySpends]);
   const channelSpends = channelSpendPulse.channels;
