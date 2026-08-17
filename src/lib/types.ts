@@ -171,6 +171,7 @@ export interface WbrEntry {
   performanceRag: RagStatus;
   organicOpportunities: string;
   crossSellOpportunities: string;
+  performanceSummary?: string;
   summary: string;
   updatedAt: string;
 }
