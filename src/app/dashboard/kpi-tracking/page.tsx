@@ -32,6 +32,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
+import {
+  getEffectiveWeeklyTarget,
+  getMonthlyStatus,
+  getWeeklyStatus,
+  parseKpiDirection,
+  ragStatusTextClass,
+} from '@/lib/kpi-rag';
 import { KpiDialog } from './kpi-dialog';
 import { format, parse, isValid, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInterval } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -56,88 +63,6 @@ const ragVariantMap: { [key: string]: 'success' | 'warning' | 'destructive' | 'o
     Red: 'destructive',
     'N/A': 'outline',
 };
-
-/** Rate/efficiency KPIs — weekly value is comparable to the full monthly target. */
-const RATE_KPI_PATTERN =
-  /(^|[^a-z])(cpa|cpc|cpm|cpl|cpi|cps|ctr|cvr|roas|aov|rpc|rpi|arpu|cac|rpm|ecpm)([^a-z]|$)|rate|ratio|percent|%|bounce|margin|frequency/i;
-
-/** Volume/cumulative KPIs — monthly target is hit by consolidating weeks. */
-const VOLUME_KPI_PATTERN =
-  /(lead|revenue|sale|gmv|order|conversion|install|signup|sign[\s-]?up|registrat|click|impression|spend|budget|session|user|traffic|booking|enquir|inquir|download|applicant|application|volume|units?|qty|quantity|visits?)/i;
-
-/**
- * Cumulative KPIs (Leads, Revenue, …) need a weekly share of the monthly target.
- * Rate KPIs (CPA, ROAS, CTR, …) keep the same target scale every week.
- */
-function usesProRatedWeeklyTarget(kpiName: string, direction: 'ASC' | 'DESC'): boolean {
-  const name = (kpiName || '').trim();
-  if (!name) return direction === 'ASC';
-  if (RATE_KPI_PATTERN.test(name)) return false;
-  if (VOLUME_KPI_PATTERN.test(name)) return true;
-  // Fallback: ASC tends to be cumulative volume; DESC tends to be efficiency/rate
-  return direction === 'ASC';
-}
-
-function getEffectiveWeeklyTarget(opts: {
-  kpiName: string;
-  direction: 'ASC' | 'DESC';
-  monthlyTarget: number | null | undefined;
-  weekTarget: number | null | undefined;
-  weeksInMonth: number;
-}): number | null {
-  const { kpiName, direction, monthlyTarget, weekTarget, weeksInMonth } = opts;
-  if (weekTarget != null && weekTarget > 0) return weekTarget;
-  if (monthlyTarget == null || monthlyTarget <= 0) return null;
-  if (usesProRatedWeeklyTarget(kpiName, direction) && weeksInMonth > 0) {
-    return monthlyTarget / weeksInMonth;
-  }
-  return monthlyTarget;
-}
-
-/** ASC = higher is better; DESC = lower is better. */
-function meetsTarget(achieved: number, target: number, direction: 'ASC' | 'DESC'): boolean {
-  if (direction === 'DESC') return achieved <= target;
-  return achieved >= target;
-}
-
-function improvedVsPrevious(current: number, previous: number, direction: 'ASC' | 'DESC'): boolean {
-  if (direction === 'DESC') return current <= previous;
-  return current >= previous;
-}
-
-/** Monthly RAG: achieved vs monthly target, direction-aware. */
-function getMonthlyStatus(achieved: number, target: number, direction: 'ASC' | 'DESC'): RagStatus {
-  if (target === 0 && achieved === 0) return 'N/A';
-  return meetsTarget(achieved, target, direction) ? 'Green' : 'Red';
-}
-
-/**
- * Weekly RAG: compare against effective weekly target (pro-rated monthly for
- * cumulative KPIs, or full monthly target for rate KPIs) AND previous week.
- * Green = both good · Amber = mixed · Red = both bad
- */
-function getWeeklyStatus(
-  achieved: number,
-  weeklyPacingTarget: number | null,
-  prevAchieved: number | null,
-  direction: 'ASC' | 'DESC'
-): RagStatus {
-  const vsTarget =
-    weeklyPacingTarget != null && weeklyPacingTarget > 0
-      ? meetsTarget(achieved, weeklyPacingTarget, direction)
-      : null;
-  const vsPrev =
-    prevAchieved != null
-      ? improvedVsPrevious(achieved, prevAchieved, direction)
-      : null;
-
-  if (vsTarget === null && vsPrev === null) return 'N/A';
-  if (vsTarget === null) return vsPrev ? 'Green' : 'Red';
-  if (vsPrev === null) return vsTarget ? 'Green' : 'Red';
-  if (vsTarget && vsPrev) return 'Green';
-  if (!vsTarget && !vsPrev) return 'Red';
-  return 'Amber';
-}
 
 function SearchableFilterContent({ placeholder, options, selected, onToggle }: { placeholder: string, options: string[], selected: string[], onToggle: (val: string) => void }) {
   const [search, setSearch] = useState("");
@@ -321,7 +246,7 @@ function KpiTrackingContent() {
           kpiType: item.kpiType || 'PRIMARY',
           channel,
           lob: item.lob,
-          direction: item.direction || 'ASC',
+          direction: parseKpiDirection(item.direction, item.kpi),
           type: item.type,
           monthData: {} as Record<string, KpiData>
         };
@@ -344,16 +269,18 @@ function KpiTrackingContent() {
         }
       });
       const latestMonthRecord = Object.values(group.monthData).sort((a: any, b: any) => b.month.localeCompare(a.month))[0] as KpiData | undefined;
+      const direction = parseKpiDirection(latestMonthRecord?.direction ?? group.direction, group.kpi);
       // RAG column = MTD status (latest month achieved vs monthly target, Direction-aware)
       const mtdStatus: RagStatus = latestMonthRecord
         ? getMonthlyStatus(
             latestMonthRecord.achievedMonthTillYesterday,
             latestMonthRecord.targetMonth,
-            group.direction
+            direction
           )
         : 'N/A';
       return {
         ...group,
+        direction,
         kpiType: latestMonthRecord?.kpiType || group.kpiType || 'PRIMARY',
         pacingStatus: mtdStatus,
         rangeWeekly,
@@ -753,12 +680,7 @@ function KpiTrackingContent() {
                                 const monthlyStatus = data
                                   ? getMonthlyStatus(data.achievedMonthTillYesterday, data.targetMonth, group.direction)
                                   : 'N/A';
-                                const monthlyColor =
-                                  monthlyStatus === 'Green'
-                                    ? 'text-success'
-                                    : monthlyStatus === 'Red'
-                                      ? 'text-destructive'
-                                      : '';
+                                const monthlyColor = ragStatusTextClass(monthlyStatus);
                                 return (
                                   <React.Fragment key={monthKey}>
                                     <TableCell className={cn("text-center text-[11px] font-mono font-black px-4", idx % 2 === 0 ? "bg-primary/[0.01]" : "bg-primary/[0.03]")}>{data ? data.targetMonth.toLocaleString() : '—'}</TableCell>
@@ -786,7 +708,7 @@ function KpiTrackingContent() {
                                     prevWd ? prevWd.achieved : null,
                                     group.direction
                                   );
-                                  const weeklyColor = weeklyStatus === 'Green' ? 'text-success' : (weeklyStatus === 'Amber' ? 'text-warning' : weeklyStatus === 'Red' ? 'text-destructive' : 'text-secondary');
+                                  const weeklyColor = ragStatusTextClass(weeklyStatus) || 'text-secondary';
                                   return (
                                       <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} /></div></TooltipTrigger><TooltipContent className="rounded-none glass p-3 max-w-[220px]"><div className="space-y-1">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}{weeklyPacingTarget != null && <div className="text-[10px] font-mono text-secondary">Week target: {Math.round(weeklyPacingTarget).toLocaleString()}</div>}</div></TooltipContent></Tooltip></TooltipProvider></TableCell>
                                   );

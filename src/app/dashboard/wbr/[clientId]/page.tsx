@@ -64,6 +64,13 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { saveWbrEntry, deleteActionItem } from '@/lib/firestore-actions';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
+import {
+  getEffectiveWeeklyTarget,
+  getMonthlyStatus,
+  getWeeklyStatus,
+  parseKpiDirection,
+  ragStatusTextClass,
+} from '@/lib/kpi-rag';
 import { cn, openDialogFromMenu } from '@/lib/utils';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
@@ -427,15 +434,21 @@ export default function WbrEditPage() {
           kpi: k.kpi,
           kpiType: k.kpiType || 'PRIMARY',
           lob: k.lob,
-          direction: k.direction || 'ASC',
+          direction: parseKpiDirection(k.direction, k.kpi),
           months: {} as Record<string, KpiData>
         };
       }
       groups[key].months[k.month] = k;
-      // Prefer latest month's type if present
       if (k.kpiType) groups[key].kpiType = k.kpiType;
     });
-    return Object.values(groups);
+    return Object.values(groups).map((group: any) => {
+      const latestMonth = Object.keys(group.months).sort().pop();
+      const latest = latestMonth ? group.months[latestMonth] : undefined;
+      return {
+        ...group,
+        direction: parseKpiDirection(latest?.direction ?? group.direction, group.kpi),
+      };
+    });
   }, [filteredKpis]);
 
   const processedMonthlySpends = useMemo(() => {
@@ -512,14 +525,21 @@ export default function WbrEditPage() {
           kpi: k.kpi,
           kpiType: k.kpiType || 'PRIMARY',
           lob: k.lob,
-          direction: k.direction || 'ASC',
+          direction: parseKpiDirection(k.direction, k.kpi),
           months: {} as Record<string, KpiData>
         };
       }
       groups[key].months[k.month] = k;
       if (k.kpiType) groups[key].kpiType = k.kpiType;
     });
-    return Object.values(groups);
+    return Object.values(groups).map((group: any) => {
+      const latestMonth = Object.keys(group.months).sort().pop();
+      const latest = latestMonth ? group.months[latestMonth] : undefined;
+      return {
+        ...group,
+        direction: parseKpiDirection(latest?.direction ?? group.direction, group.kpi),
+      };
+    });
   }, [filteredWeeklyKpisForGrid]);
 
   const processedWeeklySpends = useMemo(() => {
@@ -565,16 +585,14 @@ export default function WbrEditPage() {
     return Array.from(set).sort();
   }, [weeklySpends, selectedWeeklyChannelFilter]);
 
-  const getWeeklyColor = (achieved: number, target: number, prevAchieved: number | null, direction: 'ASC' | 'DESC' = 'ASC') => {
-    if (target > 0) {
-      if (direction === 'DESC') return achieved <= target ? 'text-success' : 'text-destructive';
-      return achieved >= target ? 'text-success' : 'text-destructive';
-    }
-    if (prevAchieved !== null && prevAchieved > 0) {
-      if (direction === 'DESC') return achieved < prevAchieved ? 'text-success' : 'text-destructive';
-      return achieved > prevAchieved ? 'text-success' : 'text-destructive';
-    }
-    return 'text-foreground/80';
+  const getWeeklyColor = (
+    achieved: unknown,
+    weeklyPacingTarget: number | null,
+    prevAchieved: unknown,
+    direction: 'ASC' | 'DESC' = 'ASC'
+  ) => {
+    const status = getWeeklyStatus(achieved, weeklyPacingTarget, prevAchieved, direction);
+    return ragStatusTextClass(status) || 'text-foreground/80';
   };
 
   if (isLoading || !isClient) return (
@@ -757,7 +775,10 @@ export default function WbrEditPage() {
                                         </div>
                                         <div className="flex items-center justify-center gap-1">
                                             <span className="text-[8px] font-black opacity-30 uppercase">ACH</span>
-                                            <span className={cn("font-mono font-black text-xs", kpi && kpi.achievedMonthTillYesterday >= kpi.targetMonth ? "text-success" : "text-destructive")}>
+                                            <span className={cn(
+                                              "font-mono font-black text-xs",
+                                              kpi ? ragStatusTextClass(getMonthlyStatus(kpi.achievedMonthTillYesterday, kpi.targetMonth, group.direction)) : ""
+                                            )}>
                                                 {kpi ? kpi.achievedMonthTillYesterday.toLocaleString() : '—'}
                                             </span>
                                         </div>
@@ -897,7 +918,17 @@ export default function WbrEditPage() {
                              }
                           }
 
-                          const colorClass = weekData ? getWeeklyColor(weekData.achieved, weekData.target, prevAchieved, group.direction) : 'text-foreground/80';
+                          const weeksInMonth = weeksInRange.filter((x) => x.key.startsWith(`${monthKey}-`)).length || 4;
+                          const weeklyPacingTarget = getEffectiveWeeklyTarget({
+                            kpiName: group.kpi,
+                            direction: group.direction,
+                            monthlyTarget: parentKpi.targetMonth,
+                            weekTarget: weekData?.target,
+                            weeksInMonth,
+                          });
+                          const colorClass = weekData
+                            ? getWeeklyColor(weekData.achieved, weeklyPacingTarget, prevAchieved, group.direction)
+                            : 'text-foreground/80';
 
                           return (
                             <td key={w.key} className="px-6 py-6 text-center">

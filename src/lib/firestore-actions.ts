@@ -19,6 +19,7 @@ import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, Pe
 import { format, parse, isValid, startOfWeek, addDays, subMonths, subYears, startOfYear, subWeeks, endOfMonth, startOfMonth } from 'date-fns';
 import { generateBusinessSnapshot } from '@/ai/flows/business-snapshot-flow';
 import { canonicalizeChannel } from './normalize';
+import { parseKpiDirection } from './kpi-rag';
 
 const sanitizeNumber = (val: any): number => {
     if (typeof val === 'number') return val;
@@ -48,11 +49,8 @@ const getRowVal = (row: any, ...possibleKeys: string[]) => {
     return undefined;
 };
 
-const parseDirection = (dirStr: any): 'ASC' | 'DESC' => {
-    if (!dirStr) return 'ASC';
-    const s = dirStr.toString().toLowerCase();
-    if (s.includes('lower') || s.includes('descending') || s.includes('desc')) return 'DESC';
-    return 'ASC';
+const parseDirection = (dirStr: any, kpiName?: string): 'ASC' | 'DESC' => {
+    return parseKpiDirection(dirStr, kpiName);
 };
 
 const parseKpiType = (raw: any): 'PRIMARY' | 'NON-PRIMARY' => {
@@ -236,7 +234,7 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
             kpiPayload.lob = getRowVal(entry, 'lob', 'LOB', 'Sub Entity')?.toString().trim() || 'N/A';
             kpiPayload.cduLead = getRowVal(entry, 'CDU Lead', 'Lead')?.toString().trim() || 'N/A';
             kpiPayload.emCsm = getRowVal(entry, 'EM/CSM', 'CSM', 'Manager')?.toString().trim() || 'N/A';
-            kpiPayload.direction = parseDirection(getRowVal(entry, 'direction', 'Direction'));
+            kpiPayload.direction = parseDirection(getRowVal(entry, 'direction', 'Direction'), kpi);
             kpiPayload.kpiType = parseKpiType(getRowVal(entry, 'KPI Type', 'kpiType', 'Kpi Type'));
             kpiPayload.currency = getRowVal(entry, 'currency', 'Currency') || 'INR';
             kpiPayload.targetMonth = sanitizeNumber(getRowVal(entry, 'Monthly Target', 'Target'));
