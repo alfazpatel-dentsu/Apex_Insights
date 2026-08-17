@@ -34,6 +34,7 @@ import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import {
   aggregateSpendByWeekStart,
   buildWowSpendsTrend,
+  formatLatestWeekDateLabel,
   formatWeekStartLabel,
   parseSpendWeekDate,
   resolveWowWeekPair,
@@ -492,9 +493,9 @@ export default function BusinessSnapshotPage() {
     const currWData = getDetails(rowsByKey[lastWeekStartKey] || []);
     const prevWData = getDetails(rowsByKey[prevWeekStartKey] || []);
     const wShifts = calcShifts(currWData, prevWData);
-    const weeklyDateLabel = lastWeekStartKey
-      ? formatWeekStartLabel(lastWeekStartKey, 'dd-MM-yyyy')
-      : '';
+    const weeklyDateLabel =
+      formatLatestWeekDateLabel(rowsByKey[lastWeekStartKey], 'dd-MM-yyyy') ||
+      (lastWeekStartKey ? formatWeekStartLabel(lastWeekStartKey, 'dd-MM-yyyy') : '');
 
     const year = targetMonth.split('-')[0];
     const prevYear = String(Number(year) - 1);

@@ -79,6 +79,23 @@ export function formatWeekStartLabel(weekStartKey: string, pattern = 'dd MMM'): 
 }
 
 /**
+ * Display date for a week bucket: the latest source `week` value in the rows
+ * (week-ending dumps like 09-08-2026, not the Monday week-start key).
+ */
+export function formatLatestWeekDateLabel<T extends { week?: unknown }>(
+  rows: T[] | null | undefined,
+  pattern = 'dd-MM-yyyy'
+): string {
+  let latest: Date | null = null;
+  for (const row of rows || []) {
+    const d = parseSpendWeekDate(row.week);
+    if (!d) continue;
+    if (!latest || d.getTime() > latest.getTime()) latest = d;
+  }
+  return latest ? format(latest, pattern) : '';
+}
+
+/**
  * Aggregate weekly rows by Monday week-start.
  * Returns sorted ascending keys with totals.
  */
