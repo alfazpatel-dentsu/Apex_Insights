@@ -35,9 +35,7 @@ import {
   aggregateSpendByWeekStart,
   buildWowSpendsTrend,
   formatWeekStartLabel,
-  parseSpendWeekDate,
   resolveWowWeekPair,
-  spendWeekStartKey,
   toSpendNumber,
 } from '@/lib/spend-week';
 import { useToast } from '@/hooks/use-toast';
@@ -231,8 +229,6 @@ export default function BusinessSnapshotPage() {
   // INTELLIGENCE STATE
   const [newsFeed, setNewsFeed] = useState<any[]>([]);
   const [excludeMomentumLargeClients, setExcludeMomentumLargeClients] = useState(false);
-  const [channelSpends, setChannelSpends] = useState<any[]>([]);
-  const [channelSpendWeekLabel, setChannelSpendWeekLabel] = useState<string | null>(null);
   const [pipelineData, setPipelineData] = useState<any[]>([]);
   const [accountabilityPulse, setAccountabilityPulse] = useState<any[]>([]);
   const [clientHealth, setClientHealth] = useState<ClientHealthRow[]>([]);
@@ -250,12 +246,13 @@ export default function BusinessSnapshotPage() {
 
   useEffect(() => {
     setMounted(true);
-    // Match Spends Dashboard weekly window (prev year Jan → current year Dec)
-    // so 12-Week Momentum sees the same rows as WoW Spends Trend.
-    const year = new Date().getFullYear();
+    // 12-Week Momentum + latest-week pulse only need ~5 months of weekly rows,
+    // not a two-year listener (that blocked first paint for tens of thousands of docs).
+    const weeklyFrom = format(subMonths(new Date(), 4), 'yyyy-MM');
+    const weeklyTo = format(new Date(), 'yyyy-MM');
     setStatsWindow([
-      where('month', '>=', `${year - 1}-01`),
-      where('month', '<=', `${year}-12`),
+      where('month', '>=', weeklyFrom),
+      where('month', '<=', weeklyTo),
     ]);
     // Monthly: include prior-year YTD so Annual can compare same months YoY
     const ytdCompareStart = format(new Date(new Date().getFullYear() - 1, 0, 1), 'yyyy-MM');
@@ -263,7 +260,29 @@ export default function BusinessSnapshotPage() {
   }, []);
 
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', monthlyWindow);
-  const { data: weeklySpends, loading: wLoading } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
+  const { data: weeklySpends } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
+
+  const channelSpendPulse = useMemo(() => {
+    const { keys, rowsByKey } = aggregateSpendByWeekStart(weeklySpends);
+    const lastKey = [...keys].reverse().find((key) =>
+      (rowsByKey[key] || []).some((row) => toSpendNumber(row.spendsInr) !== 0)
+    );
+    if (!lastKey) return { channels: [] as { name: string; value: number }[], label: null as string | null };
+    const totals: Record<string, number> = {};
+    (rowsByKey[lastKey] || []).forEach((row) => {
+      const channel = canonicalizeChannel(row.channelVendor);
+      totals[channel] = (totals[channel] || 0) + toSpendNumber(row.spendsInr);
+    });
+    return {
+      channels: Object.entries(totals)
+        .map(([name, value]) => ({ name, value }))
+        .filter((row) => row.value !== 0)
+        .sort((a, b) => b.value - a.value),
+      label: `Week of ${formatWeekStartLabel(lastKey, 'dd MMM yyyy')}`,
+    };
+  }, [weeklySpends]);
+  const channelSpends = channelSpendPulse.channels;
+  const channelSpendWeekLabel = channelSpendPulse.label;
 
   // 12-Week Momentum — same series as Spends Dashboard WoW, with optional large-client exclude
   const momentumData = useMemo(() => {
@@ -278,26 +297,30 @@ export default function BusinessSnapshotPage() {
 
     const fetchIntelligence = async () => {
       try {
-        // 1. Fetch Latest WBRs, Actions, and Leads (WITH LIMITS FOR PERFORMANCE)
-        const wbrQ = query(collection(firestore, 'wbrEntries'), orderBy('wbrDate', 'desc'), limit(15));
-        const wbrSnap = await getDocs(wbrQ);
-        const wbrs = wbrSnap.docs.map(d => d.data() as WbrEntry);
-
-        const actionsQ = query(collection(firestore, 'actionItems'), orderBy('updatedAt', 'desc'), limit(100));
-        const actionsSnap = await getDocs(actionsQ);
-        const actions = actionsSnap.docs.map(d => d.data() as ActionItem);
-
-        const leadsSnap = await getDocs(query(collection(firestore, 'leads'), limit(100)));
-        const leads = leadsSnap.docs.map(d => d.data() as Lead);
-
-        // 2. NAME RESOLUTION — registry + KPI discovery, then targeted lookup for WBR clients
-        const nameLookup: Record<string, string> = {};
         const looksLikeClientId = (value?: string | null, cid?: string) => {
           if (!value?.trim()) return true;
           const v = value.trim();
           if (cid && v === cid) return true;
           return /^CLID\d+$/i.test(v);
         };
+
+        const [wbrSnap, actionsSnap, leadsSnap, clientSnap, kpiRefSnap] = await Promise.all([
+          getDocs(query(collection(firestore, 'wbrEntries'), orderBy('wbrDate', 'desc'), limit(15))),
+          getDocs(query(collection(firestore, 'actionItems'), orderBy('updatedAt', 'desc'), limit(100))),
+          getDocs(query(collection(firestore, 'leads'), limit(100))),
+          getDocs(collection(firestore, 'clients')),
+          getDocs(query(
+            collection(firestore, 'kpis'),
+            where('month', '>=', format(subMonths(new Date(), 3), 'yyyy-MM')),
+            limit(500)
+          )),
+        ]);
+
+        const wbrs = wbrSnap.docs.map(d => d.data() as WbrEntry);
+        const actions = actionsSnap.docs.map(d => d.data() as ActionItem);
+        const leads = leadsSnap.docs.map(d => d.data() as Lead);
+
+        const nameLookup: Record<string, string> = {};
         const rememberName = (cid?: string, name?: string) => {
           if (!cid || !name || looksLikeClientId(name, cid)) return;
           if (!nameLookup[cid] || looksLikeClientId(nameLookup[cid], cid)) {
@@ -305,73 +328,33 @@ export default function BusinessSnapshotPage() {
           }
         };
 
-        // Source A: Client registry (no low cap — pulse clients often sit outside first 100)
-        const clientSnap = await getDocs(collection(firestore, 'clients'));
         clientSnap.forEach(d => {
           const data = d.data() as Client;
           rememberName(data.uniqueId, data.name);
         });
-
-        // Source B: Recent KPI records
-        const recentKpiQ = query(
-          collection(firestore, 'kpis'), 
-          where('month', '>=', format(subMonths(new Date(), 3), 'yyyy-MM')),
-          limit(500)
-        );
-        const kpiRefSnap = await getDocs(recentKpiQ);
         kpiRefSnap.forEach(d => {
           const data = d.data() as KpiData;
           rememberName(data.clientId, data.clientName);
         });
 
-        // Source C: Targeted resolve for WBR feed IDs still missing a real name
         const wbrClientIds = Array.from(new Set(wbrs.map(w => w.clientId).filter(Boolean)));
-        const unresolvedIds = wbrClientIds.filter(cid => looksLikeClientId(nameLookup[cid], cid));
+        const unresolvedIds = wbrClientIds.filter(cid => looksLikeClientId(nameLookup[cid], cid)).slice(0, 15);
         await Promise.all(unresolvedIds.map(async (cid) => {
-          if (!looksLikeClientId(nameLookup[cid], cid)) return;
-
           const byUniqueId = await getDocs(
             query(collection(firestore, 'clients'), where('uniqueId', '==', cid), limit(1))
           );
           if (!byUniqueId.empty) {
-            const data = byUniqueId.docs[0].data() as Client;
-            rememberName(cid, data.name);
+            rememberName(cid, (byUniqueId.docs[0].data() as Client).name);
             if (!looksLikeClientId(nameLookup[cid], cid)) return;
           }
-
           const byKpi = await getDocs(
             query(collection(firestore, 'kpis'), where('clientId', '==', cid), limit(1))
           );
           if (!byKpi.empty) {
-            const data = byKpi.docs[0].data() as KpiData;
-            rememberName(cid, data.clientName);
+            rememberName(cid, (byKpi.docs[0].data() as KpiData).clientName);
           }
         }));
 
-        // 3. CHANNEL SPENDS (latest week present — same week keys as Dashboard WoW)
-        const momentum = buildWowSpendsTrend(weeklySpends, 12);
-        const lastWeekKey = momentum[momentum.length - 1]?.weekKey || '';
-        const channelTotals: Record<string, number> = {};
-        (weeklySpends || []).forEach((s) => {
-          if (s.week !== lastWeekKey) return;
-          const channel = canonicalizeChannel(s.channelVendor);
-          channelTotals[channel] = (channelTotals[channel] || 0) + toSpendNumber(s.spendsInr);
-        });
-
-        setChannelSpends(Object.entries(channelTotals).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value));
-        if (lastWeekKey) {
-          const weekDate = parseSpendWeekDate(lastWeekKey);
-          const weekStart = weekDate ? spendWeekStartKey(lastWeekKey) : null;
-          setChannelSpendWeekLabel(
-            weekStart
-              ? `Week of ${formatWeekStartLabel(weekStart, 'dd MMM yyyy')}`
-              : `Week of ${lastWeekKey}`
-          );
-        } else {
-          setChannelSpendWeekLabel(null);
-        }
-
-        // 4. SALES PIPELINE (FUNNEL)
         const statusOrder = ['Qualified', 'Pitch', 'Negotiation', 'Contract', 'Won'];
         const leadCounts = leads.reduce((acc, l) => {
           acc[l.status] = (acc[l.status] || 0) + 1;
@@ -380,13 +363,12 @@ export default function BusinessSnapshotPage() {
 
         const maxLead = Math.max(...Object.values(leadCounts), 1);
         setPipelineData(statusOrder.map(status => ({
-          status, // LeadStatus key for deep links
+          status,
           name: status.toUpperCase(),
           value: leadCounts[status] || 0,
           percent: ((leadCounts[status] || 0) / maxLead) * 100
         })));
 
-        // 5. ACCOUNTABILITY PULSE — Kanban status board counts
         const statusCounts: Record<ActionStatus, number> = {
           'Work-In Progress': 0,
           'On-Hold': 0,
@@ -399,14 +381,12 @@ export default function BusinessSnapshotPage() {
           statusCounts[status] = (statusCounts[status] || 0) + 1;
         });
         const totalActions = Object.values(statusCounts).reduce((sum, n) => sum + n, 0) || 1;
-        const pulse = ACTION_BOARD_STATUSES.map((status) => ({
+        setAccountabilityPulse(ACTION_BOARD_STATUSES.map((status) => ({
           status,
           count: statusCounts[status] || 0,
           percent: ((statusCounts[status] || 0) / totalActions) * 100,
-        }));
-        setAccountabilityPulse(pulse);
+        })));
 
-        // 6. NEWS FEED (Utilizing resolved names)
         const pulseFeed: any[] = [];
         Array.from(new Set(wbrs.map(w => w.clientId))).forEach(cid => {
           const clientWbr = wbrs.find(w => w.clientId === cid);
@@ -438,10 +418,10 @@ export default function BusinessSnapshotPage() {
     };
 
     fetchIntelligence();
-  }, [mounted, firestore, weeklySpends]);
+  }, [mounted, firestore]);
 
   const stats = useMemo(() => {
-    if (!monthlySpends || !weeklySpends || !mounted) return null;
+    if (!monthlySpends || !mounted) return null;
     const allMonths = Array.from(new Set(monthlySpends.map(d => d.month))).sort().reverse();
     let latestSpendMonth = '';
     for (const m of allMonths) {
@@ -591,19 +571,10 @@ export default function BusinessSnapshotPage() {
           }
         });
 
-        // Mirror WBR page KPI discovery (last 3 months) so strip counts match the click-through list
-        const discoveryMonth = format(subMonths(new Date(), 3), 'yyyy-MM');
-        try {
-          const discoverySnap = await getDocs(
-            query(collection(firestore, 'kpis'), where('month', '>=', discoveryMonth))
-          );
-          discoverySnap.forEach((d) => {
-            const clid = normalizeClid((d.data() as KpiData).clientId);
-            if (clid) wbrBoardClids.add(clid);
-          });
-        } catch (discoveryErr) {
-          console.warn('WBR board CLID discovery from KPIs failed; using clients registry only.', discoveryErr);
-        }
+        kpiRows.forEach((kpi) => {
+          const clid = normalizeClid(kpi.clientId);
+          if (clid) wbrBoardClids.add(clid);
+        });
 
         // One WBR row per CLID for this cycle
         const wbrByClient = new Map<string, WbrEntry>();
@@ -611,6 +582,7 @@ export default function BusinessSnapshotPage() {
           const w = { id: d.id, ...(d.data() as object) } as WbrEntry;
           const clid = normalizeClid(w.clientId);
           if (!clid) return;
+          wbrBoardClids.add(clid);
           wbrByClient.set(clid, w);
           if (w.clientName && !looksLikeClientId(w.clientName, clid)) {
             nameById[clid] = w.clientName;
@@ -745,7 +717,7 @@ export default function BusinessSnapshotPage() {
     }
   };
 
-  if ((mLoading || wLoading) && !stats) return <div className="flex flex-1 items-center justify-center p-20"><CircleNotch className="h-8 w-8 animate-spin text-brand" /></div>;
+  if (mLoading && !stats) return <div className="flex flex-1 items-center justify-center p-20"><CircleNotch className="h-8 w-8 animate-spin text-brand" /></div>;
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
