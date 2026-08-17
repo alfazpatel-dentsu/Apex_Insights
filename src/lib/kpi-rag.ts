@@ -11,24 +11,151 @@ export function coerceKpiNumber(val: unknown): number {
   return Number.isFinite(num) ? num : 0;
 }
 
-/** ASC = higher is better; DESC = lower is better. */
+/** Rate/efficiency KPIs — weekly value is comparable to the full monthly target. */
+const RATE_KPI_PATTERN =
+  /(^|[^a-z])(cpa|cpc|cpm|cpl|cpi|cps|ctr|cvr|roas|aov|rpc|rpi|arpu|cac|rpm|ecpm)([^a-z]|$)|rate|ratio|percent|%|bounce|margin|frequency/i;
+
+/** Volume/cumulative KPIs — monthly target is hit by consolidating weeks. */
+const VOLUME_KPI_PATTERN =
+  /(lead|revenue|sale|gmv|order|conversion|install|signup|sign[\s-]?up|registrat|click|impression|spend|budget|session|user|traffic|booking|enquir|inquir|download|applicant|application|volume|units?|qty|quantity|visits?)/i;
+
+const DESC_KPI_NAME_PATTERN =
+  /(^|[^a-z])(cpa|cpc|cpm|cpl|cpi|cps|cac)([^a-z]|$)|bounce|churn|drop[\s-]?off|cost per/i;
+
+/** Parse Direction from uploads: ASC = higher is better, DESC = lower is better. */
+export function parseKpiDirection(raw: unknown, kpiName?: string): 'ASC' | 'DESC' {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s) {
+    if (
+      s.includes('lower') ||
+      s.includes('less is') ||
+      s.includes('descending') ||
+      s.includes('desc') ||
+      s.includes('decrease') ||
+      s.includes('down') ||
+      s.includes('minimi') ||
+      s === '-' ||
+      s === '-1'
+    ) {
+      return 'DESC';
+    }
+    if (
+      s.includes('higher') ||
+      s.includes('more is') ||
+      s.includes('ascending') ||
+      s.includes('asc') ||
+      s.includes('increase') ||
+      s.includes('up') ||
+      s.includes('maximi') ||
+      s === '+' ||
+      s === '+1' ||
+      s === '1'
+    ) {
+      return 'ASC';
+    }
+  }
+  return inferDirectionFromKpiName(kpiName);
+}
+
+export function inferDirectionFromKpiName(kpiName?: string): 'ASC' | 'DESC' {
+  const name = (kpiName || '').trim();
+  if (!name) return 'ASC';
+  if (DESC_KPI_NAME_PATTERN.test(name)) return 'DESC';
+  return 'ASC';
+}
+
+export function usesProRatedWeeklyTarget(kpiName: string, direction: 'ASC' | 'DESC'): boolean {
+  const name = (kpiName || '').trim();
+  if (!name) return direction === 'ASC';
+  if (RATE_KPI_PATTERN.test(name)) return false;
+  if (VOLUME_KPI_PATTERN.test(name)) return true;
+  return direction === 'ASC';
+}
+
+export function getEffectiveWeeklyTarget(opts: {
+  kpiName: string;
+  direction: 'ASC' | 'DESC';
+  monthlyTarget: unknown;
+  weekTarget?: unknown;
+  weeksInMonth: number;
+}): number | null {
+  const weekTarget = coerceKpiNumber(opts.weekTarget);
+  if (weekTarget > 0) return weekTarget;
+  const monthlyTarget = coerceKpiNumber(opts.monthlyTarget);
+  if (monthlyTarget <= 0) return null;
+  if (usesProRatedWeeklyTarget(opts.kpiName, opts.direction) && opts.weeksInMonth > 0) {
+    return monthlyTarget / opts.weeksInMonth;
+  }
+  return monthlyTarget;
+}
+
+/** ASC = higher is better; DESC = lower is better. Coerces string Firestore values. */
 export function meetsTarget(
-  achieved: number,
-  target: number,
+  achieved: unknown,
+  target: unknown,
   direction: 'ASC' | 'DESC' = 'ASC'
 ): boolean {
-  if (direction === 'DESC') return achieved <= target;
-  return achieved >= target;
+  const a = coerceKpiNumber(achieved);
+  const t = coerceKpiNumber(target);
+  if (direction === 'DESC') return a <= t;
+  return a >= t;
+}
+
+export function improvedVsPrevious(
+  current: unknown,
+  previous: unknown,
+  direction: 'ASC' | 'DESC'
+): boolean {
+  const c = coerceKpiNumber(current);
+  const p = coerceKpiNumber(previous);
+  if (direction === 'DESC') return c <= p;
+  return c >= p;
 }
 
 /** Monthly / MTD RAG: achieved vs monthly target, direction-aware. */
 export function getMonthlyStatus(
-  achieved: number,
-  target: number,
+  achieved: unknown,
+  target: unknown,
   direction: 'ASC' | 'DESC' = 'ASC'
 ): RagStatus {
-  if (target === 0 && achieved === 0) return 'N/A';
-  return meetsTarget(achieved, target, direction) ? 'Green' : 'Red';
+  const a = coerceKpiNumber(achieved);
+  const t = coerceKpiNumber(target);
+  if (t === 0 && a === 0) return 'N/A';
+  return meetsTarget(a, t, direction) ? 'Green' : 'Red';
+}
+
+/**
+ * Weekly RAG: vs effective weekly target AND previous week.
+ * Green = both good · Amber = mixed · Red = both bad
+ */
+export function getWeeklyStatus(
+  achieved: unknown,
+  weeklyPacingTarget: number | null,
+  prevAchieved: unknown,
+  direction: 'ASC' | 'DESC'
+): RagStatus {
+  const vsTarget =
+    weeklyPacingTarget != null && weeklyPacingTarget > 0
+      ? meetsTarget(achieved, weeklyPacingTarget, direction)
+      : null;
+  const vsPrev =
+    prevAchieved != null && prevAchieved !== ''
+      ? improvedVsPrevious(achieved, prevAchieved, direction)
+      : null;
+
+  if (vsTarget === null && vsPrev === null) return 'N/A';
+  if (vsTarget === null) return vsPrev ? 'Green' : 'Red';
+  if (vsPrev === null) return vsTarget ? 'Green' : 'Red';
+  if (vsTarget && vsPrev) return 'Green';
+  if (!vsTarget && !vsPrev) return 'Red';
+  return 'Amber';
+}
+
+export function ragStatusTextClass(status: RagStatus): string {
+  if (status === 'Green') return 'text-success';
+  if (status === 'Amber') return 'text-warning';
+  if (status === 'Red') return 'text-destructive';
+  return '';
 }
 
 export function isExplicitPrimaryKpiType(kpiType: unknown): boolean {
@@ -101,7 +228,7 @@ export function clientPathFromPrimaryKpis<T extends PrimaryKpiLike>(
   const scored = pool.map((kpi) => {
     const achieved = coerceKpiNumber(kpi.achievedMonthTillYesterday);
     const target = coerceKpiNumber(kpi.targetMonth);
-    const direction: 'ASC' | 'DESC' = kpi.direction === 'DESC' ? 'DESC' : 'ASC';
+    const direction: 'ASC' | 'DESC' = parseKpiDirection(kpi.direction, kpi.kpi);
     const pathStatus = getMonthlyStatus(achieved, target, direction);
     return { kpi, achieved, target, direction, pathStatus };
   });
