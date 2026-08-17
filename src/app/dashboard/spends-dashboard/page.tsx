@@ -33,7 +33,7 @@ import { where } from 'firebase/firestore';
 import { useCollection } from '@/firebase';
 import { MonthlySpend, WeeklySpend } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
-import { buildWowSpendsTrend, toSpendNumber } from '@/lib/spend-week';
+import { aggregateBrandSpendBreakdown, buildWowSpendsTrend, dominantImpactSpendType, toSpendNumber } from '@/lib/spend-week';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -379,30 +379,18 @@ export default function SpendsAnalyticsPage() {
     const currentYearStr = selectedYear;
     const prevYearStr = (parseInt(selectedYear) - 1).toString();
 
-    const getBrandDetails = (data: (MonthlySpend | WeeklySpend)[]) => {
-      const spendMap: Record<string, number> = {};
-      const metadataMap: Record<string, { type: string, team: string }> = {};
-      data.forEach(d => { 
-        const spend = 'actualSpendsInr' in d ? d.actualSpendsInr : d.spendsInr;
-        spendMap[d.brandName] = (spendMap[d.brandName] || 0) + spend;
-        if (!metadataMap[d.brandName]) {
-          metadataMap[d.brandName] = { type: d.type || 'N/A', team: d.team || 'N/A' };
-        }
-      });
-      return { spendMap, metadataMap };
-    };
-
-    const calcGainersLosers = (curr: { spendMap: Record<string, number>, metadataMap: Record<string, any> }, prev: { spendMap: Record<string, number>, metadataMap: Record<string, any> }) => {
+    const calcGainersLosers = (curr: ReturnType<typeof aggregateBrandSpendBreakdown>, prev: ReturnType<typeof aggregateBrandSpendBreakdown>) => {
       const allBrands = Array.from(new Set([...Object.keys(curr.spendMap), ...Object.keys(prev.spendMap)]));
       const diffs = allBrands.map(brand => {
         const c = curr.spendMap[brand] || 0;
         const p = prev.spendMap[brand] || 0;
-        const meta = curr.metadataMap[brand] || prev.metadataMap[brand] || { type: 'N/A', team: 'N/A' };
         const diff = c - p;
+        const type = dominantImpactSpendType(curr.typeSpendMap[brand], prev.typeSpendMap[brand], diff);
+        const team = curr.teamByType[brand]?.[type] || prev.teamByType[brand]?.[type] || 'N/A';
         return { 
           brand, 
-          type: meta.type,
-          team: meta.team,
+          type,
+          team,
           diff, 
           percentage: p > 0 ? (diff / p) * 100 : (c > 0 ? 100 : 0)
         };
@@ -441,8 +429,8 @@ export default function SpendsAnalyticsPage() {
     // Fair YoY: YTD through latest uploaded month vs same months last year
     const ytdCurrRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, currentYearStr));
     const ytdPrevRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, prevYearStr));
-    const yearlyCurrent = getBrandDetails(ytdCurrRows);
-    const yearlyPrev = getBrandDetails(ytdPrevRows);
+    const yearlyCurrent = aggregateBrandSpendBreakdown(ytdCurrRows);
+    const yearlyPrev = aggregateBrandSpendBreakdown(ytdPrevRows);
 
     const yearlySpends = Object.values(yearlyCurrent.spendMap).reduce((a, b) => a + b, 0);
     const prevYearSpends = Object.values(yearlyPrev.spendMap).reduce((a, b) => a + b, 0);
@@ -450,8 +438,8 @@ export default function SpendsAnalyticsPage() {
       ? format(parse(lastMonthKey, 'yyyy-MM', new Date()), 'MMM').toUpperCase()
       : '';
 
-    const lastMonth = getBrandDetails(monthlyData.filter(d => d.month === lastMonthKey));
-    const prevMonth = getBrandDetails(monthlyData.filter(d => d.month === prevMonthKey));
+    const lastMonth = aggregateBrandSpendBreakdown(monthlyData.filter(d => d.month === lastMonthKey));
+    const prevMonth = aggregateBrandSpendBreakdown(monthlyData.filter(d => d.month === prevMonthKey));
     const lastMonthSpends = Object.values(lastMonth.spendMap).reduce((a, b) => a + b, 0);
     const prevMonthSpends = Object.values(prevMonth.spendMap).reduce((a, b) => a + b, 0);
 
@@ -465,8 +453,8 @@ export default function SpendsAnalyticsPage() {
     const lastWeekKey = weeksInYear[0] || '';
     const prevWeekKey = lastWeekKey ? format(subWeeks(parse(lastWeekKey, 'dd-MM-yyyy', new Date()), 1), 'dd-MM-yyyy') : '';
 
-    const lastWeek = getBrandDetails(weeklyData.filter(d => d.week === lastWeekKey));
-    const prevWeek = getBrandDetails(weeklyData.filter(d => d.week === prevWeekKey));
+    const lastWeek = aggregateBrandSpendBreakdown(weeklyData.filter(d => d.week === lastWeekKey));
+    const prevWeek = aggregateBrandSpendBreakdown(weeklyData.filter(d => d.week === prevWeekKey));
     const lastWeekSpends = Object.values(lastWeek.spendMap).reduce((a, b) => a + b, 0);
     const prevWeekSpends = Object.values(prevWeek.spendMap).reduce((a, b) => a + b, 0);
 
@@ -602,7 +590,7 @@ export default function SpendsAnalyticsPage() {
         {gainers.length > 0 ? gainers.map(g => (
           <div key={g.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0">
             <span className="text-[10px] font-black truncate" title={g.brand}>{g.brand}</span>
-            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate">{g.type}</span></div>
+            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate" title={g.type}>{g.type}</span></div>
             <span className="text-[9px] font-bold text-success leading-none flex items-center justify-between gap-1 mt-0.5 min-w-0">
                 <span className="truncate">+{formatCurrency(g.diff)}</span>
                 <span className="text-[7px] opacity-60 shrink-0">({g.percentage.toFixed(1)}%)</span>
@@ -617,7 +605,7 @@ export default function SpendsAnalyticsPage() {
         {losers.length > 0 ? losers.map(l => (
           <div key={l.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0">
             <span className="text-[10px] font-black truncate" title={l.brand}>{l.brand}</span>
-            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate">{l.type}</span></div>
+            <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate" title={l.type}>{l.type}</span></div>
             <span className="text-[9px] font-bold text-destructive leading-none flex items-center justify-between gap-1 mt-0.5 min-w-0">
                 <span className="truncate">{formatCurrency(l.diff)}</span>
                 <span className="text-[7px] opacity-60 shrink-0">({l.percentage.toFixed(1)}%)</span>

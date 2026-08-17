@@ -4,8 +4,10 @@
  */
 import {
   aggregateSpendByWeekStart,
+  aggregateBrandSpendBreakdown,
   buildChannelSpendPulse,
   buildWowSpendsTrend,
+  dominantImpactSpendType,
   formatLatestWeekDateLabel,
   parseSpendWeekDate,
   resolveWowWeekPair,
@@ -114,5 +116,35 @@ assert(spendWeekStartKey(ts) === '2026-08-10', `timestamp week ${spendWeekStartK
 assert(spendWeekStartKey('10 Aug 2026') === '2026-08-10', 'dd MMM yyyy');
 assert(spendWeekStartKey('10/8/2026') === '2026-08-10', 'd/M/yyyy');
 assert(spendWeekStartKey('2026-08-10T00:00:00.000Z') === '2026-08-10', 'iso utc midnight');
+
+const myntraCurr = aggregateBrandSpendBreakdown([
+  { brandName: 'MYNTRA', type: 'PERFORMANCE', actualSpendsInr: 100 },
+  { brandName: 'MYNTRA', type: 'MARKETPLACE', actualSpendsInr: 20 },
+]);
+const myntraPrev = aggregateBrandSpendBreakdown([
+  { brandName: 'MYNTRA', type: 'PERFORMANCE', actualSpendsInr: 90 },
+  { brandName: 'MYNTRA', type: 'MARKETPLACE', actualSpendsInr: 80 },
+]);
+assert(myntraCurr.spendMap.MYNTRA === 120, 'myntra curr total');
+const myntraDelta = myntraCurr.spendMap.MYNTRA - myntraPrev.spendMap.MYNTRA;
+assert(myntraDelta < 0, 'myntra is a loser');
+assert(
+  dominantImpactSpendType(myntraCurr.typeSpendMap.MYNTRA, myntraPrev.typeSpendMap.MYNTRA, myntraDelta) === 'MARKETPLACE',
+  'loser label is the type that dropped most'
+);
+
+const gainerCurr = aggregateBrandSpendBreakdown([
+  { brandName: 'A', type: 'PERFORMANCE', actualSpendsInr: 200 },
+  { brandName: 'A', type: 'BRANDING', actualSpendsInr: 10 },
+]);
+const gainerPrev = aggregateBrandSpendBreakdown([
+  { brandName: 'A', type: 'PERFORMANCE', actualSpendsInr: 50 },
+  { brandName: 'A', type: 'BRANDING', actualSpendsInr: 40 },
+]);
+const gainerDelta = gainerCurr.spendMap.A - gainerPrev.spendMap.A;
+assert(
+  dominantImpactSpendType(gainerCurr.typeSpendMap.A, gainerPrev.typeSpendMap.A, gainerDelta) === 'PERFORMANCE',
+  'gainer label is the type that rose most'
+);
 
 console.log('spend-week.smoke.ts: OK');

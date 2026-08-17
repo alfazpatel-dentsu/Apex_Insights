@@ -32,8 +32,10 @@ import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, type ClientPath } from '@/lib/kpi-rag';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import {
+  aggregateBrandSpendBreakdown,
   aggregateSpendByWeekStart,
   buildWowSpendsTrend,
+  dominantImpactSpendType,
   formatLatestWeekDateLabel,
   formatWeekStartLabel,
   resolveWowWeekPair,
@@ -440,31 +442,21 @@ export default function BusinessSnapshotPage() {
     // Empty calendar months (e.g. August before the upload) must not show ₹0 / -100% MoM.
     const targetMonth = latestSpendMonth;
 
-    const getDetails = (data: (MonthlySpend | WeeklySpend)[]) => {
-      const spendMap: Record<string, number> = {};
-      const metaMap: Record<string, any> = {};
-      data.forEach(d => {
-        const val = toSpendNumber('actualSpendsInr' in d ? d.actualSpendsInr : d.spendsInr);
-        spendMap[d.brandName] = (spendMap[d.brandName] || 0) + val;
-        if (!metaMap[d.brandName]) metaMap[d.brandName] = { type: d.type || 'PERFORMANCE', team: d.team || 'N/A' };
-      });
-      return { spendMap, metaMap };
-    };
-
-    const calcShifts = (curr: any, prev: any) => {
+    const calcShifts = (curr: ReturnType<typeof aggregateBrandSpendBreakdown>, prev: ReturnType<typeof aggregateBrandSpendBreakdown>) => {
       const all = Array.from(new Set([...Object.keys(curr.spendMap), ...Object.keys(prev.spendMap)]));
       const diffs = all.map(brand => {
         const c = curr.spendMap[brand] || 0;
         const p = prev.spendMap[brand] || 0;
-        const meta = curr.metaMap[brand] || prev.metaMap[brand];
         const diff = c - p;
-        return { brand, type: meta?.type || 'PERFORMANCE', team: meta?.team || 'N/A', amount: diff, variance: p > 0 ? (diff / p) * 100 : (c > 0 ? 100 : 0), direction: diff >= 0 ? 'increase' : 'decrease' } as PerformanceShift;
+        const type = dominantImpactSpendType(curr.typeSpendMap[brand], prev.typeSpendMap[brand], diff);
+        const team = curr.teamByType[brand]?.[type] || prev.teamByType[brand]?.[type] || 'N/A';
+        return { brand, type, team, amount: diff, variance: p > 0 ? (diff / p) * 100 : (c > 0 ? 100 : 0), direction: diff >= 0 ? 'increase' : 'decrease' } as PerformanceShift;
       });
       return { gainers: diffs.filter(x => (x.amount || 0) > 0).sort((a, b) => (b.amount || 0) - (a.amount || 0)).slice(0, 3), losers: diffs.filter(x => (x.amount || 0) < 0).sort((a, b) => (a.amount || 0) - (b.amount || 0)).slice(0, 3) };
     };
 
-    const currMonthData = getDetails(monthlySpends.filter(d => d.month === targetMonth));
-    const prevMonthData = getDetails(monthlySpends.filter(d => d.month === format(subMonths(parse(targetMonth, 'yyyy-MM', new Date()), 1), 'yyyy-MM')));
+    const currMonthData = aggregateBrandSpendBreakdown(monthlySpends.filter(d => d.month === targetMonth));
+    const prevMonthData = aggregateBrandSpendBreakdown(monthlySpends.filter(d => d.month === format(subMonths(parse(targetMonth, 'yyyy-MM', new Date()), 1), 'yyyy-MM')));
     const mShifts = calcShifts(currMonthData, prevMonthData);
 
     // WoW: match weeks by Monday week-start, not exact week label strings.
@@ -474,8 +466,8 @@ export default function BusinessSnapshotPage() {
     const { currentKey: lastWeekStartKey, previousKey: prevWeekStartKey } =
       resolveWowWeekPair(weekStartKeys);
 
-    const currWData = getDetails(rowsByKey[lastWeekStartKey] || []);
-    const prevWData = getDetails(rowsByKey[prevWeekStartKey] || []);
+    const currWData = aggregateBrandSpendBreakdown(rowsByKey[lastWeekStartKey] || []);
+    const prevWData = aggregateBrandSpendBreakdown(rowsByKey[prevWeekStartKey] || []);
     const wShifts = calcShifts(currWData, prevWData);
     const weeklyDateLabel =
       formatLatestWeekDateLabel(rowsByKey[lastWeekStartKey], 'dd-MM-yyyy') ||
@@ -494,7 +486,7 @@ export default function BusinessSnapshotPage() {
     const ytdPrevRows = monthlySpends.filter(d => isSamePeriodYtd(d.month, prevYear));
     const yearlyTotal = ytdCurrRows.reduce((a, b) => a + toSpendNumber(b.actualSpendsInr), 0);
     const prevYearlyTotal = ytdPrevRows.reduce((a, b) => a + toSpendNumber(b.actualSpendsInr), 0);
-    const yShifts = calcShifts(getDetails(ytdCurrRows), getDetails(ytdPrevRows));
+    const yShifts = calcShifts(aggregateBrandSpendBreakdown(ytdCurrRows), aggregateBrandSpendBreakdown(ytdPrevRows));
     const ytdThroughLabel = format(parse(targetMonth, 'yyyy-MM', new Date()), 'MMM');
 
     return {
@@ -1236,7 +1228,7 @@ function SnapshotWidget({
                 {gainers && gainers.length > 0 ? gainers.map((g, i) => (
                   <div key={i} className="space-y-1 min-w-0">
                     <p className="text-[12px] font-black text-ink leading-tight truncate uppercase tracking-tight" title={g.brand}>{g.brand}</p>
-                    <p className="text-[8px] font-bold text-secondary uppercase truncate">{g.type}</p>
+                    <p className="text-[8px] font-bold text-secondary uppercase truncate" title={g.type}>{g.type}</p>
                     <p className="text-[10px] font-black leading-none flex items-center justify-between gap-1 text-success min-w-0">
                       <span className="truncate">+{formatCurrency(g.amount || 0)}</span>
                       <span className="opacity-60 text-[8px] shrink-0">({g.variance.toFixed(1)}%)</span>
@@ -1253,7 +1245,7 @@ function SnapshotWidget({
                 {losers && losers.length > 0 ? losers.map((l, i) => (
                   <div key={i} className="space-y-1 min-w-0">
                     <p className="text-[12px] font-black text-ink leading-tight truncate uppercase tracking-tight" title={l.brand}>{l.brand}</p>
-                    <p className="text-[8px] font-bold text-secondary uppercase truncate">{l.type}</p>
+                    <p className="text-[8px] font-bold text-secondary uppercase truncate" title={l.type}>{l.type}</p>
                     <p className="text-[10px] font-black leading-none flex items-center justify-between gap-1 text-destructive min-w-0">
                       <span className="truncate">{formatCurrency(l.amount || 0)}</span>
                       <span className="opacity-60 text-[8px] shrink-0">({l.variance.toFixed(1)}%)</span>
