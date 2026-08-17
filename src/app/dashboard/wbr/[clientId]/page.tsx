@@ -344,7 +344,6 @@ export default function WbrEditPage() {
   }, [actualClientId, firestore, monthlyDateRange, weeklyDateRange]);
 
   const isAdmin = userProfile?.role === 'Admin';
-  const userRole = userProfile?.role;
 
   const isWindowOpen = useMemo(() => {
     if (!isClient) return false;
@@ -356,22 +355,16 @@ export default function WbrEditPage() {
     return isAfter(today, windowStart) && isBefore(today, windowEnd);
   }, [wbrDate, isClient]);
 
+  const REVIEW_FIELDS = ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities', 'performanceRag', 'performanceSummary', 'summary'];
+
   const canEditField = (fieldName: string) => {
     if (isAdmin) return true;
     if (!isWindowOpen) return false;
-    const isEmCsmField = ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities'].includes(fieldName);
-    const isClusterLeadField = ['performanceRag', 'performanceSummary', 'summary'].includes(fieldName);
-    if (userRole === 'EM/CSM' && isEmCsmField) return true;
-    if (userRole === 'Cluster Lead' && isClusterLeadField) return true;
-    return false;
+    return REVIEW_FIELDS.includes(fieldName);
   };
 
-  const renderFieldInfo = (fieldName: string) => {
+  const renderFieldInfo = () => {
     if (isAdmin) return <ShieldCheck className="h-3.5 w-3.5 text-primary" />;
-    const isEmCsmField = ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities'].includes(fieldName);
-    const isClusterLeadField = ['performanceRag', 'performanceSummary', 'summary'].includes(fieldName);
-    if (isEmCsmField) return <Badge variant="outline" className="text-[8px] font-black h-4 px-1 leading-none">EM/CSM</Badge>;
-    if (isClusterLeadField) return <Badge variant="outline" className="text-[8px] font-black h-4 px-1 leading-none">LEAD</Badge>;
     return null;
   };
 

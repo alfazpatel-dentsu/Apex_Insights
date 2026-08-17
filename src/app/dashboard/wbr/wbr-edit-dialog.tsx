@@ -27,7 +27,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Client, WbrEntry, UserProfile, RagStatus } from '@/lib/types';
 import { useEffect, useState } from 'react';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
 import { ShieldCheck, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -60,7 +59,7 @@ interface WbrEditDialogProps {
   wbrDate: string;
 }
 
-export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, userRole, isAdmin, isWindowOpen, wbrDate }: WbrEditDialogProps) {
+export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, isAdmin, isWindowOpen, wbrDate }: WbrEditDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
 
   const form = useForm<WbrFormValues>({
@@ -114,22 +113,16 @@ export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, use
     }
   };
 
-  const isEmCsmField = (fieldName: string) => ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities'].includes(fieldName);
-  const isClusterLeadField = (fieldName: string) => ['performanceRag', 'performanceSummary', 'summary'].includes(fieldName);
-  const isAdminField = (fieldName: string) => ['cluster', 'clusterLead', 'emcsm', 'clientPartner'].includes(fieldName);
+  const REVIEW_FIELDS = ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities', 'performanceRag', 'performanceSummary', 'summary'];
 
   const canEditField = (fieldName: string) => {
     if (isAdmin) return true;
     if (!isWindowOpen) return false;
-    if (userRole === 'EM/CSM' && isEmCsmField(fieldName)) return true;
-    if (userRole === 'Cluster Lead' && isClusterLeadField(fieldName)) return true;
-    return false;
+    return REVIEW_FIELDS.includes(fieldName);
   };
 
-  const renderFieldInfo = (fieldName: string) => {
+  const renderFieldInfo = (_fieldName: string) => {
     if (isAdmin) return <ShieldCheck className="h-3 w-3 text-primary" />;
-    if (isEmCsmField(fieldName)) return <Badge variant="outline" className="text-[8px] h-4">EM/CSM</Badge>;
-    if (isClusterLeadField(fieldName)) return <Badge variant="outline" className="text-[8px] h-4">Lead</Badge>;
     return null;
   };
 
