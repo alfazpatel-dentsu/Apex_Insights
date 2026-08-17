@@ -5,6 +5,7 @@
 import {
   aggregateSpendByWeekStart,
   buildWowSpendsTrend,
+  formatLatestWeekDateLabel,
   resolveWowWeekPair,
   spendWeekStartKey,
   toSpendNumber,
@@ -48,6 +49,16 @@ assert(previousKey === '2026-07-27', `previous ${previousKey}`);
 assert(rowsByKey[previousKey].some((r) => r.week === '27-07-2026'), 'includes Monday label');
 assert(rowsByKey[previousKey].some((r) => r.week === '28-07-2026'), 'includes Tuesday label');
 assert(rowsByKey[previousKey].length === 2, 'prev week row count');
+
+const sundayDump = [
+  { week: '03-08-2026', spendsInr: 1 },
+  { week: '09-08-2026', spendsInr: 2 },
+];
+const { rowsByKey: pulseRows } = aggregateSpendByWeekStart(sundayDump);
+assert(
+  formatLatestWeekDateLabel(pulseRows['2026-08-03']) === '09-08-2026',
+  `pulse label ${formatLatestWeekDateLabel(pulseRows['2026-08-03'])}`
+);
 
 // Spends Dashboard parity: raw week labels stay separate; last N weeks only
 const trendRows = [
