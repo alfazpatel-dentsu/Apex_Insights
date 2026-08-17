@@ -82,6 +82,7 @@ const wbrSchema = z.object({
   performanceRag: z.enum(['Green', 'Amber', 'Red']),
   organicOpportunities: z.string().optional(),
   crossSellOpportunities: z.string().optional(),
+  performanceSummary: z.string().optional(),
   summary: z.string().optional(),
 });
 
@@ -186,6 +187,7 @@ export default function WbrEditPage() {
       financeIssues: '',
       organicOpportunities: '',
       crossSellOpportunities: '',
+      performanceSummary: '',
       summary: '',
     }
   });
@@ -255,6 +257,7 @@ export default function WbrEditPage() {
             financeIssues: existingEntry.financeIssues || '',
             organicOpportunities: existingEntry.organicOpportunities || '',
             crossSellOpportunities: existingEntry.crossSellOpportunities || '',
+            performanceSummary: existingEntry.performanceSummary || '',
             summary: existingEntry.summary || '',
           });
         } else {
@@ -269,6 +272,7 @@ export default function WbrEditPage() {
             financeIssues: '',
             organicOpportunities: '',
             crossSellOpportunities: '',
+            performanceSummary: '',
             summary: '',
           });
         }
@@ -356,7 +360,7 @@ export default function WbrEditPage() {
     if (isAdmin) return true;
     if (!isWindowOpen) return false;
     const isEmCsmField = ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities'].includes(fieldName);
-    const isClusterLeadField = ['performanceRag', 'summary'].includes(fieldName);
+    const isClusterLeadField = ['performanceRag', 'performanceSummary', 'summary'].includes(fieldName);
     if (userRole === 'EM/CSM' && isEmCsmField) return true;
     if (userRole === 'Cluster Lead' && isClusterLeadField) return true;
     return false;
@@ -365,7 +369,7 @@ export default function WbrEditPage() {
   const renderFieldInfo = (fieldName: string) => {
     if (isAdmin) return <ShieldCheck className="h-3.5 w-3.5 text-primary" />;
     const isEmCsmField = ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities'].includes(fieldName);
-    const isClusterLeadField = ['performanceRag', 'summary'].includes(fieldName);
+    const isClusterLeadField = ['performanceRag', 'performanceSummary', 'summary'].includes(fieldName);
     if (isEmCsmField) return <Badge variant="outline" className="text-[8px] font-black h-4 px-1 leading-none">EM/CSM</Badge>;
     if (isClusterLeadField) return <Badge variant="outline" className="text-[8px] font-black h-4 px-1 leading-none">LEAD</Badge>;
     return null;
@@ -934,7 +938,8 @@ export default function WbrEditPage() {
             <div className="flex items-center gap-3 px-1"><div className="h-6 w-1 bg-primary/40 rounded-full" /><h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary/60">OPERATIONAL REVIEW (LEAD CONTEXT)</h4></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-10 rounded-none glass ">
                 <FormField control={form.control} name="performanceRag" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">PERFORMANCE RAG (RISK)</FormLabel>{renderFieldInfo('performanceRag')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('performanceRag')}><FormControl><SelectTrigger className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-black"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-none glass "><SelectItem value="Green" className="text-success font-black">GREEN</SelectItem><SelectItem value="Amber" className="text-warning font-black">AMBER</SelectItem><SelectItem value="Red" className="text-destructive font-black">RED</SelectItem></SelectContent></Select></FormItem>)} />
-                <div className="md:col-span-2"><FormField control={form.control} name="summary" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">EXECUTIVE STRATEGIC SUMMARY</FormLabel>{renderFieldInfo('summary')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[160px] shadow-inner p-8 text-sm font-medium leading-relaxed resize-none font-mono" {...field} disabled={!canEditField('summary')} /></FormControl></FormItem>)} /></div>
+                <div className="md:col-span-2"><FormField control={form.control} name="performanceSummary" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Performance Summary</FormLabel>{renderFieldInfo('performanceSummary')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[120px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('performanceSummary')} /></FormControl></FormItem>)} /></div>
+                <div className="md:col-span-2"><FormField control={form.control} name="summary" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Executive Summary &amp; challenges</FormLabel>{renderFieldInfo('summary')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[160px] shadow-inner p-8 text-sm font-medium leading-relaxed resize-none font-mono" {...field} disabled={!canEditField('summary')} /></FormControl></FormItem>)} /></div>
             </div>
           </section>
 

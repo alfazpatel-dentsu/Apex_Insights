@@ -42,6 +42,7 @@ const wbrSchema = z.object({
   performanceRag: z.enum(['Green', 'Amber', 'Red']),
   organicOpportunities: z.string().optional(),
   crossSellOpportunities: z.string().optional(),
+  performanceSummary: z.string().optional(),
   summary: z.string().optional(),
 });
 
@@ -75,6 +76,7 @@ export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, use
       performanceRag: entry?.performanceRag || 'Green',
       organicOpportunities: entry?.organicOpportunities || '',
       crossSellOpportunities: entry?.crossSellOpportunities || '',
+      performanceSummary: entry?.performanceSummary || '',
       summary: entry?.summary || '',
     },
   });
@@ -92,6 +94,7 @@ export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, use
         performanceRag: entry?.performanceRag || 'Green',
         organicOpportunities: entry?.organicOpportunities || '',
         crossSellOpportunities: entry?.crossSellOpportunities || '',
+        performanceSummary: entry?.performanceSummary || '',
         summary: entry?.summary || '',
       });
     }
@@ -112,7 +115,7 @@ export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, use
   };
 
   const isEmCsmField = (fieldName: string) => ['contractStatus', 'financeIssues', 'engagementRag', 'organicOpportunities', 'crossSellOpportunities'].includes(fieldName);
-  const isClusterLeadField = (fieldName: string) => ['performanceRag', 'summary'].includes(fieldName);
+  const isClusterLeadField = (fieldName: string) => ['performanceRag', 'performanceSummary', 'summary'].includes(fieldName);
   const isAdminField = (fieldName: string) => ['cluster', 'clusterLead', 'emcsm', 'clientPartner'].includes(fieldName);
 
   const canEditField = (fieldName: string) => {
@@ -301,11 +304,26 @@ export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, use
                     <div className="md:col-span-2">
                         <FormField
                         control={form.control}
+                        name="performanceSummary"
+                        render={({ field }) => (
+                            <FormItem>
+                            <div className="flex items-center justify-between mb-1">
+                                <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Performance Summary</FormLabel>
+                                {renderFieldInfo('performanceSummary')}
+                            </div>
+                            <FormControl><Textarea className="rounded-none bg-background/50 border-none min-h-[80px]" placeholder="Performance summary for the week..." {...field} disabled={!canEditField('performanceSummary')} /></FormControl>
+                            </FormItem>
+                        )}
+                        />
+                    </div>
+                    <div className="md:col-span-2">
+                        <FormField
+                        control={form.control}
                         name="summary"
                         render={({ field }) => (
                             <FormItem>
                             <div className="flex items-center justify-between mb-1">
-                                <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">WBR Summary</FormLabel>
+                                <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Executive Summary &amp; challenges</FormLabel>
                                 {renderFieldInfo('summary')}
                             </div>
                             <FormControl><Textarea className="rounded-none bg-background/50 border-none min-h-[100px]" placeholder="Strategic summary for the week..." {...field} disabled={!canEditField('summary')} /></FormControl>
