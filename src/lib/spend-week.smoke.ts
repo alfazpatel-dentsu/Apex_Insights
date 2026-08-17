@@ -4,8 +4,10 @@
  */
 import {
   aggregateSpendByWeekStart,
+  buildChannelSpendPulse,
   buildWowSpendsTrend,
   formatLatestWeekDateLabel,
+  parseSpendWeekDate,
   resolveWowWeekPair,
   spendWeekStartKey,
   toSpendNumber,
@@ -54,13 +56,13 @@ const sundayDump = [
   { week: '03-08-2026', spendsInr: 1 },
   { week: '09-08-2026', spendsInr: 2 },
 ];
-const { rowsByKey: pulseRows } = aggregateSpendByWeekStart(sundayDump);
+const { rowsByKey: weekEndingRows } = aggregateSpendByWeekStart(sundayDump);
 assert(
-  formatLatestWeekDateLabel(pulseRows['2026-08-03']) === '09-08-2026',
-  `pulse label ${formatLatestWeekDateLabel(pulseRows['2026-08-03'])}`
+  formatLatestWeekDateLabel(weekEndingRows['2026-08-03']) === '09-08-2026',
+  `pulse label ${formatLatestWeekDateLabel(weekEndingRows['2026-08-03'])}`
 );
 assert(
-  formatLatestWeekDateLabel(pulseRows['2026-08-03'], 'dd MMM yyyy') === '09 Aug 2026',
+  formatLatestWeekDateLabel(weekEndingRows['2026-08-03'], 'dd MMM yyyy') === '09 Aug 2026',
   'depletion pulse week-of label'
 );
 
@@ -89,5 +91,28 @@ assert(trend[trend.length - 1].weekKey === '04-08-2026', `last key ${trend[trend
 assert(trend[trend.length - 1].spend === 50_00_000, `last spend ${trend[trend.length - 1].spend}`);
 assert(trend[trend.length - 2].weekKey === '03-08-2026', 'penultimate is 03-08');
 assert(trend[trend.length - 2].spend === 20_60_00_000, 'penultimate spend');
+
+// Depletion Pulse must use the latest ISO week (not a single raw week label)
+const pulseRows = [
+  { week: '03-08-2026', spendsInr: 9_70_00_000, channelVendor: 'Meta' },
+  { week: '04-08-2026', spendsInr: 10_00_000, channelVendor: 'meta ads' }, // same ISO week
+  { week: '10-08-2026', spendsInr: 8_00_00_000, channelVendor: 'Google' },
+  { week: '11-08-2026', spendsInr: 50_00_000, channelVendor: 'Google Ads' },
+];
+const pulse = buildChannelSpendPulse(pulseRows, (c) =>
+  c?.toLowerCase().includes('meta') ? 'Meta' : 'Google'
+);
+assert(pulse.weekStartKey === '2026-08-10', `pulse week ${pulse.weekStartKey}`);
+assert(pulse.channels.length === 1, `pulse channels ${pulse.channels.length}`);
+assert(pulse.channels[0].name === 'Google', `pulse top ${pulse.channels[0].name}`);
+assert(pulse.channels[0].value === 8_50_00_000, `pulse google ${pulse.channels[0].value}`);
+
+const ts = { toDate: () => new Date(2026, 7, 12) }; // 12 Aug 2026
+assert(parseSpendWeekDate(ts)?.getFullYear() === 2026, 'timestamp year');
+assert(spendWeekStartKey(ts) === '2026-08-10', `timestamp week ${spendWeekStartKey(ts)}`);
+
+assert(spendWeekStartKey('10 Aug 2026') === '2026-08-10', 'dd MMM yyyy');
+assert(spendWeekStartKey('10/8/2026') === '2026-08-10', 'd/M/yyyy');
+assert(spendWeekStartKey('2026-08-10T00:00:00.000Z') === '2026-08-10', 'iso utc midnight');
 
 console.log('spend-week.smoke.ts: OK');

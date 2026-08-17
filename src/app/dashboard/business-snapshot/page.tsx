@@ -842,9 +842,10 @@ export default function BusinessSnapshotPage() {
                   <div className="flex-1 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart 
+                          key={channelSpendWeekLabel || 'depletion-empty'}
                           data={channelSpends} 
                           layout="vertical"
-                          margin={{ left: -10, right: 56 }}
+                          margin={{ left: 8, right: 56 }}
                         >
                            <CartesianGrid strokeDasharray="3 3" horizontal={false} strokeOpacity={0.05} />
                            <XAxis type="number" hide />
@@ -855,7 +856,8 @@ export default function BusinessSnapshotPage() {
                              fontWeight="black" 
                              axisLine={false} 
                              tickLine={false}
-                             width={90}
+                             width={120}
+                             interval={0}
                            />
                            <RechartsTooltip 
                              cursor={{ fill: 'rgba(0,0,0,0.02)' }}
