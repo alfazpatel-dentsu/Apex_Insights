@@ -160,12 +160,40 @@ function WbrPageContent() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(`WBR_${format(currentWbrDate, 'yyyy-MM-dd')}`);
     worksheet.columns = [
-      { header: 'Unique ID', key: 'uniqueId', width: 15 }, { header: 'Client Name', key: 'name', width: 25 }, { header: 'Cluster', key: 'cluster', width: 15 }, { header: 'Lead', key: 'clusterLead', width: 20 }, { header: 'Manager', key: 'emcsm', width: 20 }, { header: 'Contract Status', key: 'contractStatus', width: 15 }, { header: 'Finance Issues', key: 'financeIssues', width: 30 }, { header: 'Engagement RAG', key: 'engagementRag', width: 15 }, { header: 'Performance RAG', key: 'performanceRag', width: 15 }, { header: 'Performance Summary', key: 'performanceSummary', width: 40 }, { header: 'Summary', key: 'summary', width: 40 },
+      { header: 'Unique ID', key: 'uniqueId', width: 15 },
+      { header: 'Client Name', key: 'name', width: 25 },
+      { header: 'Cluster', key: 'cluster', width: 15 },
+      { header: 'Cluster Lead', key: 'clusterLead', width: 20 },
+      { header: 'EM / CSM Manager', key: 'emcsm', width: 22 },
+      { header: 'Client Partner', key: 'clientPartner', width: 22 },
+      { header: 'Contract Status', key: 'contractStatus', width: 16 },
+      { header: 'Engagement RAG', key: 'engagementRag', width: 16 },
+      { header: 'CSM Comments', key: 'financeIssues', width: 40 },
+      { header: 'Billing Update', key: 'organicOpportunities', width: 40 },
+      { header: 'Cross Sell Opportunities', key: 'crossSellOpportunities', width: 40 },
+      { header: 'Performance RAG', key: 'performanceRag', width: 16 },
+      { header: 'Performance Summary', key: 'performanceSummary', width: 40 },
+      { header: 'Executive Summary & challenges', key: 'summary', width: 45 },
     ];
     worksheet.getRow(1).font = { bold: true };
     filteredClients.forEach(client => {
       const entry = wbrEntries?.find(e => e.clientId === client.uniqueId);
-      worksheet.addRow({ uniqueId: client.uniqueId, name: client.name, cluster: client.cluster, clusterLead: client.clusterLead, emcsm: client.emcsm || entry?.emcsm || '', clientPartner: client.clientPartner || entry?.clientPartner || '', contractStatus: entry?.contractStatus || 'N/A', financeIssues: entry?.financeIssues || '', engagementRag: entry?.engagementRag || 'N/A', performanceRag: entry?.performanceRag || 'N/A', performanceSummary: entry?.performanceSummary || '', summary: entry?.summary || '' });
+      worksheet.addRow({
+        uniqueId: client.uniqueId,
+        name: client.name,
+        cluster: entry?.cluster || client.cluster || '',
+        clusterLead: entry?.clusterLead || client.clusterLead || '',
+        emcsm: entry?.emcsm || client.emcsm || '',
+        clientPartner: entry?.clientPartner || client.clientPartner || '',
+        contractStatus: entry?.contractStatus || 'N/A',
+        engagementRag: entry?.engagementRag || 'N/A',
+        financeIssues: entry?.financeIssues || '',
+        organicOpportunities: entry?.organicOpportunities || '',
+        crossSellOpportunities: entry?.crossSellOpportunities || '',
+        performanceRag: entry?.performanceRag || 'N/A',
+        performanceSummary: entry?.performanceSummary || '',
+        summary: entry?.summary || '',
+      });
     });
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `Aztec_WBR_Export_${format(currentWbrDate, 'yyyy-MM-dd')}.xlsx`);
