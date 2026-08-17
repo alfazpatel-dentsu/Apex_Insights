@@ -451,11 +451,9 @@ export default function BusinessSnapshotPage() {
     }
     if (!latestSpendMonth) return null;
 
-    // Advance the review period with the calendar so the subtitle (and monthly
-    // cards) move to the current month automatically once the month rolls over,
-    // instead of staying stuck on the last uploaded spends month.
-    const calendarMonth = format(new Date(), 'yyyy-MM');
-    const targetMonth = calendarMonth >= latestSpendMonth ? calendarMonth : latestSpendMonth;
+    // Monthly (and YTD) follow the latest month that actually has spends.
+    // Empty calendar months (e.g. August before the upload) must not show ₹0 / -100% MoM.
+    const targetMonth = latestSpendMonth;
 
     const getDetails = (data: (MonthlySpend | WeeklySpend)[]) => {
       const spendMap: Record<string, number> = {};
