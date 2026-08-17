@@ -62,6 +62,7 @@ function WbrPageContent() {
   const [selectedCluster, setSelectedCluster] = useState<string>('all');
   const [selectedLead, setSelectedLead] = useState<string>('all');
   const [selectedManager, setSelectedManager] = useState<string>('all');
+  const [selectedPartner, setSelectedPartner] = useState<string>('all');
   const [selectedEngagementRag, setSelectedEngagementRag] = useState<string>(() => searchParams.get('engagementRag') || 'all');
   const [selectedPerfRag, setSelectedPerfRag] = useState<string>(() => searchParams.get('perfRag') || 'all');
   const [search, setSearch] = useState('');
@@ -128,7 +129,16 @@ function WbrPageContent() {
 
   const clusters = useMemo(() => Array.from(new Set(allClients.map(c => c.cluster).filter(Boolean) || [])).sort(), [allClients]);
   const leads = useMemo(() => Array.from(new Set(allClients.map(c => c.clusterLead).filter(Boolean) || [])).sort(), [allClients]);
-  const managers = useMemo(() => Array.from(new Set(allClients.map(c => c.emcsm).filter(Boolean) || [])).sort(), [allClients]);
+  const managers = useMemo(() => {
+    const fromClients = allClients.map(c => c.emcsm);
+    const fromEntries = (wbrEntries || []).map(e => e.emcsm);
+    return Array.from(new Set([...fromClients, ...fromEntries].filter((v): v is string => !!v && v !== 'N/A'))).sort();
+  }, [allClients, wbrEntries]);
+  const partners = useMemo(() => {
+    const fromClients = allClients.map(c => c.clientPartner);
+    const fromEntries = (wbrEntries || []).map(e => e.clientPartner);
+    return Array.from(new Set([...fromClients, ...fromEntries].filter((v): v is string => !!v && v !== 'N/A'))).sort();
+  }, [allClients, wbrEntries]);
 
   const filteredClients = useMemo(() => {
     return allClients.filter(client => {
@@ -137,12 +147,13 @@ function WbrPageContent() {
       const searchMatch = !search || client.name.toLowerCase().includes(q) || client.uniqueId.toLowerCase().includes(q);
       const clusterMatch = selectedCluster === 'all' || client.cluster === selectedCluster;
       const leadMatch = selectedLead === 'all' || client.clusterLead === selectedLead;
-      const managerMatch = selectedManager === 'all' || client.emcsm === selectedManager;
+      const managerMatch = selectedManager === 'all' || client.emcsm === selectedManager || entry?.emcsm === selectedManager;
+      const partnerMatch = selectedPartner === 'all' || client.clientPartner === selectedPartner || entry?.clientPartner === selectedPartner;
       const eRagMatch = selectedEngagementRag === 'all' || entry?.engagementRag === selectedEngagementRag;
       const pRagMatch = selectedPerfRag === 'all' || entry?.performanceRag === selectedPerfRag;
-      return searchMatch && clusterMatch && leadMatch && managerMatch && eRagMatch && pRagMatch;
+      return searchMatch && clusterMatch && leadMatch && managerMatch && partnerMatch && eRagMatch && pRagMatch;
     });
-  }, [allClients, wbrEntries, search, selectedCluster, selectedLead, selectedManager, selectedEngagementRag, selectedPerfRag]);
+  }, [allClients, wbrEntries, search, selectedCluster, selectedLead, selectedManager, selectedPartner, selectedEngagementRag, selectedPerfRag]);
 
   const handleExport = async () => {
     if (!allClients.length || !currentWbrDate) return;
@@ -154,7 +165,7 @@ function WbrPageContent() {
     worksheet.getRow(1).font = { bold: true };
     filteredClients.forEach(client => {
       const entry = wbrEntries?.find(e => e.clientId === client.uniqueId);
-      worksheet.addRow({ uniqueId: client.uniqueId, name: client.name, cluster: client.cluster, clusterLead: client.clusterLead, emcsm: client.emcsm, contractStatus: entry?.contractStatus || 'N/A', financeIssues: entry?.financeIssues || '', engagementRag: entry?.engagementRag || 'N/A', performanceRag: entry?.performanceRag || 'N/A', performanceSummary: entry?.performanceSummary || '', summary: entry?.summary || '' });
+      worksheet.addRow({ uniqueId: client.uniqueId, name: client.name, cluster: client.cluster, clusterLead: client.clusterLead, emcsm: client.emcsm || entry?.emcsm || '', clientPartner: client.clientPartner || entry?.clientPartner || '', contractStatus: entry?.contractStatus || 'N/A', financeIssues: entry?.financeIssues || '', engagementRag: entry?.engagementRag || 'N/A', performanceRag: entry?.performanceRag || 'N/A', performanceSummary: entry?.performanceSummary || '', summary: entry?.summary || '' });
     });
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `Aztec_WBR_Export_${format(currentWbrDate, 'yyyy-MM-dd')}.xlsx`);
@@ -180,9 +191,11 @@ function WbrPageContent() {
       <div className="flex flex-wrap items-center gap-4 bg-white/30 dark:bg-black/20 p-4 rounded-none backdrop-blur-3xl border border-white/10 "><div className="relative flex-1 min-w-[200px]"><Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" /><Input placeholder="Search account name..." className="pl-12 rounded-none glass h-12 text-sm shadow-inner" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         <FilterGroup label="Cluster" value={selectedCluster} onChange={setSelectedCluster} options={clusters} />
         <FilterGroup label="Lead" value={selectedLead} onChange={setSelectedLead} options={leads} />
+        <FilterGroup label="EM / CSM Manager" value={selectedManager} onChange={setSelectedManager} options={managers} />
+        <FilterGroup label="Client Partner" value={selectedPartner} onChange={setSelectedPartner} options={partners} />
         <FilterGroup label="Engagement" value={selectedEngagementRag} onChange={setSelectedEngagementRag} options={['Green', 'Amber', 'Red']} isRag />
         <FilterGroup label="Risk" value={selectedPerfRag} onChange={setSelectedPerfRag} options={['Green', 'Amber', 'Red']} isRag />
-        <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setSelectedCluster('all'); setSelectedLead('all'); setSelectedEngagementRag('all'); setSelectedPerfRag('all'); }} className="text-[10px] font-black uppercase tracking-widest text-destructive">Reset</Button>
+        <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setSelectedCluster('all'); setSelectedLead('all'); setSelectedManager('all'); setSelectedPartner('all'); setSelectedEngagementRag('all'); setSelectedPerfRag('all'); }} className="text-[10px] font-black uppercase tracking-widest text-destructive">Reset</Button>
       </div>
       {isLoading ? (<div className="flex flex-col items-center justify-center p-12 md:p-16 gap-4"><Loader2 className="animate-spin h-10 w-10 text-primary/40" /><span className="text-xs font-black uppercase tracking-widest text-secondary">Loading weekly reviews…</span></div>) : filteredClients.length > 0 ? (<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-700">{filteredClients.map(client => (<WbrClientCard key={client.uniqueId} client={client} entry={wbrEntries?.find(e => e.clientId === client.uniqueId)} href={`/dashboard/wbr/${client.uniqueId}?date=${format(currentWbrDate, 'yyyy-MM-dd')}`} />))}</div>) : (<div className="flex flex-col items-center justify-center p-12 md:p-16 glass-card border-dashed"><Zap className="h-12 w-12 text-primary/20 mb-4" /><h3 className="text-xl font-bold font-headline">No Accounts Found</h3><p className="text-sm text-muted-foreground">Adjust filters or ensure KPI records are being synchronized.</p></div>)}
     </div>
@@ -191,7 +204,7 @@ function WbrPageContent() {
 
 function FilterGroup({ label, value, onChange, options, isRag }: { label: string, value: string, onChange: (v: string) => void, options: string[], isRag?: boolean }) {
   return (
-    <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 px-4 backdrop-blur-md shadow-inner border border-white/20"><span className="text-[10px] font-black uppercase tracking-widest text-secondary">{label}:</span><Select value={value} onValueChange={onChange}><SelectTrigger className="h-8 min-w-[80px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL</SelectItem>{options.map(opt => (<SelectItem key={opt} value={opt} className={cn("text-[10px] font-bold uppercase", isRag && opt === 'Red' && 'text-destructive', isRag && opt === 'Green' && 'text-success', isRag && opt === 'Amber' && 'text-warning')}>{opt}</SelectItem>))}</SelectContent></Select></div>
+    <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 px-4 backdrop-blur-md shadow-inner border border-white/20"><span className="text-[10px] font-black uppercase tracking-widest text-secondary whitespace-nowrap">{label}:</span><Select value={value} onValueChange={onChange}><SelectTrigger className="h-8 min-w-[80px] max-w-[180px] border-none bg-transparent shadow-none text-[10px] font-black uppercase p-0 focus:ring-0"><SelectValue /></SelectTrigger><SelectContent className="rounded-none glass "><SelectItem value="all" className="text-[10px] font-bold">ALL</SelectItem>{options.map(opt => (<SelectItem key={opt} value={opt} className={cn("text-[10px] font-bold uppercase", isRag && opt === 'Red' && 'text-destructive', isRag && opt === 'Green' && 'text-success', isRag && opt === 'Amber' && 'text-warning')}>{opt}</SelectItem>))}</SelectContent></Select></div>
   );
 }
 
