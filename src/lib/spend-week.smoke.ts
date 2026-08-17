@@ -59,6 +59,10 @@ assert(
   formatLatestWeekDateLabel(pulseRows['2026-08-03']) === '09-08-2026',
   `pulse label ${formatLatestWeekDateLabel(pulseRows['2026-08-03'])}`
 );
+assert(
+  formatLatestWeekDateLabel(pulseRows['2026-08-03'], 'dd MMM yyyy') === '09 Aug 2026',
+  'depletion pulse week-of label'
+);
 
 // Spends Dashboard parity: raw week labels stay separate; last N weeks only
 const trendRows = [

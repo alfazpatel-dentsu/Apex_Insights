@@ -357,6 +357,7 @@ export default function BusinessSnapshotPage() {
           }
         }));
 
+        // 3. SALES PIPELINE (FUNNEL)
         const statusOrder = ['Qualified', 'Pitch', 'Negotiation', 'Contract', 'Won'];
         const leadCounts = leads.reduce((acc, l) => {
           acc[l.status] = (acc[l.status] || 0) + 1;
@@ -371,6 +372,7 @@ export default function BusinessSnapshotPage() {
           percent: ((leadCounts[status] || 0) / maxLead) * 100
         })));
 
+        // 4. ACCOUNTABILITY PULSE — Kanban status board counts
         const statusCounts: Record<ActionStatus, number> = {
           'Work-In Progress': 0,
           'On-Hold': 0,
@@ -389,6 +391,7 @@ export default function BusinessSnapshotPage() {
           percent: ((statusCounts[status] || 0) / totalActions) * 100,
         })));
 
+        // 5. NEWS FEED (Utilizing resolved names)
         const pulseFeed: any[] = [];
         Array.from(new Set(wbrs.map(w => w.clientId))).forEach(cid => {
           const clientWbr = wbrs.find(w => w.clientId === cid);
