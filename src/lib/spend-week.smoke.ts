@@ -96,4 +96,8 @@ const ts = { toDate: () => new Date(2026, 7, 12) }; // 12 Aug 2026
 assert(parseSpendWeekDate(ts)?.getFullYear() === 2026, 'timestamp year');
 assert(spendWeekStartKey(ts) === '2026-08-10', `timestamp week ${spendWeekStartKey(ts)}`);
 
+assert(spendWeekStartKey('10 Aug 2026') === '2026-08-10', 'dd MMM yyyy');
+assert(spendWeekStartKey('10/8/2026') === '2026-08-10', 'd/M/yyyy');
+assert(spendWeekStartKey('2026-08-10T00:00:00.000Z') === '2026-08-10', 'iso utc midnight');
+
 console.log('spend-week.smoke.ts: OK');

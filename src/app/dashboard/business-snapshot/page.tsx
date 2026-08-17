@@ -173,6 +173,7 @@ interface ClientHealthRow {
 const PATH_RANK: Record<ClientPath, number> = { 'off-path': 0, 'no-signal': 1, 'on-path': 2 };
 
 const KPI_PAGE_SIZE = 500;
+const WEEKLY_PAGE_SIZE = 500;
 
 /** Load every KPI row for a month (Firestore queries are capped; paginate past the first page). */
 async function fetchAllKpisForMonth(db: Firestore, month: string): Promise<KpiData[]> {
@@ -196,6 +197,50 @@ async function fetchAllKpisForMonth(db: Firestore, month: string): Promise<KpiDa
   }
 
   return results;
+}
+
+/** Load every weekly spend row for a month so Depletion Pulse is not stuck on a stale first page. */
+async function fetchAllWeeklySpendsForMonth(db: Firestore, month: string): Promise<WeeklySpend[]> {
+  const results: WeeklySpend[] = [];
+  let cursor: QueryDocumentSnapshot<DocumentData> | undefined;
+
+  try {
+    while (true) {
+      const constraints = [
+        where('month', '==', month),
+        orderBy(documentId()),
+        ...(cursor ? [startAfter(cursor)] : []),
+        limit(WEEKLY_PAGE_SIZE),
+      ];
+      const snap = await getDocs(query(collection(db, 'weeklySpends'), ...constraints));
+      if (snap.empty) break;
+      for (const d of snap.docs) {
+        results.push({ id: d.id, ...(d.data() as object) } as WeeklySpend);
+      }
+      if (snap.size < WEEKLY_PAGE_SIZE) break;
+      cursor = snap.docs[snap.docs.length - 1];
+    }
+    return results;
+  } catch (err) {
+    console.warn('Paginated weeklySpends query failed, falling back to month scan', month, err);
+    const snap = await getDocs(query(collection(db, 'weeklySpends'), where('month', '==', month)));
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) } as WeeklySpend));
+  }
+}
+
+function mergeWeeklySpendRows(
+  ...lists: Array<WeeklySpend[] | null | undefined>
+): WeeklySpend[] {
+  const map = new Map<string, WeeklySpend>();
+  lists.forEach((list) => {
+    (list || []).forEach((row) => {
+      const id =
+        row.id ||
+        `${row.clientId}|${row.week}|${row.channelVendor}|${row.brandName}|${row.spendsInr}`;
+      map.set(id, row);
+    });
+  });
+  return [...map.values()];
 }
 
 /**
@@ -230,6 +275,7 @@ export default function BusinessSnapshotPage() {
   // INTELLIGENCE STATE
   const [newsFeed, setNewsFeed] = useState<any[]>([]);
   const [excludeMomentumLargeClients, setExcludeMomentumLargeClients] = useState(false);
+  const [recentWeeklySpends, setRecentWeeklySpends] = useState<WeeklySpend[] | null>(null);
   const [pipelineData, setPipelineData] = useState<any[]>([]);
   const [accountabilityPulse, setAccountabilityPulse] = useState<any[]>([]);
   const [clientHealth, setClientHealth] = useState<ClientHealthRow[]>([]);
@@ -262,10 +308,34 @@ export default function BusinessSnapshotPage() {
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', monthlyWindow);
   const { data: weeklySpends, loading: wLoading } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
 
-  // Depletion Pulse — latest ISO week, independent of the WBR/actions intelligence fetch
+  const weeklyRowCount = weeklySpends?.length ?? 0;
+  useEffect(() => {
+    if (!mounted || !firestore) return;
+    let cancelled = false;
+
+    const loadRecentWeekly = async () => {
+      try {
+        const months = Array.from({ length: 4 }, (_, i) => format(subMonths(new Date(), i), 'yyyy-MM'));
+        const rows: WeeklySpend[] = [];
+        for (const month of months) {
+          rows.push(...(await fetchAllWeeklySpendsForMonth(firestore, month)));
+        }
+        if (!cancelled) setRecentWeeklySpends(rows);
+      } catch (err) {
+        console.error('Depletion Pulse weekly fetch failed:', err);
+      }
+    };
+
+    loadRecentWeekly();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, firestore, weeklyRowCount]);
+
+  // Depletion Pulse — latest ISO week from paginated recent months + live listener
   const channelSpendPulse = useMemo(
-    () => buildChannelSpendPulse(weeklySpends, canonicalizeChannel),
-    [weeklySpends]
+    () => buildChannelSpendPulse(mergeWeeklySpendRows(recentWeeklySpends, weeklySpends), canonicalizeChannel),
+    [recentWeeklySpends, weeklySpends]
   );
   const channelSpends = channelSpendPulse.channels;
   const channelSpendWeekLabel = channelSpendPulse.weekStartKey

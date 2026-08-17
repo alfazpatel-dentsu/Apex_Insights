@@ -2,15 +2,23 @@
  * Weekly spend date helpers — normalize heterogeneous week labels and
  * coerce spend amounts so Snapshot / dashboard WoW charts aggregate correctly.
  */
-import { addDays, format, isValid, parse, startOfWeek, subWeeks } from 'date-fns';
+import { addDays, format, isMatch, isValid, parse, startOfWeek, subWeeks } from 'date-fns';
 
 const WEEK_DATE_FORMATS = [
   'dd-MM-yyyy',
+  'd-M-yyyy',
   'dd/MM/yyyy',
+  'd/M/yyyy',
   'yyyy-MM-dd',
   'dd-MMM-yyyy',
+  'd-MMM-yyyy',
+  'dd MMM yyyy',
+  'd MMM yyyy',
   'dd-MMM-yy',
+  'MMM d, yyyy',
+  'MMM dd, yyyy',
   'MM/dd/yyyy',
+  'M/d/yyyy',
   'yyyy/MM/dd',
 ] as const;
 
@@ -32,51 +40,77 @@ function isFirestoreTimestamp(value: unknown): value is { toDate: () => Date } {
   );
 }
 
+/** Noon local on a Y-M-D so Monday-week keys are not shifted by timezone. */
+function calendarDateAtNoon(year: number, monthIndex: number, day: number): Date | null {
+  const d = new Date(year, monthIndex, day, 12, 0, 0, 0);
+  return isValid(d) ? d : null;
+}
+
+function fromDateInstant(d: Date): Date | null {
+  if (!isValid(d)) return null;
+  // UTC-midnight instants (Excel / ISO-Z) must use the UTC calendar day.
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) {
+    return calendarDateAtNoon(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  return calendarDateAtNoon(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 /** Parse a weekly spend `week` label across common upload formats. */
 export function parseSpendWeekDate(week: unknown): Date | null {
   if (week == null || week === '') return null;
 
   if (week instanceof Date) {
-    return isValid(week) ? week : null;
+    return fromDateInstant(week);
   }
 
   if (isFirestoreTimestamp(week)) {
     try {
-      const d = week.toDate();
-      return isValid(d) ? d : null;
+      return fromDateInstant(week.toDate());
     } catch {
       return null;
     }
   }
 
+  if (typeof week === 'object') {
+    const seconds = (week as { seconds?: unknown }).seconds;
+    if (typeof seconds === 'number' && Number.isFinite(seconds)) {
+      return fromDateInstant(new Date(seconds * 1000));
+    }
+  }
+
   if (typeof week === 'number' && Number.isFinite(week)) {
-    // Excel serial date
+    // Excel serial date (allow fractional day)
     if (week > 20000 && week < 100000) {
       const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-      const d = new Date(excelEpoch.getTime() + week * 86400000);
-      return isValid(d) ? d : null;
+      return fromDateInstant(new Date(excelEpoch.getTime() + week * 86400000));
     }
     return null;
   }
 
   const s = String(week).trim();
-  if (!s) return null;
+  if (!s || s === '[object Object]') return null;
 
   if (/^\d+(\.\d+)?$/.test(s) && Number(s) > 20000) {
     return parseSpendWeekDate(Number(s));
   }
 
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    return fromDateInstant(new Date(s));
+  }
+
   for (const f of WEEK_DATE_FORMATS) {
     try {
+      if (!isMatch(s, f)) continue;
       const d = parse(s, f, new Date());
-      if (isValid(d)) return d;
+      if (isValid(d) && d.getFullYear() >= 2000) {
+        return calendarDateAtNoon(d.getFullYear(), d.getMonth(), d.getDate());
+      }
     } catch {
       // try next format
     }
   }
 
-  const fallback = new Date(s);
-  return isValid(fallback) ? fallback : null;
+  return fromDateInstant(new Date(s));
 }
 
 /** Monday (ISO) week-start key: yyyy-MM-dd */
