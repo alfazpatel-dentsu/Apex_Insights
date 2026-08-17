@@ -43,7 +43,7 @@ import {
   subWeeks,
   isValid
 } from 'date-fns';
-import { query, collection, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { query, collection, where, getDocs, getDoc, doc, limit, type Firestore } from 'firebase/firestore';
 
 import { useFirestore, useUser, useDoc, useCollection } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, RagStatus, ActionItem } from '@/lib/types';
@@ -87,6 +87,36 @@ const wbrSchema = z.object({
 
 type WbrFormValues = z.infer<typeof wbrSchema>;
 
+async function fetchClientMonthRange<T extends { month?: string }>(
+  db: Firestore,
+  collectionName: string,
+  clientId: string,
+  startMonth: string,
+  endMonth: string,
+): Promise<(T & { id: string })[]> {
+  try {
+    const snap = await getDocs(query(
+      collection(db, collectionName),
+      where('clientId', '==', clientId),
+      where('month', '>=', startMonth),
+      where('month', '<=', endMonth),
+    ));
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) } as T & { id: string }));
+  } catch {
+    const snap = await getDocs(query(
+      collection(db, collectionName),
+      where('clientId', '==', clientId),
+    ));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as object) } as T & { id: string }))
+      .filter((row) => !!row.month && row.month >= startMonth && row.month <= endMonth);
+  }
+}
+
+function wbrEntryId(clientId: string, wbrDate: string) {
+  return `wbr_${clientId}_${wbrDate}`.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
 export default function WbrEditPage() {
   const params = useParams();
   const router = useRouter();
@@ -101,6 +131,7 @@ export default function WbrEditPage() {
   const wbrDate = searchParams.get('date') || format(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), 'yyyy-MM-dd');
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isMetricsLoading, setIsMetricsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [clientInfo, setClientInfo] = useState<Partial<Client> | null>(null);
   const [entry, setEntry] = useState<WbrEntry | null>(null);
@@ -115,19 +146,14 @@ export default function WbrEditPage() {
   const actionsConstraints = useMemo(() => [where('clientId', '==', actualClientId), limit(50)], [actualClientId]);
   const { data: clientActions } = useCollection<ActionItem>('actionItems', actionsConstraints);
 
-  const [monthlyDateRange, setMonthlyDateRange] = useState<DateRange | undefined>(undefined);
-  const [weeklyDateRange, setWeeklyDateRange] = useState<DateRange | undefined>(undefined);
-
-  useEffect(() => {
-    setMonthlyDateRange({
-      from: startOfMonth(subMonths(new Date(), 5)),
-      to: endOfMonth(new Date())
-    });
-    setWeeklyDateRange({
-      from: subWeeks(new Date(), 4),
-      to: new Date()
-    });
-  }, []);
+  const [monthlyDateRange, setMonthlyDateRange] = useState<DateRange | undefined>(() => ({
+    from: startOfMonth(subMonths(new Date(), 5)),
+    to: endOfMonth(new Date()),
+  }));
+  const [weeklyDateRange, setWeeklyDateRange] = useState<DateRange | undefined>(() => ({
+    from: subWeeks(new Date(), 4),
+    to: new Date(),
+  }));
 
   // MONTHLY FILTERS
   const [selectedLobFilter, setSelectedLobFilter] = useState<string>('all');
@@ -165,49 +191,64 @@ export default function WbrEditPage() {
   });
 
   useEffect(() => {
-    if (!actualClientId || !monthlyDateRange?.from || !monthlyDateRange?.to || !weeklyDateRange?.from || !weeklyDateRange?.to) return;
+    if (!actualClientId) return;
+    let cancelled = false;
 
-    const fetchData = async () => {
+    const fetchCore = async () => {
       setIsLoading(true);
       try {
-        const clientRefQ = query(collection(firestore, 'clients'), where('uniqueId', '==', actualClientId), limit(1));
-        const clientSnap = await getDocs(clientRefQ);
-        
+        const wbrId = wbrEntryId(actualClientId, wbrDate);
+        const [clientSnap, wbrDirect] = await Promise.all([
+          getDocs(query(collection(firestore, 'clients'), where('uniqueId', '==', actualClientId), limit(1))),
+          getDoc(doc(firestore, 'wbrEntries', wbrId)),
+        ]);
+
         let cData: Partial<Client> | null = null;
         if (!clientSnap.empty) {
           cData = clientSnap.docs[0].data() as Client;
         } else {
-          const kpiRefQ = query(collection(firestore, 'kpis'), where('clientId', '==', actualClientId));
-          const kpiRefSnap = await getDocs(kpiRefQ);
+          const kpiRefSnap = await getDocs(query(
+            collection(firestore, 'kpis'),
+            where('clientId', '==', actualClientId),
+            limit(1)
+          ));
           if (!kpiRefSnap.empty) {
-            const docs = kpiRefSnap.docs.map(d => d.data() as KpiData);
-            docs.sort((a, b) => b.month.localeCompare(a.month));
-            const d = docs[0];
-            cData = { 
-              name: d.clientName, 
-              uniqueId: d.clientId, 
-              cluster: d.cluster || 'Unassigned', 
-              clusterLead: d.cduLead || 'No Lead', 
-              emcsm: d.emCsm || 'No Manager' 
+            const d = kpiRefSnap.docs[0].data() as KpiData;
+            cData = {
+              name: d.clientName,
+              uniqueId: d.clientId,
+              cluster: d.cluster || 'Unassigned',
+              clusterLead: d.cduLead || 'No Lead',
+              emcsm: d.emCsm || 'No Manager',
             };
           }
         }
+        if (cancelled) return;
         setClientInfo(cData);
 
-        const entriesSnap = await getDocs(query(
-          collection(firestore, 'wbrEntries'), 
-          where('clientId', '==', actualClientId)
-        ));
-        
-        const existingEntryDoc = entriesSnap.docs.find(d => d.data().wbrDate === wbrDate);
-        if (existingEntryDoc) {
-          const existingEntry = { id: existingEntryDoc.id, ...existingEntryDoc.data() } as WbrEntry;
-          setEntry(existingEntry);
+        let existingEntry: WbrEntry | null = null;
+        if (wbrDirect.exists()) {
+          existingEntry = { id: wbrDirect.id, ...wbrDirect.data() } as WbrEntry;
+        } else {
+          const byDate = await getDocs(query(
+            collection(firestore, 'wbrEntries'),
+            where('clientId', '==', actualClientId),
+            where('wbrDate', '==', wbrDate),
+            limit(1)
+          ));
+          if (!byDate.empty) {
+            existingEntry = { id: byDate.docs[0].id, ...byDate.docs[0].data() } as WbrEntry;
+          }
+        }
+        if (cancelled) return;
+        setEntry(existingEntry);
+
+        if (existingEntry) {
           form.reset({
             cluster: existingEntry.cluster || cData?.cluster || '',
             clusterLead: existingEntry.clusterLead || cData?.clusterLead || '',
             emcsm: existingEntry.emcsm || cData?.emcsm || '',
-            clientPartner: existingEntry.clientPartner || cData?.clientPartner || '',
+            clientPartner: existingEntry.clientPartner || '',
             contractStatus: existingEntry.contractStatus || 'Valid',
             engagementRag: existingEntry.engagementRag || 'Green',
             performanceRag: existingEntry.performanceRag || 'Green',
@@ -231,63 +272,72 @@ export default function WbrEditPage() {
             summary: '',
           });
         }
-
-        const monthlyStartStr = format(monthlyDateRange.from, 'yyyy-MM');
-        const monthlyEndStr = format(monthlyDateRange.to, 'yyyy-MM');
-        const weeklyStartStr = format(weeklyDateRange.from, 'yyyy-MM');
-        const weeklyEndStr = format(weeklyDateRange.to, 'yyyy-MM');
-
-        const fetchStartStr = monthlyStartStr < weeklyStartStr ? monthlyStartStr : weeklyStartStr;
-        const fetchEndStr = monthlyEndStr > weeklyEndStr ? monthlyEndStr : weeklyEndStr;
-        
-        const allKpisSnap = await getDocs(query(
-          collection(firestore, 'kpis'), 
-          where('clientId', '==', actualClientId)
-        ));
-        const kpiList = allKpisSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as KpiData))
-          .filter(k => k.month >= fetchStartStr && k.month <= fetchEndStr);
-        setKpis(kpiList);
-
-        if (kpiList.length > 0) {
-          const kpiIds = kpiList.map(k => k.id);
-          const weeklyKpiList: KpiWeeklyData[] = [];
-          for (let i = 0; i < kpiIds.length; i += 30) {
-            const chunk = kpiIds.slice(i, i + 30);
-            const wSnap = await getDocs(query(collection(firestore, 'kpiWeeklyData'), where('kpiDataId', 'in', chunk)));
-            wSnap.forEach(d => weeklyKpiList.push({ id: d.id, ...d.data() } as KpiWeeklyData));
-          }
-          setWeeklyKpis(weeklyKpiList);
-        }
-
-        // Join key is CLID (clientId) — brandName is display only.
-        const allSpendsSnap = await getDocs(query(
-          collection(firestore, 'monthlySpends'), 
-          where('clientId', '==', actualClientId)
-        ));
-        setMonthlySpends(allSpendsSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as MonthlySpend))
-          .filter(s => s.month >= fetchStartStr && s.month <= fetchEndStr)
-        );
-
-        const allWeeklySpendsSnap = await getDocs(query(
-          collection(firestore, 'weeklySpends'),
-          where('clientId', '==', actualClientId)
-        ));
-        setWeeklySpends(allWeeklySpendsSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as WeeklySpend))
-          .filter(s => s.month && s.month >= fetchStartStr && s.month <= fetchEndStr)
-        );
-
       } catch (err) {
-        console.error("WBR review data retrieval failed:", err);
+        console.error('WBR core load failed:', err);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
-    fetchData();
-  }, [actualClientId, wbrDate, firestore, form, monthlyDateRange, weeklyDateRange]);
+    fetchCore();
+    return () => {
+      cancelled = true;
+    };
+  }, [actualClientId, wbrDate, firestore, form]);
+
+  useEffect(() => {
+    if (!actualClientId || !monthlyDateRange?.from || !monthlyDateRange?.to || !weeklyDateRange?.from || !weeklyDateRange?.to) return;
+    let cancelled = false;
+
+    const fetchMetrics = async () => {
+      setIsMetricsLoading(true);
+      try {
+        const monthlyStartStr = format(monthlyDateRange.from!, 'yyyy-MM');
+        const monthlyEndStr = format(monthlyDateRange.to!, 'yyyy-MM');
+        const weeklyStartStr = format(weeklyDateRange.from!, 'yyyy-MM');
+        const weeklyEndStr = format(weeklyDateRange.to!, 'yyyy-MM');
+        const fetchStartStr = monthlyStartStr < weeklyStartStr ? monthlyStartStr : weeklyStartStr;
+        const fetchEndStr = monthlyEndStr > weeklyEndStr ? monthlyEndStr : weeklyEndStr;
+
+        const [kpiList, monthSpends, weekSpends] = await Promise.all([
+          fetchClientMonthRange<KpiData>(firestore, 'kpis', actualClientId, fetchStartStr, fetchEndStr),
+          fetchClientMonthRange<MonthlySpend>(firestore, 'monthlySpends', actualClientId, fetchStartStr, fetchEndStr),
+          fetchClientMonthRange<WeeklySpend>(firestore, 'weeklySpends', actualClientId, fetchStartStr, fetchEndStr),
+        ]);
+        if (cancelled) return;
+
+        setKpis(kpiList);
+        setMonthlySpends(monthSpends);
+        setWeeklySpends(weekSpends);
+
+        if (kpiList.length > 0) {
+          const kpiIds = kpiList.map((k) => k.id);
+          const chunks: string[][] = [];
+          for (let i = 0; i < kpiIds.length; i += 30) chunks.push(kpiIds.slice(i, i + 30));
+          const weeklyParts = await Promise.all(chunks.map((chunk) =>
+            getDocs(query(collection(firestore, 'kpiWeeklyData'), where('kpiDataId', 'in', chunk)))
+          ));
+          if (cancelled) return;
+          const weeklyKpiList: KpiWeeklyData[] = [];
+          weeklyParts.forEach((snap) => {
+            snap.forEach((d) => weeklyKpiList.push({ id: d.id, ...d.data() } as KpiWeeklyData));
+          });
+          setWeeklyKpis(weeklyKpiList);
+        } else {
+          setWeeklyKpis([]);
+        }
+      } catch (err) {
+        console.error('WBR metrics load failed:', err);
+      } finally {
+        if (!cancelled) setIsMetricsLoading(false);
+      }
+    };
+
+    fetchMetrics();
+    return () => {
+      cancelled = true;
+    };
+  }, [actualClientId, firestore, monthlyDateRange, weeklyDateRange]);
 
   const isAdmin = userProfile?.role === 'Admin';
   const userRole = userProfile?.role;
@@ -608,6 +658,7 @@ export default function WbrEditPage() {
                <div className="flex items-center gap-3">
                   <LayoutDashboard className="h-5 w-5 text-primary" />
                   <h3 className="text-xl font-black uppercase tracking-tight">Monthly Strategic Pulse</h3>
+                  {isMetricsLoading && <Loader2 className="h-4 w-4 animate-spin text-primary/60" />}
                </div>
                <div className="flex items-center gap-3 flex-wrap">
                   <DateRangePicker date={monthlyDateRange} setDate={setMonthlyDateRange} />
@@ -733,6 +784,7 @@ export default function WbrEditPage() {
                <div className="flex items-center gap-3">
                   <Activity className="h-5 w-5 text-brand" />
                   <h3 className="text-xl font-black uppercase tracking-tight">Tactical Weekly Velocity</h3>
+                  {isMetricsLoading && <Loader2 className="h-4 w-4 animate-spin text-primary/60" />}
                </div>
                <div className="flex items-center gap-3 flex-wrap">
                   <DateRangePicker date={weeklyDateRange} setDate={setWeeklyDateRange} />
@@ -872,9 +924,9 @@ export default function WbrEditPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-10 rounded-none glass ">
                 <FormField control={form.control} name="contractStatus" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CONTRACT STATUS</FormLabel>{renderFieldInfo('contractStatus')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('contractStatus')}><FormControl><SelectTrigger className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-bold"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-none glass "><SelectItem value="Valid" className="font-bold">Valid</SelectItem><SelectItem value="Expired" className="text-destructive font-black">Expired</SelectItem><SelectItem value="Negotiation" className="text-warning font-black">Negotiation</SelectItem></SelectContent></Select></FormItem>)} />
                 <FormField control={form.control} name="engagementRag" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">ENGAGEMENT RAG</FormLabel>{renderFieldInfo('engagementRag')}</div><Select onValueChange={field.onChange} value={field.value} disabled={!canEditField('engagementRag')}><FormControl><SelectTrigger className="rounded-none bg-foreground/[0.03] border-none h-14 shadow-inner px-5 font-black"><SelectValue /></SelectTrigger></FormControl><SelectContent className="rounded-none glass "><SelectItem value="Green" className="text-success font-black">GREEN</SelectItem><SelectItem value="Amber" className="text-warning font-black">AMBER</SelectItem><SelectItem value="Red" className="text-destructive font-black">RED</SelectItem></SelectContent></Select></FormItem>)} />
-                <div className="md:col-span-2"><FormField control={form.control} name="financeIssues" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">FINANCE & BILLING INTELLIGENCE</FormLabel>{renderFieldInfo('financeIssues')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[120px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('financeIssues')} /></FormControl></FormItem>)} /></div>
-                <FormField control={form.control} name="organicOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">ORGANIC GROWTH PULSE</FormLabel>{renderFieldInfo('organicOpportunities')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('organicOpportunities')} /></FormControl></FormItem>)} />
-                <FormField control={form.control} name="crossSellOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CROSS-SELL HORIZON</FormLabel>{renderFieldInfo('crossSellOpportunities')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('crossSellOpportunities')} /></FormControl></FormItem>)} />
+                <div className="md:col-span-2"><FormField control={form.control} name="financeIssues" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">CSM Comments</FormLabel>{renderFieldInfo('financeIssues')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none min-h-[120px] shadow-inner p-6 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('financeIssues')} /></FormControl></FormItem>)} /></div>
+                <FormField control={form.control} name="organicOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Billing Update</FormLabel>{renderFieldInfo('organicOpportunities')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('organicOpportunities')} /></FormControl></FormItem>)} />
+                <FormField control={form.control} name="crossSellOpportunities" render={({ field }) => (<FormItem><div className="flex items-center justify-between mb-1"><FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Cross Sell Opportunities</FormLabel>{renderFieldInfo('crossSellOpportunities')}</div><FormControl><Textarea className="rounded-none bg-foreground/[0.03] border-none h-32 shadow-inner p-5 text-sm font-medium leading-relaxed resize-none" {...field} disabled={!canEditField('crossSellOpportunities')} /></FormControl></FormItem>)} />
             </div>
           </section>
 
