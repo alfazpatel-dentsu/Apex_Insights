@@ -33,11 +33,10 @@ import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, 
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import {
   aggregateSpendByWeekStart,
+  buildChannelSpendPulse,
   buildWowSpendsTrend,
   formatWeekStartLabel,
-  parseSpendWeekDate,
   resolveWowWeekPair,
-  spendWeekStartKey,
   toSpendNumber,
 } from '@/lib/spend-week';
 import { useToast } from '@/hooks/use-toast';
@@ -231,8 +230,6 @@ export default function BusinessSnapshotPage() {
   // INTELLIGENCE STATE
   const [newsFeed, setNewsFeed] = useState<any[]>([]);
   const [excludeMomentumLargeClients, setExcludeMomentumLargeClients] = useState(false);
-  const [channelSpends, setChannelSpends] = useState<any[]>([]);
-  const [channelSpendWeekLabel, setChannelSpendWeekLabel] = useState<string | null>(null);
   const [pipelineData, setPipelineData] = useState<any[]>([]);
   const [accountabilityPulse, setAccountabilityPulse] = useState<any[]>([]);
   const [clientHealth, setClientHealth] = useState<ClientHealthRow[]>([]);
@@ -264,6 +261,16 @@ export default function BusinessSnapshotPage() {
 
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', monthlyWindow);
   const { data: weeklySpends, loading: wLoading } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
+
+  // Depletion Pulse — latest ISO week, independent of the WBR/actions intelligence fetch
+  const channelSpendPulse = useMemo(
+    () => buildChannelSpendPulse(weeklySpends, canonicalizeChannel),
+    [weeklySpends]
+  );
+  const channelSpends = channelSpendPulse.channels;
+  const channelSpendWeekLabel = channelSpendPulse.weekStartKey
+    ? `Week of ${formatWeekStartLabel(channelSpendPulse.weekStartKey, 'dd MMM yyyy')}`
+    : null;
 
   // 12-Week Momentum — same series as Spends Dashboard WoW, with optional large-client exclude
   const momentumData = useMemo(() => {
@@ -348,30 +355,7 @@ export default function BusinessSnapshotPage() {
           }
         }));
 
-        // 3. CHANNEL SPENDS (latest week present — same week keys as Dashboard WoW)
-        const momentum = buildWowSpendsTrend(weeklySpends, 12);
-        const lastWeekKey = momentum[momentum.length - 1]?.weekKey || '';
-        const channelTotals: Record<string, number> = {};
-        (weeklySpends || []).forEach((s) => {
-          if (s.week !== lastWeekKey) return;
-          const channel = canonicalizeChannel(s.channelVendor);
-          channelTotals[channel] = (channelTotals[channel] || 0) + toSpendNumber(s.spendsInr);
-        });
-
-        setChannelSpends(Object.entries(channelTotals).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value));
-        if (lastWeekKey) {
-          const weekDate = parseSpendWeekDate(lastWeekKey);
-          const weekStart = weekDate ? spendWeekStartKey(lastWeekKey) : null;
-          setChannelSpendWeekLabel(
-            weekStart
-              ? `Week of ${formatWeekStartLabel(weekStart, 'dd MMM yyyy')}`
-              : `Week of ${lastWeekKey}`
-          );
-        } else {
-          setChannelSpendWeekLabel(null);
-        }
-
-        // 4. SALES PIPELINE (FUNNEL)
+        // 3. SALES PIPELINE (FUNNEL)
         const statusOrder = ['Qualified', 'Pitch', 'Negotiation', 'Contract', 'Won'];
         const leadCounts = leads.reduce((acc, l) => {
           acc[l.status] = (acc[l.status] || 0) + 1;
@@ -386,7 +370,7 @@ export default function BusinessSnapshotPage() {
           percent: ((leadCounts[status] || 0) / maxLead) * 100
         })));
 
-        // 5. ACCOUNTABILITY PULSE — Kanban status board counts
+        // 4. ACCOUNTABILITY PULSE — Kanban status board counts
         const statusCounts: Record<ActionStatus, number> = {
           'Work-In Progress': 0,
           'On-Hold': 0,
@@ -406,7 +390,7 @@ export default function BusinessSnapshotPage() {
         }));
         setAccountabilityPulse(pulse);
 
-        // 6. NEWS FEED (Utilizing resolved names)
+        // 5. NEWS FEED (Utilizing resolved names)
         const pulseFeed: any[] = [];
         Array.from(new Set(wbrs.map(w => w.clientId))).forEach(cid => {
           const clientWbr = wbrs.find(w => w.clientId === cid);
@@ -438,7 +422,7 @@ export default function BusinessSnapshotPage() {
     };
 
     fetchIntelligence();
-  }, [mounted, firestore, weeklySpends]);
+  }, [mounted, firestore]);
 
   const stats = useMemo(() => {
     if (!monthlySpends || !weeklySpends || !mounted) return null;
@@ -867,9 +851,10 @@ export default function BusinessSnapshotPage() {
                   <div className="flex-1 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart 
+                          key={channelSpendWeekLabel || 'depletion-empty'}
                           data={channelSpends} 
                           layout="vertical"
-                          margin={{ left: -10, right: 56 }}
+                          margin={{ left: 8, right: 56 }}
                         >
                            <CartesianGrid strokeDasharray="3 3" horizontal={false} strokeOpacity={0.05} />
                            <XAxis type="number" hide />
@@ -880,7 +865,8 @@ export default function BusinessSnapshotPage() {
                              fontWeight="black" 
                              axisLine={false} 
                              tickLine={false}
-                             width={90}
+                             width={120}
+                             interval={0}
                            />
                            <RechartsTooltip 
                              cursor={{ fill: 'rgba(0,0,0,0.02)' }}

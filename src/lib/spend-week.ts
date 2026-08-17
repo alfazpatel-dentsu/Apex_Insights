@@ -24,12 +24,29 @@ export function toSpendNumber(val: unknown): number {
   return Number.isFinite(num) ? num : 0;
 }
 
+function isFirestoreTimestamp(value: unknown): value is { toDate: () => Date } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  );
+}
+
 /** Parse a weekly spend `week` label across common upload formats. */
 export function parseSpendWeekDate(week: unknown): Date | null {
   if (week == null || week === '') return null;
 
   if (week instanceof Date) {
     return isValid(week) ? week : null;
+  }
+
+  if (isFirestoreTimestamp(week)) {
+    try {
+      const d = week.toDate();
+      return isValid(d) ? d : null;
+    } catch {
+      return null;
+    }
   }
 
   if (typeof week === 'number' && Number.isFinite(week)) {
@@ -166,6 +183,45 @@ export function buildWowSpendsTrend<T extends { week?: string; spendsInr?: unkno
     .filter((row) => Number.isFinite(row.timestamp))
     .sort((a, b) => a.timestamp - b.timestamp)
     .slice(-weekCount);
+}
+
+export type ChannelSpendPoint = { name: string; value: number };
+
+export type ChannelSpendPulse = {
+  channels: ChannelSpendPoint[];
+  weekStartKey: string | null;
+};
+
+/**
+ * Depletion Pulse: spend by channel for the latest ISO week that has data.
+ * Collapses mixed week labels (Mon dump + mid-week as-of dates) onto the same
+ * Monday key — unlike {@link buildWowSpendsTrend}, which keeps raw labels.
+ */
+export function buildChannelSpendPulse<
+  T extends { week?: unknown; spendsInr?: unknown; channelVendor?: string | null },
+>(
+  rows: T[] | null | undefined,
+  canonicalize: (channel: string | null | undefined) => string
+): ChannelSpendPulse {
+  const { keys, rowsByKey } = aggregateSpendByWeekStart(rows);
+
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const weekStartKey = keys[i];
+    const channelTotals: Record<string, number> = {};
+    (rowsByKey[weekStartKey] || []).forEach((row) => {
+      const channel = canonicalize(row.channelVendor);
+      channelTotals[channel] = (channelTotals[channel] || 0) + toSpendNumber(row.spendsInr);
+    });
+    const channels = Object.entries(channelTotals)
+      .map(([name, value]) => ({ name, value }))
+      .filter((row) => row.value !== 0)
+      .sort((a, b) => b.value - a.value);
+    if (channels.length > 0) {
+      return { channels, weekStartKey };
+    }
+  }
+
+  return { channels: [], weekStartKey: null };
 }
 
 /**
