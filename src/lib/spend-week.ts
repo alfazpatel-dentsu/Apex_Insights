@@ -303,3 +303,90 @@ export function spendWeekMonthKey(week: unknown): string {
   const thursday = addDays(monday, 3);
   return format(thursday, 'yyyy-MM');
 }
+
+export function rowSpendAmount(row: { actualSpendsInr?: unknown; spendsInr?: unknown }): number {
+  if (Object.prototype.hasOwnProperty.call(row, 'actualSpendsInr')) {
+    return toSpendNumber(row.actualSpendsInr);
+  }
+  return toSpendNumber(row.spendsInr);
+}
+
+export function normalizeSpendTypeLabel(type?: string | null): string {
+  const t = String(type || '').trim();
+  return t || 'PERFORMANCE';
+}
+
+export type BrandSpendBreakdown = {
+  spendMap: Record<string, number>;
+  typeSpendMap: Record<string, Record<string, number>>;
+  teamByType: Record<string, Record<string, string>>;
+};
+
+/** Totals by brand, plus spend by type so gainer/loser labels can show the driver. */
+export function aggregateBrandSpendBreakdown(
+  data: Array<{
+    brandName?: string;
+    type?: string;
+    team?: string;
+    actualSpendsInr?: unknown;
+    spendsInr?: unknown;
+  }>
+): BrandSpendBreakdown {
+  const spendMap: Record<string, number> = {};
+  const typeSpendMap: Record<string, Record<string, number>> = {};
+  const teamByType: Record<string, Record<string, string>> = {};
+
+  for (const d of data) {
+    const brand = (d.brandName || '').trim();
+    if (!brand) continue;
+    const type = normalizeSpendTypeLabel(d.type);
+    const val = rowSpendAmount(d);
+    spendMap[brand] = (spendMap[brand] || 0) + val;
+    if (!typeSpendMap[brand]) typeSpendMap[brand] = {};
+    typeSpendMap[brand][type] = (typeSpendMap[brand][type] || 0) + val;
+    if (!teamByType[brand]) teamByType[brand] = {};
+    if (!teamByType[brand][type] && d.team) teamByType[brand][type] = d.team;
+  }
+
+  return { spendMap, typeSpendMap, teamByType };
+}
+
+/**
+ * Spend type that moved the most in the same direction as the brand's period change.
+ * Example: Myntra is a loser because Marketplace dropped more than Performance rose.
+ */
+export function dominantImpactSpendType(
+  currByType: Record<string, number> | undefined,
+  prevByType: Record<string, number> | undefined,
+  brandDelta: number,
+): string {
+  const curr = currByType || {};
+  const prev = prevByType || {};
+  const types = Array.from(new Set([...Object.keys(curr), ...Object.keys(prev)]));
+  if (types.length === 0) return 'PERFORMANCE';
+  if (types.length === 1) return types[0];
+
+  const wantGain = brandDelta >= 0;
+  let bestType = types[0];
+  let bestAligned = -Infinity;
+  for (const type of types) {
+    const delta = (curr[type] || 0) - (prev[type] || 0);
+    const aligned = wantGain ? delta : -delta;
+    if (aligned > bestAligned) {
+      bestAligned = aligned;
+      bestType = type;
+    }
+  }
+  if (bestAligned > 0) return bestType;
+
+  let fallback = types[0];
+  let maxVol = -1;
+  for (const type of types) {
+    const vol = Math.abs(curr[type] || 0) + Math.abs(prev[type] || 0);
+    if (vol > maxVol) {
+      maxVol = vol;
+      fallback = type;
+    }
+  }
+  return fallback;
+}
