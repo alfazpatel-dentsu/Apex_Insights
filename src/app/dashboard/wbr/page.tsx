@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { where } from 'firebase/firestore';
+import { SendMomButton } from './send-mom-dialog';
 
 const RAG_COLORS = {
   Green: 'bg-success text-success-foreground hover:bg-success/80',
@@ -184,6 +185,7 @@ function WbrPageContent() {
             <div className="px-6 font-black text-sm uppercase tracking-widest text-foreground min-w-[180px] text-center flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" />{format(currentWbrDate, "dd MMM yyyy")}</div>
             <Button variant="ghost" size="icon" className="h-10 w-10 rounded-none" onClick={() => setCurrentWbrDate(addWeeks(currentWbrDate, 1))}><ChevronRight className="h-5 w-5" /></Button>
           </div>
+          <SendMomButton wbrDate={currentWbrDate} />
           <Button variant="outline" className="h-14 px-6 rounded-3xl glass gap-2 font-bold shadow-lg" onClick={handleExport}><FileSpreadsheet className="h-5 w-5 text-primary" /> Export</Button>
           <div className={cn("flex items-center gap-2 px-6 h-14 rounded-3xl border shadow-lg", isWindowOpen ? "bg-success/10 border-success/20 text-success" : "bg-destructive/10 border-destructive/20 text-destructive")}>{isWindowOpen ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}<span className="text-xs font-black uppercase tracking-widest">{isWindowOpen ? 'Edit Window Open' : 'Historical Lock Active'}</span></div>
         </div>
