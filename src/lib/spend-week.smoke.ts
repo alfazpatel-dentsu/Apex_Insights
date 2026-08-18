@@ -4,8 +4,10 @@
  */
 import {
   aggregateSpendByWeekStart,
+  aggregateBrandSpendBreakdown,
   buildChannelSpendPulse,
   buildWowSpendsTrend,
+  dominantImpactSpendType,
   formatLatestWeekDateLabel,
   parseSpendWeekDate,
   resolveWowWeekPair,
@@ -114,5 +116,21 @@ assert(spendWeekStartKey(ts) === '2026-08-10', `timestamp week ${spendWeekStartK
 assert(spendWeekStartKey('10 Aug 2026') === '2026-08-10', 'dd MMM yyyy');
 assert(spendWeekStartKey('10/8/2026') === '2026-08-10', 'd/M/yyyy');
 assert(spendWeekStartKey('2026-08-10T00:00:00.000Z') === '2026-08-10', 'iso utc midnight');
+
+// Croma WoW: Performance rupee lift > Branding even though Branding % is larger
+const cromaCurr = aggregateBrandSpendBreakdown([
+  { brandName: 'Croma', type: 'Branding', spendsInr: 1_027_272 },
+  { brandName: 'Croma', type: 'Performance', spendsInr: 13_262_645 },
+]);
+const cromaPrev = aggregateBrandSpendBreakdown([
+  { brandName: 'Croma', type: 'Branding', spendsInr: 229_926 },
+  { brandName: 'Croma', type: 'Performance', spendsInr: 10_946_023 },
+]);
+const cromaDelta = cromaCurr.spendMap.Croma - cromaPrev.spendMap.Croma;
+assert(cromaDelta === 2_316_622 + 797_346, `croma delta ${cromaDelta}`);
+assert(
+  dominantImpactSpendType(cromaCurr.typeSpendMap.Croma, cromaPrev.typeSpendMap.Croma, cromaDelta) === 'Performance',
+  'Croma gainer label must be Performance by rupee delta, not Branding %'
+);
 
 console.log('spend-week.smoke.ts: OK');
