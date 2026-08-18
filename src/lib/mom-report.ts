@@ -52,6 +52,31 @@ import {
 /** Same large-account exclusion as Snapshot 12-Week Momentum. */
 export const MOM_EXCLUDE_CLIENT_IDS = new Set(['CLID0081', 'CLID0084']);
 
+/** Public Control Center URL used in MoM hyperlinks (never localhost). */
+export const PUBLIC_APP_ORIGIN = 'https://azteccontrolcenter.dentsu.com';
+
+export function resolveMomOrigin(candidate?: string | null): string {
+  const fallback = PUBLIC_APP_ORIGIN;
+  const raw = (candidate || '').trim();
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal')
+    ) {
+      return fallback;
+    }
+    return `${url.protocol}//${url.host}`.replace(/\/$/, '');
+  } catch {
+    return fallback;
+  }
+}
+
 const PAGE = 400;
 const ACTION_BOARD_STATUSES: ActionStatus[] = [
   'Work-In Progress',
@@ -379,7 +404,7 @@ function noteFromAction(a: ActionItem & { id: string }): MomActionNote {
 export async function assembleMomReport(
   db: Firestore,
   wbrDate: Date,
-  origin: string
+  _origin?: string
 ): Promise<MomReportData> {
   const wbrDateKey = format(wbrDate, 'yyyy-MM-dd');
   const wbrDateLabel = format(wbrDate, 'dd MMM yyyy');
@@ -533,7 +558,7 @@ export async function assembleMomReport(
   return {
     wbrDate: wbrDateKey,
     wbrDateLabel,
-    origin: origin.replace(/\/$/, ''),
+    origin: PUBLIC_APP_ORIGIN,
     pulse: {
       weeklyDate: weeklyDateLabel,
       weeklyTotal: Object.values(currWData.spendMap).reduce((s, n) => s + n, 0),
@@ -713,11 +738,10 @@ export function buildMomHtml(data: MomReportData): string {
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AZTEC Weekly MoM · ${esc(data.wbrDateLabel)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+  <!-- Charts and bars are HTML tables (no hosted images). Dashboard links use ${esc(PUBLIC_APP_ORIGIN)}. -->
   <style>
     body, table, td, a, p, div, h1, h2, h3, span {
       font-family: ${FONT_STACK};
@@ -934,19 +958,54 @@ export function buildMomHtml(data: MomReportData): string {
 export function momPlainText(data: MomReportData): string {
   return [
     `AZTEC Weekly MoM — ${data.wbrDateLabel}`,
-    '',
     `Weekly Pulse (${data.pulse.weeklyDate}): ${formatInrCompact(data.pulse.weeklyTotal)}`,
-    `Open the downloaded HTML file and paste into Outlook (Insert → Attach File, or open the HTML and copy).`,
     '',
-    `Snapshot: ${data.origin}/dashboard/business-snapshot`,
-    `Action Board: ${data.origin}/dashboard/actions`,
-    `WBR: ${data.origin}/dashboard/wbr?date=${data.wbrDate}`,
+    'This is a text fallback. Open the .eml file to send the formatted HTML MoM in Outlook.',
+    '',
+    `Snapshot: ${PUBLIC_APP_ORIGIN}/dashboard/business-snapshot`,
+    `Action Board: ${PUBLIC_APP_ORIGIN}/dashboard/actions`,
+    `WBR: ${PUBLIC_APP_ORIGIN}/dashboard/wbr?date=${data.wbrDate}`,
   ].join('\n');
+}
+
+function rfc2047Subject(subject: string) {
+  if (/^[\x20-\x7E]*$/.test(subject)) return subject;
+  const bytes = new TextEncoder().encode(subject);
+  let binary = '';
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  return `=?UTF-8?B?${btoa(binary)}?=`;
+}
+
+export function buildMomEml(opts: { to?: string; subject: string; html: string }) {
+  const to = (opts.to || '')
+    .split(/[;,]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(', ');
+  const lines = [
+    'X-Unsent: 1',
+    to ? `To: ${to}` : 'To: ',
+    `Subject: ${rfc2047Subject(opts.subject)}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    opts.html.replace(/\r?\n/g, '\r\n'),
+  ];
+  return lines.join('\r\n');
 }
 
 export function downloadMomHtml(html: string, wbrDateKey: string) {
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   saveAs(blob, `Aztec_Weekly_MoM_${wbrDateKey}.html`);
+}
+
+export function downloadMomEml(html: string, wbrDateKey: string, subject: string, to = '') {
+  const eml = buildMomEml({ to, subject, html });
+  const blob = new Blob([eml], { type: 'message/rfc822;charset=utf-8' });
+  saveAs(blob, `Aztec_Weekly_MoM_${wbrDateKey}.eml`);
 }
 
 export async function copyMomHtml(html: string, plain: string) {

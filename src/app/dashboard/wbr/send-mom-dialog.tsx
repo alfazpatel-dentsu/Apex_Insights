@@ -23,9 +23,10 @@ import {
   buildMomHtml,
   copyMomHtml,
   downloadMomHtml,
+  downloadMomEml,
   exportMomPdf,
   momPlainText,
-  openMomMailto,
+  PUBLIC_APP_ORIGIN,
   type MomReportData,
 } from '@/lib/mom-report';
 
@@ -56,8 +57,7 @@ export function SendMomDialog({
     setData(null);
     setHtml('');
 
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    assembleMomReport(firestore, wbrDate, origin)
+    assembleMomReport(firestore, wbrDate)
       .then((report) => {
         if (cancelled) return;
         setData(report);
@@ -78,8 +78,8 @@ export function SendMomDialog({
   }, [open, firestore, wbrKey]);
 
   const subject = useMemo(
-    () => `AZTEC Weekly Review MoM — ${data?.wbrDateLabel || format(wbrDate, 'dd MMM yyyy')}`,
-    [data?.wbrDateLabel, wbrDate]
+    () => `Weekly Business Review : ${format(wbrDate, 'do MMM yyyy')}-MoM`,
+    [wbrDate]
   );
 
   const run = async (kind: 'html' | 'pdf' | 'copy' | 'send', fn: () => Promise<void> | void) => {
@@ -101,7 +101,7 @@ export function SendMomDialog({
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-ink pr-12">
           <DialogTitle className="uppercase tracking-tight">Send meeting MoM</DialogTitle>
           <DialogDescription>
-            HTML pack for the {format(wbrDate, 'dd MMM yyyy')} weekly review. Download and paste or attach in Outlook — there is no mail server on this app.
+            Formatted HTML for the {format(wbrDate, 'dd MMM yyyy')} weekly review. Pulse charts are HTML tables — nothing is hosted as an image. Dashboard links always point to {PUBLIC_APP_ORIGIN}.
           </DialogDescription>
         </DialogHeader>
 
@@ -154,7 +154,7 @@ export function SendMomDialog({
 
         <DialogFooter className="px-6 py-4 border-t border-ink gap-2 sm:justify-between flex-wrap">
           <p className="text-[10px] uppercase tracking-widest text-secondary font-bold mr-auto">
-            Paste HTML into Outlook or attach the downloaded file
+            Open the .eml in Outlook to send the formatted pack
           </p>
           <Button
             variant="outline"
@@ -200,9 +200,8 @@ export function SendMomDialog({
             disabled={!html || !!busy}
             onClick={() =>
               run('send', () => {
-                downloadMomHtml(html, data!.wbrDate);
-                openMomMailto(to, subject, momPlainText(data!));
-                toast.success('HTML downloaded and Outlook compose opened');
+                downloadMomEml(html, data!.wbrDate, subject, to);
+                toast.success('Outlook draft downloaded — open the .eml file to send');
               })
             }
           >
