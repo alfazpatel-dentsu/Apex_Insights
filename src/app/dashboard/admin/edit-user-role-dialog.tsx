@@ -51,6 +51,7 @@ const pageOptions = [
   { id: 'forecast', label: 'Spends Forecast' },
   { id: 'wbr', label: 'Weekly Review' },
   { id: 'actions', label: 'Action Items' },
+  { id: 'automations', label: 'Automations' },
   { id: 'admin', label: 'Administration' },
 ];
 

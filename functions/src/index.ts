@@ -22,6 +22,13 @@ import {
 
 initializeApp();
 
+export {
+  onActionItemEmailAutomations,
+  onUserEmailAutomations,
+  sweepOverdueActionItemEmails,
+  sendTestAlertEmail,
+} from "./email/triggers";
+
 const sheetsSpreadsheetId = defineString("SHEETS_SPREADSHEET_ID", {
   default: "1NnLAuCjA4ZeaH116jzbVVajkYX3lytxbZVxOGocLWSs",
   description: "Google Sheet ID from the spreadsheet URL",
