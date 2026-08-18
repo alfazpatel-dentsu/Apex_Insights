@@ -154,10 +154,96 @@ function esc(value: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-function nl(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return '<span style="color:#9ca3af;font-style:italic;">Not captured this week.</span>';
-  return esc(trimmed).replace(/\n/g, '<br/>');
+const FONT_STACK = "'DM Sans','Segoe UI',Calibri,'Helvetica Neue',Arial,sans-serif";
+const FONT_STYLE = `font-family:${FONT_STACK};`;
+
+const SKIP_NOTE = /^(n\/?a|na|none|nil|null|-|—|–|\.|tbd|todo|same as last week|no comments?|not captured.*)$/i;
+
+/** Split messy WBR notes into short, comparable bullets. */
+export function notesToBullets(text: string, limit = 4): string[] {
+  const raw = String(text || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[•●■►▪◦‣∙]/g, '\n')
+    .replace(/\n[-–—*]\s+/g, '\n')
+    .replace(/(?:^|\n)\s*(?:\d+[.)]|[A-Za-z][.)])\s+/g, '\n')
+    .replace(/\s+[;|]\s+/g, '\n')
+    .trim();
+  if (!raw) return [];
+
+  const chunks: string[] = [];
+  for (const line of raw.split(/\n+/)) {
+    const piece = line.replace(/\s+/g, ' ').trim();
+    if (!piece) continue;
+    if (piece.length <= 180) {
+      chunks.push(piece);
+      continue;
+    }
+    const sentences: string[] = [];
+    let buf = '';
+    for (const part of piece.split(/([.!?]\s+)/)) {
+      buf += part;
+      if (/[.!?]\s+$/.test(part) && buf.trim()) {
+        sentences.push(buf.trim());
+        buf = '';
+      }
+    }
+    if (buf.trim()) sentences.push(buf.trim());
+    if (sentences.length > 1) chunks.push(...sentences);
+    else chunks.push(piece);
+  }
+
+  const seen = new Set<string>();
+  const bullets: string[] = [];
+  for (const chunk of chunks) {
+    let item = chunk.replace(/^[-–—*•]+\s*/, '').replace(/\s+/g, ' ').trim();
+    item = item.replace(/^["'“”]+|["'“”]+$/g, '').trim();
+    if (!item || SKIP_NOTE.test(item)) continue;
+    if (item.length < 3) continue;
+    item = item.charAt(0).toUpperCase() + item.slice(1);
+    if (!/[.!?]$/.test(item) && item.length > 40) item = `${item}.`;
+    const key = item.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    bullets.push(item);
+    if (bullets.length >= limit) break;
+  }
+  return bullets;
+}
+
+function bulletListHtml(items: string[]): string {
+  if (!items.length) return '';
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${FONT_STYLE}">
+    ${items
+      .map(
+        (item) => `<tr>
+      <td valign="top" width="16" style="width:16px;padding:3px 0 3px 0;color:#002FA7;font-size:15px;line-height:1.45;${FONT_STYLE}">•</td>
+      <td valign="top" style="padding:3px 0;font-size:13.5px;line-height:1.5;color:#1f2937;${FONT_STYLE}">${esc(item)}</td>
+    </tr>`
+      )
+      .join('')}
+  </table>`;
+}
+
+function labeledBullets(label: string, items: string[]): string {
+  if (!items.length) return '';
+  return `<div style="margin-top:12px;">
+    <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin-bottom:6px;${FONT_STYLE}">${esc(label)}</div>
+    ${bulletListHtml(items)}
+  </div>`;
+}
+
+function unifiedRiskBody(client: MomRiskClient): string {
+  const performance = notesToBullets(client.performanceSummary, 4);
+  const account = notesToBullets(client.csmComments, 4);
+  const challenges = notesToBullets(client.executiveSummary, 4);
+  const body = [
+    labeledBullets('Performance', performance),
+    labeledBullets('Account & engagement', account),
+    labeledBullets('Challenges & outlook', challenges),
+  ].join('');
+  if (body.trim()) return body;
+  return `<p style="font-size:13px;color:#6b7280;margin:12px 0 0;${FONT_STYLE}">No usable notes this cycle.</p>`;
 }
 
 function parseWhen(raw?: string | null): Date | null {
@@ -547,20 +633,21 @@ function actionBar(count: number, max: number, color: string) {
 
 function actionListHtml(items: MomActionNote[], empty: string) {
   if (!items.length) {
-    return `<p style="font-size:13px;color:#6b7280;">${esc(empty)}</p>`;
+    return `<p style="font-size:13.5px;color:#6b7280;${FONT_STYLE}">${esc(empty)}</p>`;
   }
   return items
     .slice(0, 20)
     .map((item) => {
       const when = parseWhen(item.updatedAt);
       const whenLabel = when ? format(when, 'dd MMM yyyy') : '—';
+      const notes = notesToBullets(item.comment, 3);
       return `<tr>
-        <td style="border-bottom:1px solid #ececec;padding:10px 8px 10px 0;vertical-align:top;">
-          <div style="font-size:13px;font-weight:700;color:#111;">${esc(item.taskName)}</div>
-          <div style="font-size:11px;color:#6b7280;margin-top:3px;">${esc(item.clientName)} · ${esc(item.assignedTo)} · ${esc(item.status)}</div>
-          ${item.comment ? `<div style="font-size:12px;color:#374151;margin-top:6px;">${esc(item.comment)}</div>` : ''}
+        <td style="border-bottom:1px solid #ececec;padding:12px 8px 12px 0;vertical-align:top;${FONT_STYLE}">
+          <div style="font-size:14px;font-weight:600;color:#111;${FONT_STYLE}">${esc(item.taskName)}</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:3px;${FONT_STYLE}">${esc(item.clientName)} · ${esc(item.assignedTo)} · ${esc(item.status)}</div>
+          ${notes.length ? `<div style="margin-top:8px;">${bulletListHtml(notes)}</div>` : ''}
         </td>
-        <td style="border-bottom:1px solid #ececec;padding:10px 0;vertical-align:top;text-align:right;white-space:nowrap;font-size:11px;color:#6b7280;">${esc(whenLabel)}</td>
+        <td style="border-bottom:1px solid #ececec;padding:12px 0;vertical-align:top;text-align:right;white-space:nowrap;font-size:12px;color:#6b7280;${FONT_STYLE}">${esc(whenLabel)}</td>
       </tr>`;
     })
     .join('');
@@ -602,39 +689,25 @@ export function buildMomHtml(data: MomReportData): string {
   const riskBlocks = data.riskClients.length
     ? data.riskClients
         .map((c) => {
-          const narrativeParts = [
-            c.csmComments
-              ? `<div style="margin-top:10px;"><div style="font-size:10px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#6b7280;">CSM Comments</div><div style="font-size:13px;line-height:1.55;color:#1f2937;margin-top:4px;">${nl(c.csmComments)}</div></div>`
-              : '',
-            c.performanceSummary
-              ? `<div style="margin-top:10px;"><div style="font-size:10px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#6b7280;">Performance Summary</div><div style="font-size:13px;line-height:1.55;color:#1f2937;margin-top:4px;">${nl(c.performanceSummary)}</div></div>`
-              : '',
-            c.executiveSummary
-              ? `<div style="margin-top:10px;"><div style="font-size:10px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#6b7280;">Executive Summary &amp; challenges</div><div style="font-size:13px;line-height:1.55;color:#1f2937;margin-top:4px;">${nl(c.executiveSummary)}</div></div>`
-              : '',
-          ].filter(Boolean);
-          const body = narrativeParts.length
-            ? narrativeParts.join('')
-            : `<p style="font-size:13px;color:#6b7280;margin:12px 0 0;">No CSM comments, performance summary, or executive challenges were logged for this cycle.</p>`;
-          return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;border:1px solid #111;background:#fff;">
+          return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;border:1px solid #e5e7eb;background:#fff;${FONT_STYLE}">
             <tr>
-              <td style="padding:16px 18px;">
-                <table role="presentation" width="100%"><tr>
+              <td style="padding:16px 18px;${FONT_STYLE}">
+                <table role="presentation" width="100%" style="${FONT_STYLE}"><tr>
                   <td>
-                    <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#6b7280;font-weight:800;">${esc(c.cluster)} · ${esc(c.emcsm)}</div>
-                    <div style="font-size:18px;font-weight:900;letter-spacing:-0.03em;text-transform:uppercase;color:#111;margin-top:4px;">${esc(c.clientName)}</div>
+                    <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;font-weight:600;${FONT_STYLE}">${esc(c.cluster)} · ${esc(c.emcsm)}</div>
+                    <div style="font-size:17px;font-weight:700;letter-spacing:-0.02em;color:#111;margin-top:4px;${FONT_STYLE}">${esc(c.clientName)}</div>
                   </td>
                   <td align="right" style="white-space:nowrap;">
-                    <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">P ${ragBadge(c.performanceRag)} &nbsp; E ${ragBadge(c.engagementRag)}</div>
+                    <div style="font-size:11px;color:#6b7280;margin-bottom:6px;${FONT_STYLE}">P ${ragBadge(c.performanceRag)} &nbsp; E ${ragBadge(c.engagementRag)}</div>
                   </td>
                 </tr></table>
-                ${body}
+                ${unifiedRiskBody(c)}
               </td>
             </tr>
           </table>`;
         })
         .join('')
-    : `<p style="font-size:13px;color:#6b7280;">No Amber or Red clients on Performance or Engagement for this WBR cycle.</p>`;
+    : `<p style="font-size:13.5px;color:#6b7280;${FONT_STYLE}">No Amber or Red clients on Performance or Engagement for this WBR cycle.</p>`;
 
   return `<!DOCTYPE html>
 <html>
@@ -642,15 +715,24 @@ export function buildMomHtml(data: MomReportData): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AZTEC Weekly MoM · ${esc(data.wbrDateLabel)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+  <style>
+    body, table, td, a, p, div, h1, h2, h3, span {
+      font-family: ${FONT_STACK};
+    }
+    h1, h2 { font-weight: 700; letter-spacing: -0.03em; }
+  </style>
 </head>
-<body style="margin:0;padding:0;background:#F4F4F0;font-family:Arial,Helvetica,sans-serif;color:#111;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F4F0;">
-    <tr><td align="center" style="padding:24px 12px;">
-      <table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:720px;max-width:720px;background:#F4F4F0;">
-        <tr><td style="padding:8px 4px 20px;">
-          <div style="font-size:11px;font-weight:800;letter-spacing:0.22em;text-transform:uppercase;color:#002FA7;">AZTEC Control Center · Weekly Review</div>
-          <h1 style="margin:8px 0 6px;font-size:28px;letter-spacing:-0.04em;text-transform:uppercase;">Meeting MoM</h1>
-          <div style="font-size:13px;color:#525252;">WBR cycle ${esc(data.wbrDateLabel)} · HTML pack for Outlook</div>
+<body style="margin:0;padding:0;background:#F4F4F0;color:#111;${FONT_STYLE}">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F4F0;${FONT_STYLE}">
+    <tr><td align="center" style="padding:24px 12px;${FONT_STYLE}">
+      <table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:720px;max-width:720px;background:#F4F4F0;${FONT_STYLE}">
+        <tr><td style="padding:8px 4px 20px;${FONT_STYLE}">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:#002FA7;${FONT_STYLE}">AZTEC Control Center · Weekly Review</div>
+          <h1 style="margin:10px 0 6px;font-size:30px;font-weight:700;letter-spacing:-0.03em;${FONT_STYLE}">Weekly meeting MoM</h1>
+          <div style="font-size:14px;color:#525252;${FONT_STYLE}">WBR cycle ${esc(data.wbrDateLabel)}</div>
         </td></tr>
 
         <tr><td style="padding:0 0 20px;">
@@ -682,9 +764,9 @@ export function buildMomHtml(data: MomReportData): string {
         <tr><td style="padding:0 0 20px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;">
             <tr><td style="padding:22px 24px 10px;">
-              <div style="font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#525252;">Weekly spends pulse</div>
-              <h2 style="margin:6px 0 4px;font-size:22px;letter-spacing:-0.04em;text-transform:uppercase;">Week on Week Spends Trend</h2>
-              <p style="margin:0 0 16px;font-size:12px;color:#525252;">Last 12 weeks of uploaded spends. Inclusive series keeps OLA &amp; Myntra; exclusive series removes them (same rule as Snapshot).</p>
+              <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#525252;${FONT_STYLE}">Weekly spends pulse</div>
+              <h2 style="margin:6px 0 4px;font-size:22px;font-weight:700;letter-spacing:-0.03em;${FONT_STYLE}">Week on week spends trend</h2>
+              <p style="margin:0 0 16px;font-size:13px;color:#525252;line-height:1.45;${FONT_STYLE}">Last 12 weeks of uploaded spends. Inclusive series keeps OLA &amp; Myntra; exclusive series removes them (same rule as Snapshot).</p>
               <div style="font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#002FA7;margin-bottom:8px;">Including OLA &amp; Myntra</div>
               ${barChartHtml(data.wowInclusive, '#D92218')}
               <div style="height:22px;"></div>
@@ -699,11 +781,11 @@ export function buildMomHtml(data: MomReportData): string {
             <tr><td style="padding:22px 24px 8px;background:#F4F4F0;border-bottom:1px solid #111;">
               <table role="presentation" width="100%"><tr>
                 <td>
-                  <div style="font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#525252;">Portfolio Intelligence</div>
-                  <h2 style="margin:6px 0 4px;font-size:22px;letter-spacing:-0.04em;text-transform:uppercase;">
-                    <a href="${esc(healthHref)}" style="color:#111;text-decoration:none;">Client Health Board ↗</a>
+                  <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#525252;${FONT_STYLE}">Portfolio Intelligence</div>
+                  <h2 style="margin:6px 0 4px;font-size:22px;font-weight:700;letter-spacing:-0.03em;${FONT_STYLE}">
+                    <a href="${esc(healthHref)}" style="color:#111;text-decoration:none;${FONT_STYLE}">Client Health Board ↗</a>
                   </h2>
-                  <p style="margin:0;font-size:12px;color:#525252;max-width:460px;">Designated Primary KPI MTD sets the path (same formula as KPI Tracker). Performance &amp; Engagement RAG reflect the current WBR week.</p>
+                  <p style="margin:0;font-size:13px;color:#525252;max-width:460px;line-height:1.45;${FONT_STYLE}">Designated Primary KPI MTD sets the path (same formula as KPI Tracker). Performance &amp; Engagement RAG reflect the current WBR week.</p>
                 </td>
                 <td align="right" valign="top" style="white-space:nowrap;font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#525252;">
                   <div style="background:#fff;border:1px solid #e5e5e5;padding:6px 10px;margin-bottom:6px;">WBR CYCLE: ${esc(data.wbrDateLabel.toUpperCase())}</div>
@@ -773,13 +855,28 @@ export function buildMomHtml(data: MomReportData): string {
         </td></tr>
 
         <tr><td style="padding:0 0 20px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;">
-            <tr><td style="padding:22px 24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;${FONT_STYLE}">
+            <tr><td style="padding:22px 24px;${FONT_STYLE}">
+              <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#525252;${FONT_STYLE}">Risk review</div>
+              <h2 style="margin:6px 0 8px;font-size:22px;font-weight:700;letter-spacing:-0.03em;${FONT_STYLE}">Amber &amp; Red client summary</h2>
+              <p style="font-size:14px;line-height:1.5;color:#374151;margin:0 0 16px;${FONT_STYLE}">
+                ${data.riskClients.length
+                  ? `${data.riskClients.length} account${data.riskClients.length === 1 ? '' : 's'} need attention this cycle (${redCount} Red, ${amberCount} Amber on Performance and/or Engagement). Notes are rewritten into a common bullet format from CSM comments, performance summary, and executive summary &amp; challenges.`
+                  : 'No Amber or Red accounts on this WBR cycle.'}
+              </p>
+              ${riskBlocks}
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:0 0 20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;${FONT_STYLE}">
+            <tr><td style="padding:22px 24px;${FONT_STYLE}">
               <table role="presentation" width="100%"><tr>
                 <td>
-                  <div style="font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#9ca3af;">Accountability Pulse</div>
-                  <h2 style="margin:6px 0 0;font-size:22px;letter-spacing:-0.04em;text-transform:uppercase;">
-                    <a href="${esc(actionsHref)}" style="color:#111;text-decoration:none;">Action Board ↗</a>
+                  <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#9ca3af;${FONT_STYLE}">Accountability Pulse</div>
+                  <h2 style="margin:6px 0 0;font-size:22px;font-weight:700;letter-spacing:-0.03em;${FONT_STYLE}">
+                    <a href="${esc(actionsHref)}" style="color:#111;text-decoration:none;${FONT_STYLE}">Action Board ↗</a>
                   </h2>
                 </td>
               </tr></table>
@@ -787,19 +884,19 @@ export function buildMomHtml(data: MomReportData): string {
                 .map((row) => {
                   const color = ACTION_COLORS[row.status];
                   const countColor = row.status === 'Overdue' && row.count > 0 ? '#FF3B30' : '#525252';
-                  return `<table role="presentation" width="100%" style="margin-top:14px;"><tr>
-                    <td style="font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;">${esc(row.status)}</td>
-                    <td align="right" style="font-size:12px;font-weight:800;color:${countColor};">${row.count}</td>
+                  return `<table role="presentation" width="100%" style="margin-top:14px;${FONT_STYLE}"><tr>
+                    <td style="font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;${FONT_STYLE}">${esc(row.status)}</td>
+                    <td align="right" style="font-size:13px;font-weight:700;color:${countColor};${FONT_STYLE}">${row.count}</td>
                   </tr>
                   <tr><td colspan="2" style="padding-top:6px;">${actionBar(row.count, maxAction, color)}</td></tr>
                   </table>`;
                 })
                 .join('')}
-              <table role="presentation" style="margin-top:18px;"><tr>
+              <table role="presentation" style="margin-top:18px;${FONT_STYLE}"><tr>
                 ${data.actionBoard
                   .map(
                     (row) =>
-                      `<td style="padding-right:14px;font-size:9px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;">
+                      `<td style="padding-right:14px;font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;${FONT_STYLE}">
                         <span style="display:inline-block;width:8px;height:8px;background:${ACTION_COLORS[row.status]};margin-right:6px;"></span>${esc(row.status)}
                       </td>`
                   )
@@ -809,31 +906,16 @@ export function buildMomHtml(data: MomReportData): string {
           </table>
         </td></tr>
 
-        <tr><td style="padding:0 0 20px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;">
-            <tr><td style="padding:22px 24px;">
-              <div style="font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#525252;">Risk review</div>
-              <h2 style="margin:6px 0 8px;font-size:22px;letter-spacing:-0.04em;text-transform:uppercase;">Amber &amp; Red client summary</h2>
-              <p style="font-size:13px;line-height:1.55;color:#374151;margin:0 0 16px;">
-                ${data.riskClients.length
-                  ? `${data.riskClients.length} account${data.riskClients.length === 1 ? '' : 's'} need attention this cycle (${redCount} Red, ${amberCount} Amber on Performance and/or Engagement). Notes below are compiled from CSM Comments, Performance Summary, and Executive Summary &amp; challenges.`
-                  : 'No Amber or Red accounts on this WBR cycle.'}
-              </p>
-              ${riskBlocks}
-            </td></tr>
-          </table>
-        </td></tr>
-
         <tr><td style="padding:0 0 8px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;">
-            <tr><td style="padding:22px 24px;">
-              <div style="font-size:11px;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#525252;">Action items since last cycle</div>
-              <h2 style="margin:6px 0 4px;font-size:22px;letter-spacing:-0.04em;text-transform:uppercase;">Closed &amp; updated work</h2>
-              <p style="font-size:12px;color:#525252;margin:0 0 16px;">Window: ${esc(format(startOfDay(subWeeks(parse(data.wbrDate, 'yyyy-MM-dd', new Date()), 1)), 'dd MMM'))} – ${esc(data.wbrDateLabel)}.</p>
-              <div style="font-size:12px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#00A675;margin-bottom:8px;">Closed this cycle (${data.closedActions.length})</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;${FONT_STYLE}">
+            <tr><td style="padding:22px 24px;${FONT_STYLE}">
+              <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#525252;${FONT_STYLE}">Action items since last cycle</div>
+              <h2 style="margin:6px 0 4px;font-size:22px;font-weight:700;letter-spacing:-0.03em;${FONT_STYLE}">Closed &amp; updated work</h2>
+              <p style="font-size:13px;color:#525252;margin:0 0 16px;${FONT_STYLE}">Window: ${esc(format(startOfDay(subWeeks(parse(data.wbrDate, 'yyyy-MM-dd', new Date()), 1)), 'dd MMM'))} – ${esc(data.wbrDateLabel)}.</p>
+              <div style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#00A675;margin-bottom:8px;${FONT_STYLE}">Closed this cycle (${data.closedActions.length})</div>
               <table role="presentation" width="100%">${actionListHtml(data.closedActions, 'No action items were marked completed in this window.')}</table>
               <div style="height:18px;"></div>
-              <div style="font-size:12px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#002FA7;margin-bottom:8px;">Updated this cycle (${data.updatedActions.length})</div>
+              <div style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#002FA7;margin-bottom:8px;${FONT_STYLE}">Updated this cycle (${data.updatedActions.length})</div>
               <table role="presentation" width="100%">${actionListHtml(data.updatedActions, 'No other action items were updated in this window.')}</table>
             </td></tr>
           </table>
