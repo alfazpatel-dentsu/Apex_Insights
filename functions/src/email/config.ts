@@ -36,18 +36,35 @@ export const APP_BASE_URL = defineString("APP_BASE_URL", {
 });
 
 export type EmailAutomationKey =
-  | "taskOverdue"
-  | "taskAssigned"
-  | "accessGranted"
+  | "accessAwaiting"
   | "accessRequested"
+  | "accessGranted"
+  | "taskAssigned"
+  | "taskDueSoon"
+  | "taskOverdue"
+  | "taskOverdueDaily"
   | "passwordReset"
   | "userInvited";
+
+export const DEFAULT_CC_ENABLED: Record<EmailAutomationKey, boolean> = {
+  accessAwaiting: true,
+  accessRequested: true,
+  accessGranted: true,
+  taskAssigned: true,
+  taskDueSoon: true,
+  taskOverdue: true,
+  taskOverdueDaily: true,
+  passwordReset: false,
+  userInvited: false,
+};
 
 export interface EmailAutomationSettings {
   fromEmail: string;
   fromName: string;
   appBaseUrl: string;
   teamsWebhookUrl: string;
+  defaultCcEmails: string[];
+  ccEnabled: Record<EmailAutomationKey, boolean>;
   enabled: Record<EmailAutomationKey, boolean>;
 }
 
@@ -56,11 +73,16 @@ export const DEFAULT_EMAIL_AUTOMATIONS: EmailAutomationSettings = {
   fromName: "AZTEC Alerts",
   appBaseUrl: "https://azteccontrolcenter.dentsu.com",
   teamsWebhookUrl: "",
+  defaultCcEmails: [],
+  ccEnabled: {...DEFAULT_CC_ENABLED},
   enabled: {
-    taskOverdue: true,
-    taskAssigned: true,
-    accessGranted: true,
+    accessAwaiting: true,
     accessRequested: true,
+    accessGranted: true,
+    taskAssigned: true,
+    taskDueSoon: true,
+    taskOverdue: true,
+    taskOverdueDaily: true,
     passwordReset: true,
     userInvited: true,
   },
@@ -79,6 +101,8 @@ export async function loadEmailAutomationSettings(): Promise<EmailAutomationSett
       ""
     ),
     enabled: {...DEFAULT_EMAIL_AUTOMATIONS.enabled},
+    ccEnabled: {...DEFAULT_EMAIL_AUTOMATIONS.ccEnabled},
+    defaultCcEmails: [...DEFAULT_EMAIL_AUTOMATIONS.defaultCcEmails],
   };
 
   try {
@@ -89,6 +113,15 @@ export async function loadEmailAutomationSettings(): Promise<EmailAutomationSett
       ...defaults.enabled,
       ...(typeof data.enabled === "object" && data.enabled ? data.enabled : {}),
     } as Record<EmailAutomationKey, boolean>;
+    const ccEnabled = {
+      ...defaults.ccEnabled,
+      ...(typeof data.ccEnabled === "object" && data.ccEnabled ? data.ccEnabled : {}),
+    } as Record<EmailAutomationKey, boolean>;
+    const defaultCcEmails = Array.isArray(data.defaultCcEmails)
+      ? data.defaultCcEmails
+          .map((e: unknown) => String(e || "").trim().toLowerCase())
+          .filter((e: string) => e.includes("@"))
+      : [];
     return {
       fromEmail: String(data.fromEmail || defaults.fromEmail).trim() || defaults.fromEmail,
       fromName: String(data.fromName || defaults.fromName).trim() || defaults.fromName,
@@ -97,6 +130,8 @@ export async function loadEmailAutomationSettings(): Promise<EmailAutomationSett
           .trim()
           .replace(/\/$/, "") || defaults.appBaseUrl,
       teamsWebhookUrl: String(data.teamsWebhookUrl || "").trim(),
+      defaultCcEmails: [...new Set(defaultCcEmails)],
+      ccEnabled,
       enabled,
     };
   } catch {
@@ -109,6 +144,17 @@ export function isAutomationEnabled(
   key: EmailAutomationKey
 ): boolean {
   return settings.enabled?.[key] !== false;
+}
+
+/** Password-reset links are never CCd. Other types follow Notifications settings. */
+export function ccEmailsFor(
+  settings: EmailAutomationSettings,
+  key: EmailAutomationKey
+): string[] {
+  if (key === "passwordReset") return [];
+  const allowed = settings.ccEnabled?.[key] ?? DEFAULT_CC_ENABLED[key];
+  if (!allowed) return [];
+  return (settings.defaultCcEmails || []).filter((e) => e.includes("@"));
 }
 
 export function graphCredentialsConfigured(): boolean {

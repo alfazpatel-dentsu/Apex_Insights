@@ -103,7 +103,7 @@ service cloud.firestore {
         )
         || (
           isAdmin()
-          && request.resource.data.type in ['test', 'invite', 'reset']
+          && request.resource.data.type in ['test', 'invite', 'reset', 'mom']
         );
       allow read: if isAdmin();
       allow update, delete: if false;

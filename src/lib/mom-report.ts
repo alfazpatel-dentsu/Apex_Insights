@@ -152,6 +152,21 @@ export type MomReportData = {
   updatedActions: MomActionNote[];
 };
 
+export const MOM_SECTIONS = [
+  { id: 'weeklyPulse', label: 'Weekly Pulse', hint: 'Total spend, week-on-week change, top 3 gainers and losers' },
+  { id: 'weeklySpends', label: 'Weekly Spends Pulse', hint: 'Week-on-week spends trend including and excluding OLA & Myntra' },
+  { id: 'clientHealth', label: 'Client Health Board', hint: 'On/off path primary KPI and Performance / Engagement RAG' },
+  { id: 'riskReview', label: 'Risk Review', hint: 'Amber and Red client summaries' },
+  { id: 'actionBoard', label: 'Action Board', hint: 'Open action items by status' },
+  { id: 'actionUpdates', label: 'Closed & updated actions', hint: 'Work closed or updated since last WBR cycle' },
+] as const;
+
+export type MomSectionId = (typeof MOM_SECTIONS)[number]['id'];
+
+export function defaultMomSections(): Record<MomSectionId, boolean> {
+  return Object.fromEntries(MOM_SECTIONS.map((s) => [s.id, true])) as Record<MomSectionId, boolean>;
+}
+
 function looksLikeClientId(value?: string | null, cid?: string) {
   if (!value?.trim()) return true;
   const v = value.trim();
@@ -679,7 +694,11 @@ function actionListHtml(items: MomActionNote[], empty: string) {
     .join('');
 }
 
-export function buildMomHtml(data: MomReportData): string {
+export function buildMomHtml(
+  data: MomReportData,
+  sections: Partial<Record<MomSectionId, boolean>> = defaultMomSections()
+): string {
+  const on = (id: MomSectionId) => sections[id] !== false;
   const { pulse, health, origin } = data;
   const wowDelta = pulse.weeklyTotal - pulse.prevWeeklyTotal;
   const wowPct = pulse.prevWeeklyTotal > 0 ? (wowDelta / pulse.prevWeeklyTotal) * 100 : 0;
@@ -760,7 +779,7 @@ export function buildMomHtml(data: MomReportData): string {
           <div style="font-size:14px;color:#525252;${FONT_STYLE}">WBR cycle ${esc(data.wbrDateLabel)}</div>
         </td></tr>
 
-        <tr><td style="padding:0 0 20px;">
+        ${on('weeklyPulse') ? `<tr><td style="padding:0 0 20px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;">
             <tr><td style="padding:22px 24px 8px;">
               <div style="font-size:12px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:#002FA7;">WEEKLY PULSE (${esc(pulse.weeklyDate)})</div>
@@ -784,9 +803,9 @@ export function buildMomHtml(data: MomReportData): string {
               </table>
             </td></tr>
           </table>
-        </td></tr>
+        </td></tr>` : ''}
 
-        <tr><td style="padding:0 0 20px;">
+        ${on('weeklySpends') ? `<tr><td style="padding:0 0 20px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;">
             <tr><td style="padding:22px 24px 10px;">
               <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#525252;${FONT_STYLE}">Weekly spends pulse</div>
@@ -799,9 +818,9 @@ export function buildMomHtml(data: MomReportData): string {
               ${barChartHtml(data.wowExclusive, '#002FA7')}
             </td></tr>
           </table>
-        </td></tr>
+        </td></tr>` : ''}
 
-        <tr><td style="padding:0 0 20px;">
+        ${on('clientHealth') ? `<tr><td style="padding:0 0 20px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;">
             <tr><td style="padding:22px 24px 8px;background:#F4F4F0;border-bottom:1px solid #111;">
               <table role="presentation" width="100%"><tr>
@@ -877,9 +896,9 @@ export function buildMomHtml(data: MomReportData): string {
               </table>
             </td></tr>
           </table>
-        </td></tr>
+        </td></tr>` : ''}
 
-        <tr><td style="padding:0 0 20px;">
+        ${on('riskReview') ? `<tr><td style="padding:0 0 20px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;${FONT_STYLE}">
             <tr><td style="padding:22px 24px;${FONT_STYLE}">
               <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#525252;${FONT_STYLE}">Risk review</div>
@@ -892,9 +911,9 @@ export function buildMomHtml(data: MomReportData): string {
               ${riskBlocks}
             </td></tr>
           </table>
-        </td></tr>
+        </td></tr>` : ''}
 
-        <tr><td style="padding:0 0 20px;">
+        ${on('actionBoard') ? `<tr><td style="padding:0 0 20px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;${FONT_STYLE}">
             <tr><td style="padding:22px 24px;${FONT_STYLE}">
               <table role="presentation" width="100%"><tr>
@@ -929,9 +948,9 @@ export function buildMomHtml(data: MomReportData): string {
               </tr></table>
             </td></tr>
           </table>
-        </td></tr>
+        </td></tr>` : ''}
 
-        <tr><td style="padding:0 0 8px;">
+        ${on('actionUpdates') ? `<tr><td style="padding:0 0 8px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #111;${FONT_STYLE}">
             <tr><td style="padding:22px 24px;${FONT_STYLE}">
               <div style="font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#525252;${FONT_STYLE}">Action items since last cycle</div>
@@ -944,7 +963,7 @@ export function buildMomHtml(data: MomReportData): string {
               <table role="presentation" width="100%">${actionListHtml(data.updatedActions, 'No other action items were updated in this window.')}</table>
             </td></tr>
           </table>
-        </td></tr>
+        </td></tr>` : ''}
 
         <tr><td style="padding:16px 4px 0;font-size:11px;color:#9ca3af;">
           Generated from Weekly Review · <a href="${esc(wbrHref)}" style="color:#002FA7;">Open WBR board</a> · <a href="${esc(snapshotHref)}" style="color:#002FA7;">Open Snapshot</a>

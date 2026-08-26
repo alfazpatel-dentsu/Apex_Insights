@@ -35,12 +35,19 @@ Optional Microsoft Teams channel posts use a workflow/incoming webhook URL saved
 
 | Key | Trigger | Recipient |
 |-----|---------|-----------|
-| `taskOverdue` | Action item status → `Overdue` (plus daily sweep) | Assignee |
-| `taskAssigned` | New action item or assignee change | Assignee |
-| `accessRequested` | New user with `status: Pending` | All Admin users |
+| `accessAwaiting` | New user `status: Pending` | That user |
+| `accessRequested` | New user `status: Pending` | All Admin users |
 | `accessGranted` | Pending user approved | That user |
-| `userInvited` | Admin invite (`status: Invite sent`) | Invited user (set-password link) |
-| `passwordReset` | Forgot password on the sign-in page | That user (reset link) |
+| `taskAssigned` | New action item or new assignee | Each assignee with an email |
+| `taskDueSoon` | Daily ~09:00 IST, due tomorrow | Each assignee with an email |
+| `taskOverdue` | Daily ~09:00 IST, due today | Each assignee with an email |
+| `taskOverdueDaily` | Daily ~09:00 IST, after due date | Each assignee with an email |
+| `userInvited` | Admin invite | Invited user (set-password link on `/reset-password`) |
+| `passwordReset` | Forgot password | That user only (never CC) |
+
+Default CC addresses are stored on `settings/emailAutomations.defaultCcEmails` and applied to automations that have `ccEnabled[key] === true`. Quiet action statuses **Completed**, **On-Hold**, and **Observation** skip due/overdue mail.
+
+MoM send is an admin-only Weekly Review action (`mailJobs` type `mom`), not a scheduled automation.
 
 Toggles live in Firestore `settings/emailAutomations` (UI: **Administration → Notifications**). Mail audit log: `mailLog/{dedupeKey}`.
 
