@@ -16,11 +16,18 @@ export const ACTION_ITEM_HEADERS = [
 
 export type ActionItemSheetField = (typeof ACTION_ITEM_HEADERS)[number];
 
+export interface ActionAssigneeDoc {
+  name?: string;
+  email?: string;
+  userId?: string;
+}
+
 export interface ActionItemDoc {
   id?: string;
   taskName?: string;
   description?: string;
   assignedTo?: string;
+  assignees?: ActionAssigneeDoc[];
   section?: string;
   clientId?: string;
   clientName?: string;

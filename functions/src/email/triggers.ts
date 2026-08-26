@@ -3,6 +3,7 @@ import {getFirestore} from "firebase-admin/firestore";
 import * as functions from "firebase-functions/v1";
 import {logger} from "firebase-functions";
 import {ActionItemDoc} from "../action-item-row";
+import {ActionAssignee, assigneesFromItem, newlyAddedAssignees} from "../assignees";
 import {
   isAutomationEnabled,
   loadEmailAutomationSettings,
@@ -53,6 +54,28 @@ async function generateAuthLink(email: string, continueUrl: string): Promise<str
   return getAuth().generatePasswordResetLink(email, {url: continueUrl});
 }
 
+async function resolveAssigneeContact(person: ActionAssignee): Promise<{
+  email: string | null;
+  displayName: string;
+}> {
+  const name = (person.name || "").trim();
+  const storedEmail = (person.email || "").trim().toLowerCase();
+  if (storedEmail.includes("@")) {
+    return {email: storedEmail, displayName: name || storedEmail.split("@")[0]};
+  }
+  if (person.userId) {
+    const snap = await getFirestore().collection("users").doc(person.userId).get();
+    if (snap.exists) {
+      const data = snap.data() || {};
+      const email = String(data.email || "").trim().toLowerCase();
+      const displayName = String(data.displayName || name || email).trim();
+      if (email.includes("@")) return {email, displayName};
+    }
+  }
+  if (name) return resolveUserEmail(name);
+  return {email: null, displayName: name};
+}
+
 async function notifyTaskOverdue(id: string, data: ActionItemDoc): Promise<void> {
   const settings = await loadEmailAutomationSettings();
   if (!isAutomationEnabled(settings, "taskOverdue")) {
@@ -60,72 +83,102 @@ async function notifyTaskOverdue(id: string, data: ActionItemDoc): Promise<void>
     return;
   }
 
-  const resolved = await resolveUserEmail(data.assignedTo);
-  if (!resolved.email) {
-    logger.warn("taskOverdue: could not resolve assignee email", {
-      id,
-      assignedTo: data.assignedTo,
-    });
+  const people = assigneesFromItem(data);
+  if (people.length === 0) {
+    logger.warn("taskOverdue: no assignees", {id});
     return;
   }
 
-  const content = taskOverdueEmail({
-    recipientName: resolved.displayName,
-    taskName: data.taskName || "Untitled task",
-    dueDate: data.dueDate,
-    section: data.section,
-    priority: data.priority,
-    clientName: data.clientName,
-    appBaseUrl: settings.appBaseUrl,
-  });
-
-  await sendAlertEmail({
-    to: resolved.email,
-    content,
-    settings,
-    dedupeKey: `taskOverdue_${id}_${data.dueDate || "nodate"}`,
-    meta: {type: "taskOverdue", actionItemId: id},
-    notificationType: "taskOverdue",
-    notificationHref: "/dashboard/actions",
-  });
+  let teamsPosted = false;
+  let emailed = 0;
+  for (const person of people) {
+    const resolved = await resolveAssigneeContact(person);
+    if (!resolved.email) {
+      logger.info("taskOverdue: skip assignee without email", {
+        id,
+        name: person.name,
+        userId: person.userId,
+      });
+      continue;
+    }
+    const content = taskOverdueEmail({
+      recipientName: resolved.displayName,
+      taskName: data.taskName || "Untitled task",
+      dueDate: data.dueDate,
+      section: data.section,
+      priority: data.priority,
+      clientName: data.clientName,
+      appBaseUrl: settings.appBaseUrl,
+    });
+    await sendAlertEmail({
+      to: resolved.email,
+      content,
+      settings,
+      dedupeKey: `taskOverdue_${id}_${data.dueDate || "nodate"}_${resolved.email}`,
+      meta: {type: "taskOverdue", actionItemId: id, assigneeEmail: resolved.email},
+      notificationType: "taskOverdue",
+      notificationHref: "/dashboard/actions",
+      notifyTeams: !teamsPosted,
+    });
+    teamsPosted = true;
+    emailed += 1;
+  }
+  if (emailed === 0) {
+    logger.warn("taskOverdue: no assignee emails to send", {id});
+  }
 }
 
-async function notifyTaskAssigned(id: string, data: ActionItemDoc): Promise<void> {
+async function notifyTaskAssigned(
+  id: string,
+  after: ActionItemDoc,
+  before?: ActionItemDoc
+): Promise<void> {
   const settings = await loadEmailAutomationSettings();
   if (!isAutomationEnabled(settings, "taskAssigned")) {
     logger.info("taskAssigned automation disabled", {id});
     return;
   }
 
-  const resolved = await resolveUserEmail(data.assignedTo);
-  if (!resolved.email) {
-    logger.warn("taskAssigned: could not resolve assignee email", {
-      id,
-      assignedTo: data.assignedTo,
+  const newcomers = newlyAddedAssignees(after, before);
+  if (newcomers.length === 0) return;
+
+  let teamsPosted = false;
+  let emailed = 0;
+  for (const person of newcomers) {
+    const resolved = await resolveAssigneeContact(person);
+    if (!resolved.email) {
+      logger.info("taskAssigned: skip assignee without email (can notify when email is added)", {
+        id,
+        name: person.name,
+        userId: person.userId,
+      });
+      continue;
+    }
+    const content = taskAssignedEmail({
+      recipientName: resolved.displayName,
+      taskName: after.taskName || "Untitled task",
+      dueDate: after.dueDate,
+      section: after.section,
+      priority: after.priority,
+      clientName: after.clientName,
+      appBaseUrl: settings.appBaseUrl,
     });
-    return;
+    await sendAlertEmail({
+      to: resolved.email,
+      content,
+      settings,
+      dedupeKey: `taskAssigned_${id}_${resolved.email}`,
+      meta: {type: "taskAssigned", actionItemId: id, assigneeEmail: resolved.email},
+      notificationType: "taskAssigned",
+      notificationHref: "/dashboard/actions",
+      notifyTeams: !teamsPosted,
+    });
+    teamsPosted = true;
+    emailed += 1;
   }
-
-  const content = taskAssignedEmail({
-    recipientName: resolved.displayName,
-    taskName: data.taskName || "Untitled task",
-    dueDate: data.dueDate,
-    section: data.section,
-    priority: data.priority,
-    clientName: data.clientName,
-    appBaseUrl: settings.appBaseUrl,
-  });
-
-  const stamp = data.updatedAt || data.createdAt || "new";
-  await sendAlertEmail({
-    to: resolved.email,
-    content,
-    settings,
-    dedupeKey: `taskAssigned_${id}_${(data.assignedTo || "").toLowerCase()}_${stamp}`,
-    meta: {type: "taskAssigned", actionItemId: id},
-    notificationType: "taskAssigned",
-    notificationHref: "/dashboard/actions",
-  });
+  if (emailed === 0) {
+    logger.info("taskAssigned: nobody with an email yet", {id});
+  }
 }
 
 /** Firestore trigger: overdue + assignment emails for action items. */
@@ -155,13 +208,10 @@ export const onActionItemEmailAutomations = functions
       }
     }
 
-    const assigneeChanged =
-      !!after.assignedTo &&
-      (!before || (before.assignedTo || "") !== (after.assignedTo || ""));
-    const isCreate = !before;
-    if ((isCreate || assigneeChanged) && after.assignedTo) {
+    const newcomers = newlyAddedAssignees(after, before);
+    if (newcomers.length > 0) {
       try {
-        await notifyTaskAssigned(id, after);
+        await notifyTaskAssigned(id, after, before);
       } catch (err) {
         logger.error("taskAssigned notify failed", {id, err});
       }

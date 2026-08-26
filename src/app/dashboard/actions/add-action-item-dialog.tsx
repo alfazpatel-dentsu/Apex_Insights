@@ -24,7 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry } from '@/lib/types';
+import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry, UserProfile } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection } from '@/firebase';
 import {
@@ -39,11 +39,18 @@ import { resolveActionStatus } from '@/lib/normalize';
 import { format, parseISO, isValid } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn, releaseRadixPointerLock } from '@/lib/utils';
+import { assigneesFromItem, assignedToLabel, type ActionAssignee } from '@/lib/assignees';
+import { AssigneePicker } from '@/components/assignee-picker';
 
 const actionSchema = z.object({
   taskName: z.string().min(1, 'Task name is required'),
   description: z.string().optional(),
-  assignedTo: z.string().min(1, 'Assignee is required'),
+  assignedTo: z.string().optional(),
+  assignees: z.array(z.object({
+    name: z.string(),
+    email: z.string(),
+    userId: z.string().optional(),
+  })).min(1, 'Assign at least one person'),
   section: z.enum(["CLIENT ENGAGEMENT", "SALES", "OPERATIONS", "AZTEC", "HR", "MANAGEMENT"]),
   clientId: z.string().optional(),
   clientName: z.string().optional(),
@@ -107,6 +114,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   
   const { data: explicitClients } = useCollection<Client>('clients');
   const { data: kpiRecords } = useCollection<KpiData>('kpis');
+  const { data: users } = useCollection<UserProfile>('users');
 
   const discoveredClients = useMemo(() => {
     const uniqueList: { uniqueId: string, name: string }[] = [];
@@ -146,6 +154,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       taskName: '',
       description: '',
       assignedTo: '',
+      assignees: [],
       section: 'OPERATIONS',
       clientId: clientId || '',
       clientName: clientName || '',
@@ -173,7 +182,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
       form.reset({
         taskName: action.taskName,
         description: action.description || '',
-        assignedTo: action.assignedTo,
+        assignedTo: assignedToLabel(assigneesFromItem(action)),
+        assignees: assigneesFromItem(action),
         section: action.section,
         clientId: action.clientId || '',
         clientName: action.clientName || '',
@@ -189,6 +199,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         taskName: '',
         description: '',
         assignedTo: '',
+        assignees: [],
         section: 'OPERATIONS',
         clientId: clientId || '',
         clientName: clientName || '',
@@ -274,10 +285,19 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         data.comment
       );
 
+      const assignees = (data.assignees || []).filter((a) => (a.name || a.email).trim());
+      if (assignees.length === 0) {
+        form.setError('assignees', { message: 'Assign at least one person' });
+        setIsSaving(false);
+        return;
+      }
+
       await saveActionItem(
         firestore,
         {
           ...data,
+          assignees,
+          assignedTo: assignedToLabel(assignees),
           status,
           clientName: finalClientName,
           comment,
@@ -318,10 +338,16 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                   </FormItem>
                 )} />
 
-                <FormField control={form.control} name="assignedTo" render={({ field }) => (
-                  <FormItem>
+                <FormField control={form.control} name="assignees" render={({ field }) => (
+                  <FormItem className="md:col-span-2">
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Assigned To</FormLabel>
-                    <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" placeholder="Identity of owner..." {...field} /></FormControl>
+                    <FormControl>
+                      <AssigneePicker
+                        users={users || []}
+                        value={field.value || []}
+                        onChange={field.onChange}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />

@@ -36,6 +36,7 @@ import type {
   WbrEntry,
 } from '@/lib/types';
 import { resolveActionStatus } from '@/lib/normalize';
+import { displayAssigned } from '@/lib/assignees';
 import { clientPathFromPrimaryKpis, selectPrimaryKpisForPath } from '@/lib/kpi-rag';
 import {
   aggregateBrandSpendBreakdown,
@@ -394,7 +395,7 @@ function noteFromAction(a: ActionItem & { id: string }): MomActionNote {
     id: a.id,
     taskName: a.taskName || 'Untitled task',
     clientName: a.clientName || a.clientId || '—',
-    assignedTo: a.assignedTo || 'Unassigned',
+    assignedTo: displayAssigned(a),
     status: resolveActionStatus(a.status, a.dueDate),
     updatedAt: a.updatedAt || a.createdAt || '',
     comment: a.comment || a.description || '',
