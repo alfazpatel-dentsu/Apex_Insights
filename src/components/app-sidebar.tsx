@@ -15,7 +15,8 @@ import {
   SignOut,
   Briefcase,
   ListChecks,
-  ChartLine
+  ChartLine,
+  Lightning
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useUser, useDoc, useAuth } from "@/firebase";
@@ -32,6 +33,7 @@ const nav = [
   { href: "/dashboard/spends-forecast", label: "Spends Forecast", icon: ChartLine, testId: "sidebar-nav-spends-forecast", permission: "forecast" },
   { href: "/dashboard/wbr", label: "Weekly Review", icon: ClipboardText, testId: "sidebar-nav-wbr", permission: "wbr" },
   { href: "/dashboard/actions", label: "Action Items", icon: ListChecks, testId: "sidebar-nav-actions", permission: "actions" },
+  { href: "/dashboard/automations", label: "Automations", icon: Lightning, testId: "sidebar-nav-automations", permission: "automations" },
   { href: "/dashboard/admin", label: "Administration", icon: ShieldCheck, testId: "sidebar-nav-admin", permission: "admin" },
 ];
 
