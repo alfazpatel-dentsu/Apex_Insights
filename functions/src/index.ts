@@ -12,6 +12,5 @@ export {
   onActionItemEmailAutomations,
   onUserEmailAutomations,
   sweepOverdueActionItemEmails,
-  sendTestAlertEmail,
-  requestPasswordResetEmail,
+  onMailJobCreated,
 } from "./email/triggers";

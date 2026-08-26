@@ -9,8 +9,7 @@ Google Sheets live-sync is **not deployed**. Mail uses Microsoft Graph from `azt
 | `onActionItemEmailAutomations` | Emails + in-app alerts for **action overdue** / **action assigned** |
 | `onUserEmailAutomations` | Emails for **access requested** / **access granted** / **user invited** |
 | `sweepOverdueActionItemEmails` | Daily overdue sweep (03:30 UTC ≈ 09:00 IST) |
-| `sendTestAlertEmail` | Callable — Admin test email from the shared mailbox |
-| `requestPasswordResetEmail` | Callable — branded **forgot password** (public) and **resend invite** (Admin) |
+| `onMailJobCreated` | Test email, forgot password, and resend invite (Firestore job, no HTTPS invoker IAM) |
 
 If prompted about deleting `acceptInvite` on deploy, choose **No**.
 

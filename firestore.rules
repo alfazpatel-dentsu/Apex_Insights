@@ -93,6 +93,22 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // MAIL JOBS (test / reset / invite — processed by onMailJobCreated)
+    match /mailJobs/{id} {
+      allow create: if
+        (
+          request.resource.data.type == 'reset'
+          && request.resource.data.email is string
+          && request.resource.data.status == 'queued'
+        )
+        || (
+          isAdmin()
+          && request.resource.data.type in ['test', 'invite', 'reset']
+        );
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
     // DEPRECATED COLLECTIONS (Maintenance)
     match /actionItems/{id} { allow read, write: if isSignedIn(); }
     match /wbrEntries/{id} { allow read, write: if isSignedIn(); }

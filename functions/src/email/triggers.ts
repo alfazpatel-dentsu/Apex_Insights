@@ -320,111 +320,82 @@ export const sweepOverdueActionItemEmails = functions
     return null;
   });
 
-/** Admin callable: send a test email from aztec_alerts@dentsu.com. */
-export const sendTestAlertEmail = functions
-  .region("us-central1")
-  .runWith({
-    timeoutSeconds: 60,
-    memory: "256MB",
-  })
-  .https.onCall(async (data, context) => {
-    if (!context.auth?.uid) {
-      throw new functions.https.HttpsError("unauthenticated", "Sign in required");
-    }
-
-    const db = getFirestore();
-    const userSnap = await db.doc(`users/${context.auth.uid}`).get();
-    if (userSnap.data()?.role !== "Admin") {
-      throw new functions.https.HttpsError("permission-denied", "Admin role required");
-    }
-
-    const settings = await loadEmailAutomationSettings();
-    const to =
-      (typeof data?.to === "string" && data.to.trim()) ||
-      String(userSnap.data()?.email || context.auth.token.email || "").trim();
-
-    if (!to) {
-      throw new functions.https.HttpsError("invalid-argument", "No recipient email");
-    }
-
-    const content = testAlertEmail({
-      appBaseUrl: settings.appBaseUrl,
-      fromEmail: settings.fromEmail,
-    });
-
-    const result = await sendAlertEmail({
-      to,
-      content,
-      settings,
-      dedupeKey: `test_${context.auth.uid}_${Date.now()}`,
-      meta: {type: "test"},
-      notificationType: "test",
-      notificationHref: "/dashboard/admin",
-    });
-
-    if (!result.sent && result.skipped === "graph-not-configured") {
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        "Microsoft Graph is not configured. Set MS_GRAPH_TENANT_ID, MS_GRAPH_CLIENT_ID, and MS_GRAPH_CLIENT_SECRET in functions/.env, then redeploy."
-      );
-    }
-
-    return {
-      sent: result.sent,
-      skipped: result.skipped || null,
-      to,
-      from: settings.fromEmail,
-      appBaseUrl: settings.appBaseUrl,
-    };
-  });
-
 /**
- * Public callable: branded forgot-password (and admin resend invite) from the shared mailbox.
- * Always returns ok:true so callers cannot enumerate accounts.
+ * HTTPS callables need functions.admin to set invoker IAM (Editors cannot).
+ * Test / forgot-password / resend-invite are queued as Firestore mailJobs instead.
  */
-export const requestPasswordResetEmail = functions
+export const onMailJobCreated = functions
   .region("us-central1")
   .runWith({
     timeoutSeconds: 60,
     memory: "256MB",
   })
-  .https.onCall(async (data, context) => {
-    const email =
-      typeof data?.email === "string" ? data.email.trim().toLowerCase() : "";
-    const kind = data?.kind === "invite" ? "invite" : "reset";
-
-    if (kind === "invite") {
-      if (!context.auth?.uid) {
-        throw new functions.https.HttpsError("unauthenticated", "Sign in required");
-      }
-      const caller = await getFirestore().doc(`users/${context.auth.uid}`).get();
-      if (caller.data()?.role !== "Admin") {
-        throw new functions.https.HttpsError("permission-denied", "Admin role required");
-      }
-    }
-
-    if (!email || !email.includes("@")) {
-      return {ok: true};
-    }
+  .firestore.document("mailJobs/{id}")
+  .onCreate(async (snap) => {
+    const id = snap.id;
+    const data = snap.data() || {};
+    const type = String(data.type || "");
+    const email = String(data.email || "")
+      .trim()
+      .toLowerCase();
 
     const settings = await loadEmailAutomationSettings();
-    const automationKey = kind === "invite" ? "userInvited" : "passwordReset";
-    if (!isAutomationEnabled(settings, automationKey)) {
-      logger.info("auth email skipped — automation disabled", {kind});
-      return {ok: true};
-    }
-
-    const hourBucket = Math.floor(Date.now() / 3_600_000);
-    const user = await findUserByEmail(email);
-    if (!user) {
-      logger.info("auth email skipped — unknown address");
-      return {ok: true};
-    }
+    const db = getFirestore();
+    const jobRef = db.doc(`mailJobs/${id}`);
 
     try {
+      if (type === "test") {
+        if (!email) {
+          await jobRef.set({status: "failed", error: "no-email"}, {merge: true});
+          return;
+        }
+        const content = testAlertEmail({
+          appBaseUrl: settings.appBaseUrl,
+          fromEmail: settings.fromEmail,
+        });
+        const result = await sendAlertEmail({
+          to: email,
+          content,
+          settings,
+          dedupeKey: `test_${id}`,
+          meta: {type: "test"},
+          notificationType: "test",
+          notificationHref: "/dashboard/admin",
+        });
+        await jobRef.set(
+          {
+            status: result.sent ? "sent" : result.skipped || "skipped",
+            from: settings.fromEmail,
+          },
+          {merge: true}
+        );
+        return;
+      }
+
+      if (type !== "reset" && type !== "invite") {
+        await jobRef.set({status: "ignored", error: "unknown-type"}, {merge: true});
+        return;
+      }
+
+      const automationKey = type === "invite" ? "userInvited" : "passwordReset";
+      if (!isAutomationEnabled(settings, automationKey)) {
+        await jobRef.set({status: "skipped", error: "disabled"}, {merge: true});
+        return;
+      }
+      if (!email || !email.includes("@")) {
+        await jobRef.set({status: "skipped", error: "bad-email"}, {merge: true});
+        return;
+      }
+
+      const user = await findUserByEmail(email);
+      if (!user) {
+        await jobRef.set({status: "skipped", error: "unknown-user"}, {merge: true});
+        return;
+      }
+
       const resetLink = await generateAuthLink(user.email, settings.appBaseUrl);
       const content =
-        kind === "invite"
+        type === "invite"
           ? userInvitedEmail({
               recipientName: user.displayName,
               resetLink,
@@ -437,37 +408,30 @@ export const requestPasswordResetEmail = functions
               appBaseUrl: settings.appBaseUrl,
             });
 
+      const hourBucket = Math.floor(Date.now() / 3_600_000);
       const result = await sendAlertEmail({
         to: user.email,
         content,
         settings,
         dedupeKey:
-          kind === "invite"
-            ? `userInvited_resend_${user.uid}_${Date.now()}`
+          type === "invite"
+            ? `userInvited_resend_${user.uid}_${id}`
             : `passwordReset_${user.uid}_${hourBucket}`,
         meta: {type: automationKey, uid: user.uid},
         notifyTeams: false,
       });
 
-      if (!result.sent && result.skipped === "graph-not-configured") {
-        logger.error("auth email skipped — Graph not configured", {kind});
-        if (kind === "invite") {
-          throw new functions.https.HttpsError(
-            "failed-precondition",
-            "Microsoft Graph is not configured. Invite email was not sent from aztec_alerts@dentsu.com."
-          );
-        }
-      }
+      await jobRef.set(
+        {
+          status: result.sent ? "sent" : result.skipped || "skipped",
+          from: settings.fromEmail,
+        },
+        {merge: true}
+      );
     } catch (err) {
-      if (err instanceof functions.https.HttpsError) throw err;
-      logger.error("requestPasswordResetEmail failed", {err, kind});
-      if (kind === "invite") {
-        throw new functions.https.HttpsError(
-          "internal",
-          err instanceof Error ? err.message : "Invite email failed"
-        );
-      }
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("onMailJobCreated failed", {id, type, message});
+      await jobRef.set({status: "failed", error: message.slice(0, 400)}, {merge: true});
     }
-
-    return {ok: true};
   });
+

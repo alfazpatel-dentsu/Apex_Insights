@@ -5,17 +5,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useAuth, useUser, useFirebaseApp } from '@/firebase';
+import { useAuth, useUser, useFirestore } from '@/firebase';
 import { SokratiLogo } from '@/components/sokrati-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { enqueueMailJob } from '@/lib/mail-jobs';
 
 export default function LoginPage() {
   const router = useRouter();
   const auth = useAuth();
-  const app = useFirebaseApp();
+  const firestore = useFirestore();
   const { user, loading } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -48,9 +48,7 @@ export default function LoginPage() {
     setIsResetting(true);
     setError(null);
     try {
-      const functions = getFunctions(app, 'us-central1');
-      const requestReset = httpsCallable(functions, 'requestPasswordResetEmail');
-      await requestReset({ email, kind: 'reset' });
+      await enqueueMailJob(firestore, 'reset', email);
       setResetSent(true);
     } catch {
       setResetSent(true);

@@ -8,12 +8,11 @@ import {
   PaperPlaneTilt,
 } from '@phosphor-icons/react';
 import { doc, setDoc } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useDoc, useFirestore, useUser, useFirebaseApp } from '@/firebase';
+import { useDoc, useFirestore, useUser } from '@/firebase';
 import {
   DEFAULT_EMAIL_AUTOMATIONS,
   EMAIL_AUTOMATION_META,
@@ -21,6 +20,7 @@ import {
   EmailAutomationKey,
   EmailAutomationSettings,
 } from '@/lib/email-automations';
+import { enqueueMailJob } from '@/lib/mail-jobs';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -28,7 +28,6 @@ const AUTOMATION_KEYS = Object.keys(EMAIL_AUTOMATION_META) as EmailAutomationKey
 
 export function NotificationsPanel() {
   const firestore = useFirestore();
-  const app = useFirebaseApp();
   const { toast } = useToast();
   const { user } = useUser();
   const { data: remoteSettings, loading: settingsLoading } = useDoc<EmailAutomationSettings>(
@@ -106,27 +105,30 @@ export function NotificationsPanel() {
   };
 
   const handleTestEmail = async () => {
-    setTesting(true);
-    try {
-      const functions = getFunctions(app, 'us-central1');
-      const sendTest = httpsCallable(functions, 'sendTestAlertEmail');
-      const result = await sendTest({ to: user?.email });
-      const data = result.data as { sent?: boolean; from?: string; to?: string; skipped?: string };
-      toast({
-        title: data.sent ? 'Test email sent' : 'Test email skipped',
-        description: data.sent
-          ? `Sent from ${data.from} to ${data.to}. Check inbox/spam and the header bell.`
-          : data.skipped || 'No message was sent.',
-      });
-    } catch (error: any) {
-      const detail =
-        error?.details ||
-        error?.message ||
-        'Deploy email functions and configure Microsoft Graph (see functions/README.md).';
+    const to = (user?.email || '').trim();
+    if (!to) {
       toast({
         variant: 'destructive',
         title: 'Test email failed',
-        description: typeof detail === 'string' ? detail : String(detail),
+        description: 'No email on the signed-in account.',
+      });
+      return;
+    }
+    setTesting(true);
+    try {
+      const result = await enqueueMailJob(firestore, 'test', to, { wait: true });
+      toast({
+        title: result.status === 'sent' ? 'Test email sent' : 'Test email queued',
+        description:
+          result.status === 'sent'
+            ? `Sent from aztec_alerts@dentsu.com to ${to}. Check inbox/spam and the header bell.`
+            : `Status: ${result.status}. Check inbox in a minute, or Firebase logs for onMailJobCreated.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Test email failed',
+        description: error?.message || 'Could not queue the test email.',
       });
     } finally {
       setTesting(false);

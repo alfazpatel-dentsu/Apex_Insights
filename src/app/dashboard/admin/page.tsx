@@ -26,7 +26,7 @@ import { UserProfile } from "@/lib/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { useCollection, useFirestore, useUser, useDoc, useAuth, useFirebaseApp } from "@/firebase";
+import { useCollection, useFirestore, useUser, useDoc, useAuth } from "@/firebase";
 import { saveUserRoleAndPermissions, createUser, deleteUser, purgeOtherUsers, resendInvitationEmail, purgeCollection, clearAllKpiData, clearAllSpendsData } from "@/lib/firestore-actions";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { EditUserRoleDialog } from "./edit-user-role-dialog";
@@ -34,7 +34,7 @@ import { AddUserDialog } from "./add-user-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn, openDialogFromMenu } from "@/lib/utils";
 import { updateDoc, doc } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { enqueueMailJob } from "@/lib/mail-jobs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotificationsPanel } from "./notifications-panel";
@@ -42,7 +42,6 @@ import { NotificationsPanel } from "./notifications-panel";
 export default function AdminPage() {
   const firestore = useFirestore();
   const auth = useAuth();
-  const app = useFirebaseApp();
   const { toast } = useToast();
   const { user: authUser, loading: authLoading } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(authUser ? `users/${authUser.uid}` : null);
@@ -133,9 +132,7 @@ export default function AdminPage() {
     setIsResending(user.uid);
     try {
       await resendInvitationEmail(auth, user.email, async (email) => {
-        const functions = getFunctions(app, "us-central1");
-        const send = httpsCallable(functions, "requestPasswordResetEmail");
-        await send({ email, kind: "invite" });
+        await enqueueMailJob(firestore, 'invite', email, { wait: true });
       });
       toast({
         title: "Invite Resent",
