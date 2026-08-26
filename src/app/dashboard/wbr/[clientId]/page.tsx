@@ -47,6 +47,7 @@ import { query, collection, where, getDocs, getDoc, doc, limit, type Firestore }
 
 import { useFirestore, useUser, useDoc, useCollection } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, RagStatus, ActionItem } from '@/lib/types';
+import { displayAssigned } from '@/lib/assignees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -991,7 +992,7 @@ export default function WbrEditPage() {
                       <TableRow><TableCell colSpan={5} className="text-center py-20 text-[10px] font-black uppercase tracking-widest text-secondary/70 italic">No action items discussed for this entity.</TableCell></TableRow>
                     ) : clientActions.map((action) => (
                       <TableRow key={action.id} className="border-b border-foreground/5 hover:bg-foreground/[0.01]">
-                        <TableCell className="px-8 py-4"><div className="flex flex-col"><span className="text-xs font-black text-foreground/80">{action.taskName}</span><span className="text-[9px] font-bold text-secondary uppercase">{action.assignedTo}</span></div></TableCell>
+                        <TableCell className="px-8 py-4"><div className="flex flex-col"><span className="text-xs font-black text-foreground/80">{action.taskName}</span><span className="text-[9px] font-bold text-secondary uppercase">{displayAssigned(action)}</span></div></TableCell>
                         <TableCell><Badge variant="outline" className="text-[8px] font-black h-4 px-1.5 leading-none border-foreground/10 uppercase">{action.section}</Badge></TableCell>
                         <TableCell>{(() => {
                           const status = resolveActionStatus(action.status, action.dueDate);
