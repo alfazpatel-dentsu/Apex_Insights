@@ -55,40 +55,36 @@ Ask Identity / M365 admin to:
    - Accounts: this organizational directory only  
 3. Note **Application (client) ID** and **Directory (tenant) ID**.
 4. **Certificates & secrets** → **New client secret** → copy the **Value** once (`MS_GRAPH_CLIENT_SECRET`).
-5. **API permissions** → **Microsoft Graph** → **Application permissions** → **`Mail.Send`** → **Grant admin consent**.
-6. (Recommended) Restrict the app with an Exchange **Application Access Policy** so it can only send as `aztec_alerts@dentsu.com`.
-7. Send Tenant ID, Client ID, and Client secret to the Firebase admin.
+5. Grant send rights. Dentsu IT used **Exchange Online RBAC for Applications** scoped to `aztec_alerts@dentsu.com` (no tenant-wide Graph **Admin consent** required). That is the preferred model.
+6. Send **Directory (tenant) ID**, **Application (client) ID**, and the client secret **Value** (plus expiry) to the person who deploys Firebase.
 
-### After IT returns App ID + secret
+### After IT returns credentials (Dentsu, Aug 2026)
 
-IT typically sends **Application (client) ID** (App ID) and a **client secret Value** (plus expiry). That is **not enough to send mail yet**.
+IT has provided App ID, client secret (expiry **26 Aug 2027**), Directory (tenant) ID, and confirmed:
 
-| IT gave you | Goes here | Commit to git? |
-|-------------|-----------|----------------|
-| App ID / Application (client) ID | `MS_GRAPH_CLIENT_ID` in `functions/.env` | No (`.env` is gitignored) |
-| Client secret **Value** | Secret `MS_GRAPH_CLIENT_SECRET` | **Never** |
-| Secret expiry (e.g. 26 Aug 2027) | Calendar reminder to rotate | n/a |
-| **Directory (tenant) ID** | `MS_GRAPH_TENANT_ID` | Often still missing — ask IT |
+- Permissions are via **Exo RBAC for Applications** (not Graph admin consent)
+- The app is **scoped to `aztec_alerts@dentsu.com` only**
 
-Also confirm with IT (if they did not say so):
+The app code already uses Graph client-credentials + `users/{mailbox}/sendMail`. Exo RBAC is compatible; **no code change is required**. Mail still will not send until the three values are stored in Firebase and Cloud Functions are deployed.
 
-- Admin consent is granted for Microsoft Graph **`Mail.Send` (Application)**
-- The app may send **only** as `aztec_alerts@dentsu.com` (Exchange Application Access Policy)
-- Sender UPN is exactly `aztec_alerts@dentsu.com`
+| IT gave you | Firebase name | Where it lives |
+|-------------|---------------|----------------|
+| Directory (tenant) ID | `MS_GRAPH_TENANT_ID` | `functions/.env` (never git) |
+| App ID | `MS_GRAPH_CLIENT_ID` | `functions/.env` (never git) |
+| Client secret Value | `MS_GRAPH_CLIENT_SECRET` | Secret Manager only |
+| Sender | `MS_GRAPH_SENDER` | already defaults to `aztec_alerts@dentsu.com` |
 
-#### Follow-up you can send IT
+Do **not** paste the client secret into GitHub, chat, or application source.
 
-```
-Thanks — we have the App ID and client secret (expiry 26 Aug 2027).
+#### Non-developer path (Google Cloud Shell in the browser)
 
-To finish Graph Mail.Send for Aztec Control Center, please also send:
+You need: the three IT values, a Google account that can edit Firebase project **`vdc200007-ppclientcentre-prod`**, and ~15 minutes.
 
-1. Directory (tenant) ID for this app registration
-2. Confirmation that Mail.Send (Application) has admin consent
-3. Confirmation the app is restricted to send only as aztec_alerts@dentsu.com
-```
-
-Do **not** paste the client secret into GitHub, chat, or application source. Store it only in Firebase Secret Manager.
+1. Merge PR **#52** into `main` on GitHub (or deploy from branch `cursor/email-team-notifications-ad75`).
+2. Open [Google Cloud Shell](https://console.cloud.google.com/?cloudshell=true&project=vdc200007-ppclientcentre-prod) while logged into that project.
+3. Run the commands in **Setup in Firebase** below. When `firebase functions:secrets:set` asks for a value, paste the client secret (it will not be shown on screen).
+4. Sign in to Aztec Control Center as Admin → **Administration** → **Notifications** → **Send test email**.
+5. Put a calendar reminder for **1 Aug 2027** to rotate the secret before 26 Aug 2027.
 
 ### Setup in Firebase
 
