@@ -1,11 +1,11 @@
-# Cloud Functions (Sheets sync + email alerts)
+# Cloud Functions (email alerts)
 
 1st gen Cloud Functions in codebase `action-items-sheets` (same generation as `acceptInvite`, so deploy works with Editor without Eventarc / Cloud Run invoker Owner permissions).
 
+Google Sheets live-sync is **not deployed**. Mail uses Microsoft Graph from `aztec_alerts@dentsu.com`.
+
 | Function | Purpose |
 |----------|---------|
-| `mirrorActionItemToSheet` | Live upsert/delete on every `actionItems` write → Google Sheets |
-| `backfillActionItemsSheet` | Callable — Admin-only full Sheet rebuild |
 | `onActionItemEmailAutomations` | Emails + in-app alerts for **action overdue** / **action assigned** |
 | `onUserEmailAutomations` | Emails for **access requested** / **access granted** / **user invited** |
 | `sweepOverdueActionItemEmails` | Daily overdue sweep (03:30 UTC ≈ 09:00 IST) |
@@ -13,6 +13,8 @@
 | `requestPasswordResetEmail` | Callable — branded **forgot password** (public) and **resend invite** (Admin) |
 
 If prompted about deleting `acceptInvite` on deploy, choose **No**.
+
+If prompted about deleting `mirrorActionItemToSheet` or `backfillActionItemsSheet`, choose **Yes**.
 
 ---
 
@@ -119,38 +121,13 @@ Optional: paste a Microsoft Teams incoming-webhook / workflow URL in that same p
 
 ---
 
-## Sheets sync
-
-### Prerequisites
-
-1. Google Sheet tab **ActionItems** (auto-created if missing)
-2. Service account `ction-items-sheets-sync@vdc200007-ppclientcentre-prod.iam.gserviceaccount.com` shared on the Sheet as **Editor**
-3. Secret `SHEETS_SERVICE_ACCOUNT_JSON` already set
-4. Compute SA has **Secret Manager Secret Accessor** (already done)
-
-### Deploy
-
-```bash
-cd functions && npm ci && npm run build && cd ..
-firebase deploy --only functions:action-items-sheets
-```
-
-```bash
-firebase functions:list
-```
-
-### Backfill
-
-Admin → **Backfill Action Items to Sheet**
-
-### Verify Sheets
-
-1. Create / edit / delete an action item → Sheet row updates (key = `id`)
-2. Logs: `firebase functions:log --only mirrorActionItemToSheet`
-
-### Verify emails
+## Verify emails
 
 1. Approve a Pending user → Access granted email + bell notification
 2. Assign or mark an action item overdue → Assignee email + bell
 3. Forgot password on `/` → branded reset from `aztec_alerts@dentsu.com`
 4. Logs: `firebase functions:log --only onActionItemEmailAutomations,onUserEmailAutomations,requestPasswordResetEmail`
+
+## Retired: Google Sheets action-item mirror
+
+`mirrorActionItemToSheet` and `backfillActionItemsSheet` are no longer exported. Source files under `functions/src/sheets.ts` remain in git if anyone needs to restore later. Deploy no longer requires secret `SHEETS_SERVICE_ACCOUNT_JSON`.
