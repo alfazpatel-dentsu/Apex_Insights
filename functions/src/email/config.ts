@@ -1,5 +1,5 @@
 import {getFirestore} from "firebase-admin/firestore";
-import {defineSecret, defineString} from "firebase-functions/params";
+import {defineString} from "firebase-functions/params";
 
 /** Entra ID (Azure AD) tenant ID for Microsoft Graph client-credentials. */
 export const MS_GRAPH_TENANT_ID = defineString("MS_GRAPH_TENANT_ID", {
@@ -13,8 +13,11 @@ export const MS_GRAPH_CLIENT_ID = defineString("MS_GRAPH_CLIENT_ID", {
   description: "Entra app registration client ID",
 });
 
-/** App registration client secret. */
-export const MS_GRAPH_CLIENT_SECRET = defineSecret("MS_GRAPH_CLIENT_SECRET");
+/** App registration client secret. Stored in gitignored functions/.env (not Secret Manager) so Editors can deploy without setIamPolicy. */
+export const MS_GRAPH_CLIENT_SECRET = defineString("MS_GRAPH_CLIENT_SECRET", {
+  default: "",
+  description: "Entra app registration client secret",
+});
 
 /** Mailbox UPN to send as (must allow Mail.Send via the app). */
 export const MS_GRAPH_SENDER = defineString("MS_GRAPH_SENDER", {

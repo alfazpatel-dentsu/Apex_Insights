@@ -6,7 +6,6 @@ import {ActionItemDoc} from "../action-item-row";
 import {
   isAutomationEnabled,
   loadEmailAutomationSettings,
-  MS_GRAPH_CLIENT_SECRET,
 } from "./config";
 import {findUserByEmail, listAdminEmails, resolveUserEmail, sendAlertEmail} from "./mailer";
 import {
@@ -133,7 +132,6 @@ async function notifyTaskAssigned(id: string, data: ActionItemDoc): Promise<void
 export const onActionItemEmailAutomations = functions
   .region("us-central1")
   .runWith({
-    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 60,
     memory: "256MB",
   })
@@ -174,7 +172,6 @@ export const onActionItemEmailAutomations = functions
 export const onUserEmailAutomations = functions
   .region("us-central1")
   .runWith({
-    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 60,
     memory: "256MB",
   })
@@ -277,7 +274,6 @@ export const onUserEmailAutomations = functions
 export const sweepOverdueActionItemEmails = functions
   .region("us-central1")
   .runWith({
-    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 300,
     memory: "512MB",
   })
@@ -328,7 +324,6 @@ export const sweepOverdueActionItemEmails = functions
 export const sendTestAlertEmail = functions
   .region("us-central1")
   .runWith({
-    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 60,
     memory: "256MB",
   })
@@ -370,7 +365,7 @@ export const sendTestAlertEmail = functions
     if (!result.sent && result.skipped === "graph-not-configured") {
       throw new functions.https.HttpsError(
         "failed-precondition",
-        "Microsoft Graph is not configured. Set MS_GRAPH_TENANT_ID, MS_GRAPH_CLIENT_ID, and secret MS_GRAPH_CLIENT_SECRET, then redeploy."
+        "Microsoft Graph is not configured. Set MS_GRAPH_TENANT_ID, MS_GRAPH_CLIENT_ID, and MS_GRAPH_CLIENT_SECRET in functions/.env, then redeploy."
       );
     }
 
@@ -390,7 +385,6 @@ export const sendTestAlertEmail = functions
 export const requestPasswordResetEmail = functions
   .region("us-central1")
   .runWith({
-    secrets: [MS_GRAPH_CLIENT_SECRET],
     timeoutSeconds: 60,
     memory: "256MB",
   })

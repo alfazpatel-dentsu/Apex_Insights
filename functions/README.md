@@ -73,7 +73,7 @@ The app code already uses Graph client-credentials + `users/{mailbox}/sendMail`.
 |-------------|---------------|----------------|
 | Directory (tenant) ID | `MS_GRAPH_TENANT_ID` | `functions/.env` (never git) |
 | App ID | `MS_GRAPH_CLIENT_ID` | `functions/.env` (never git) |
-| Client secret Value | `MS_GRAPH_CLIENT_SECRET` | Secret Manager only |
+| Client secret Value | `MS_GRAPH_CLIENT_SECRET` | `functions/.env` (never git; Editors cannot use Secret Manager IAM) |
 | Sender | `MS_GRAPH_SENDER` | already defaults to `aztec_alerts@dentsu.com` |
 
 Do **not** paste the client secret into GitHub, chat, or application source.
@@ -84,7 +84,7 @@ You need: the three IT values, a Google account that can edit Firebase project *
 
 1. Merge PR **#52** into `main` on GitHub (or deploy from branch `cursor/email-team-notifications-ad75`).
 2. Open [Google Cloud Shell](https://console.cloud.google.com/?cloudshell=true&project=vdc200007-ppclientcentre-prod) while logged into that project.
-3. Run the commands in **Setup in Firebase** below. When `firebase functions:secrets:set` asks for a value, paste the client secret (it will not be shown on screen).
+3. Put tenant ID, App ID, and client secret in gitignored `functions/.env` (see below). Do not commit that file.
 4. Sign in to Aztec Control Center as Admin → **Administration** → **Notifications** → **Send test email**.
 5. Put a calendar reminder for **1 Aug 2027** to rotate the secret before 26 Aug 2027.
 
@@ -95,27 +95,20 @@ You need: the three IT values, a Google account that can edit Firebase project *
 ```bash
 MS_GRAPH_TENANT_ID=<tenant-id-from-IT>
 MS_GRAPH_CLIENT_ID=<client-id-from-IT>
+MS_GRAPH_CLIENT_SECRET=<client-secret-value-from-IT>
 MS_GRAPH_SENDER=aztec_alerts@dentsu.com
 EMAIL_FROM_NAME=AZTEC Alerts
 APP_BASE_URL=https://azteccontrolcenter.dentsu.com
 ```
 
-2. Store the client secret:
-
-```bash
-firebase functions:secrets:set MS_GRAPH_CLIENT_SECRET
-```
-
-3. Grant the Functions runtime service account **Secret Manager Secret Accessor** on `MS_GRAPH_CLIENT_SECRET`.
-
-4. Deploy functions + rules:
+2. Deploy functions + rules (no Secret Manager IAM required):
 
 ```bash
 cd functions && npm ci && npm run build && cd ..
 firebase deploy --only functions:action-items-sheets,firestore:rules
 ```
 
-5. In the app: **Administration → Notifications** → **Send test email**. Confirm From `aztec_alerts@dentsu.com`.
+3. In the app: **Administration → Notifications** → **Send test email**. Confirm From `aztec_alerts@dentsu.com`.
 
 Optional: paste a Microsoft Teams incoming-webhook / workflow URL in that same panel so the team channel gets a card for operational alerts (never password-reset links).
 
