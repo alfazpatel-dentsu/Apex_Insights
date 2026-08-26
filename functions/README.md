@@ -59,6 +59,37 @@ Ask Identity / M365 admin to:
 6. (Recommended) Restrict the app with an Exchange **Application Access Policy** so it can only send as `aztec_alerts@dentsu.com`.
 7. Send Tenant ID, Client ID, and Client secret to the Firebase admin.
 
+### After IT returns App ID + secret
+
+IT typically sends **Application (client) ID** (App ID) and a **client secret Value** (plus expiry). That is **not enough to send mail yet**.
+
+| IT gave you | Goes here | Commit to git? |
+|-------------|-----------|----------------|
+| App ID / Application (client) ID | `MS_GRAPH_CLIENT_ID` in `functions/.env` | No (`.env` is gitignored) |
+| Client secret **Value** | Secret `MS_GRAPH_CLIENT_SECRET` | **Never** |
+| Secret expiry (e.g. 26 Aug 2027) | Calendar reminder to rotate | n/a |
+| **Directory (tenant) ID** | `MS_GRAPH_TENANT_ID` | Often still missing — ask IT |
+
+Also confirm with IT (if they did not say so):
+
+- Admin consent is granted for Microsoft Graph **`Mail.Send` (Application)**
+- The app may send **only** as `aztec_alerts@dentsu.com` (Exchange Application Access Policy)
+- Sender UPN is exactly `aztec_alerts@dentsu.com`
+
+#### Follow-up you can send IT
+
+```
+Thanks — we have the App ID and client secret (expiry 26 Aug 2027).
+
+To finish Graph Mail.Send for Aztec Control Center, please also send:
+
+1. Directory (tenant) ID for this app registration
+2. Confirmation that Mail.Send (Application) has admin consent
+3. Confirmation the app is restricted to send only as aztec_alerts@dentsu.com
+```
+
+Do **not** paste the client secret into GitHub, chat, or application source. Store it only in Firebase Secret Manager.
+
 ### Setup in Firebase
 
 1. Create `functions/.env` (do not commit):
