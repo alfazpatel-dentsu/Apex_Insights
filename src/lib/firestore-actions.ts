@@ -342,7 +342,7 @@ export const createUser = async (db: Firestore, userData: any) => {
             permissions: userData.permissions || ['snapshot', 'tracker', 'wbr', 'actions'] 
         };
         await setDoc(doc(db, 'users', userCredential.user.uid), userProfile);
-        try { await sendPasswordResetEmail(tempAuth, userData.email); } catch (emailError: any) { console.error('Email delivery failed but user record created:', emailError); }
+        // Invite email is sent from aztec_alerts@dentsu.com by Cloud Function onUserEmailAutomations.
         return userProfile;
     } catch (authError: any) { throw authError; } finally { await deleteApp(tempApp); }
 };
@@ -362,8 +362,17 @@ export const registerUser = async (db: Firestore, auth: Auth, userData: any) => 
     return userProfile;
 };
 
-export const resendInvitationEmail = async (auth: Auth, email: string) => {
-    try { await sendPasswordResetEmail(auth, email); return true; } catch (error: any) { throw error; }
+export const resendInvitationEmail = async (auth: Auth, email: string, sendBranded?: (email: string) => Promise<void>) => {
+    try {
+        if (sendBranded) {
+            await sendBranded(email);
+            return true;
+        }
+        await sendPasswordResetEmail(auth, email);
+        return true;
+    } catch (error: any) {
+        throw error;
+    }
 };
 
 export const updateUserDisplayName = async (db: Firestore, user: User, displayName: string) => {

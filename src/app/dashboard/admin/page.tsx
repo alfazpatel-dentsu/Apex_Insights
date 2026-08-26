@@ -33,11 +33,12 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { EditUserRoleDialog } from "./edit-user-role-dialog";
 import { AddUserDialog } from "./add-user-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { openDialogFromMenu } from "@/lib/utils";
+import { cn, openDialogFromMenu } from "@/lib/utils";
 import { updateDoc, doc } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { NotificationsPanel } from "./notifications-panel";
 
 export default function AdminPage() {
   const firestore = useFirestore();
@@ -160,10 +161,14 @@ export default function AdminPage() {
   const handleResendInvite = async (user: UserProfile) => {
     setIsResending(user.uid);
     try {
-      await resendInvitationEmail(auth, user.email);
+      await resendInvitationEmail(auth, user.email, async (email) => {
+        const functions = getFunctions(app, "us-central1");
+        const send = httpsCallable(functions, "requestPasswordResetEmail");
+        await send({ email, kind: "invite" });
+      });
       toast({
         title: "Invite Resent",
-        description: `A new login link has been sent to ${user.email}. Ask them to check their Spam/Junk folder.`,
+        description: `A branded login email from Aztec_Alerts@dentsu.com has been queued for ${user.email}.`,
       });
     } catch (error: any) {
       toast({
@@ -181,7 +186,7 @@ export default function AdminPage() {
       await createUser(firestore, data);
       toast({
         title: "Invite Sent",
-        description: `User created. An invitation email should arrive at ${data.email} shortly.`,
+        description: `User created. An invitation from Aztec_Alerts@dentsu.com should arrive at ${data.email} shortly.`,
       });
       setIsAddUserDialogOpen(false);
     } catch (error: any) {
@@ -251,10 +256,21 @@ export default function AdminPage() {
         <div>
           <div className="terminal-overline">Command Center</div>
           <h1 className="text-5xl lg:text-6xl font-black tracking-tighter">Administration</h1>
-          <p className="text-[10px] font-mono text-secondary uppercase tracking-[0.2em]">System management and access control terminal.</p>
+          <p className="text-[10px] font-mono text-secondary uppercase tracking-[0.2em]">System management, access control, and outbound alerts.</p>
         </div>
       </div>
-      
+
+      <Tabs defaultValue="registry" className="space-y-8">
+        <TabsList className="h-12 bg-cream border-ink">
+          <TabsTrigger value="registry" className="px-6 text-[10px] font-black uppercase tracking-widest">
+            Registry
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className="px-6 text-[10px] font-black uppercase tracking-widest">
+            Notifications
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="registry" className="mt-0 space-y-8">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-px bg-ink border border-ink overflow-hidden">
         <div className="lg:col-span-2 bg-white flex flex-col border-r border-ink">
           <div className="p-8 flex items-center justify-between border-b border-ink">
@@ -466,6 +482,12 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+        </TabsContent>
+
+        <TabsContent value="notifications" className="mt-0">
+          <NotificationsPanel />
+        </TabsContent>
+      </Tabs>
       
       <AddUserDialog 
         isOpen={isAddUserDialogOpen} 

@@ -24,6 +24,7 @@ The VM update script handles this automatically when `src/app` is missing.
 | Firebase Auth + Firestore | Yes (cloud) | Hardcoded project `vdc200007-ppclientcentre-prod` in `src/firebase/config.ts`; no local emulator config |
 | Gemini API | Optional | Only for Business Snapshot AI refresh; set `GEMINI_API_KEY` or `GOOGLE_GENAI_API_KEY` in `.env` |
 | Cloud Functions (Sheets sync) | Optional | `functions/` — **1st gen** live `actionItems` → Google Sheets (`action-items-sheets` codebase); see `functions/README.md` |
+| Email / team alerts | Optional | Same functions codebase — Microsoft Graph send as `aztec_alerts@dentsu.com`; Admin → Notifications |
 
 Optional: `npm run genkit:dev` for Genkit AI flow debugging (separate process, not needed for normal app use).
 

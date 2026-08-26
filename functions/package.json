@@ -1,6 +1,6 @@
 {
   "name": "functions",
-  "description": "Firestore actionItems → Google Sheets sync",
+  "description": "Firestore actionItems → Google Sheets plus email/team alerts",
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
