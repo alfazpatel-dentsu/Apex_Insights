@@ -72,6 +72,27 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // SETTINGS (email automations, Teams webhook, etc.)
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // MAIL AUDIT LOG (written by Cloud Functions Admin SDK)
+    match /mailLog/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // IN-APP TEAM NOTIFICATIONS
+    match /notifications/{id} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create, delete: if false;
+    }
+
     // DEPRECATED COLLECTIONS (Maintenance)
     match /actionItems/{id} { allow read, write: if isSignedIn(); }
     match /wbrEntries/{id} { allow read, write: if isSignedIn(); }

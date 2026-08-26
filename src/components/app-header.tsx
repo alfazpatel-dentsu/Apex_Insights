@@ -1,17 +1,19 @@
 'use client';
 
 import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut, UserCircle } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CommandPalette } from "@/components/command-palette";
 import { ProfileManagementDialog } from "@/components/profile-management-dialog";
-import { useUser, useDoc, useAuth } from "@/firebase";
+import { useUser, useDoc, useAuth, useCollection, useFirestore } from "@/firebase";
 import { UserProfile } from "@/lib/types";
+import { TeamNotification } from "@/lib/email-automations";
 import { format, getWeek } from "date-fns";
 import { useChrome } from "@/components/client-layout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { signOut } from "firebase/auth";
 import { toast } from "sonner";
+import { doc, updateDoc, where } from "firebase/firestore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,7 +34,16 @@ export function AppHeader() {
   const [now, setNow] = useState<string | null>(null);
   const [snapshotLabel, setSnapshotLabel] = useState<string | null>(null);
   const { user } = useUser();
+  const firestore = useFirestore();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const notificationConstraints = useMemo(
+    () => (user ? [where("userId", "==", user.uid)] : [null]),
+    [user]
+  );
+  const { data: rawNotifications } = useCollection<TeamNotification>(
+    "notifications",
+    notificationConstraints
+  );
   const [mounted, setMounted] = useState(false);
   const { setMobileNavOpen } = useChrome();
   const isMobile = useIsMobile();
@@ -72,6 +83,30 @@ export function AppHeader() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  const notifications = useMemo(() => {
+    const list = [...(rawNotifications || [])];
+    list.sort((a, b) => {
+      const aTs = typeof a.createdAt === "string" ? Date.parse(a.createdAt) : (a.createdAt?.seconds || 0) * 1000;
+      const bTs = typeof b.createdAt === "string" ? Date.parse(b.createdAt) : (b.createdAt?.seconds || 0) * 1000;
+      return bTs - aTs;
+    });
+    return list.slice(0, 20);
+  }, [rawNotifications]);
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const markRead = async (item: TeamNotification) => {
+    if (item.read) {
+      if (item.href) router.push(item.href);
+      return;
+    }
+    try {
+      await updateDoc(doc(firestore, "notifications", item.id), { read: true });
+    } catch {
+      // ignore
+    }
+    if (item.href) router.push(item.href);
+  };
 
   const initials = userProfile 
     ? (userProfile.displayName || userProfile.email).substring(0, 2).toUpperCase() 
@@ -141,16 +176,43 @@ export function AppHeader() {
               className="relative w-10 h-10 flex items-center justify-center bg-surface border border-hairline hover:border-ink transition-colors outline-none shrink-0"
             >
               <Bell size={16} />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 min-w-[8px] h-2 w-2 bg-brand" />
+              )}
             </button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-72 rounded-none border-ink p-0">
-            <div className="px-4 py-3 border-b border-hairline">
+          <PopoverContent align="end" className="w-80 rounded-none border-ink p-0">
+            <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
               <p className="text-[11px] font-bold uppercase tracking-widest text-ink">Notifications</p>
+              {unreadCount > 0 && (
+                <span className="text-[10px] font-mono text-brand">{unreadCount} new</span>
+              )}
             </div>
-            <div className="px-4 py-8 text-center">
-              <p className="text-sm text-secondary">No new notifications</p>
-              <p className="text-[11px] text-muted-foreground mt-1">You&apos;re all caught up</p>
-            </div>
+            {notifications.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <p className="text-sm text-secondary">No new notifications</p>
+                <p className="text-[11px] text-muted-foreground mt-1">You&apos;re all caught up</p>
+              </div>
+            ) : (
+              <ul className="max-h-80 overflow-y-auto divide-y divide-hairline">
+                {notifications.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className="w-full text-left px-4 py-3 hover:bg-cream transition-colors"
+                      onClick={() => markRead(item)}
+                    >
+                      <p className={`text-xs font-semibold ${item.read ? "text-secondary" : "text-ink"}`}>
+                        {item.title}
+                      </p>
+                      {item.body && (
+                        <p className="text-[11px] text-secondary mt-1 line-clamp-2">{item.body}</p>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </PopoverContent>
         </Popover>
 

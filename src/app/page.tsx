@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { useAuth, useUser } from '@/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useAuth, useUser, useFirebaseApp } from '@/firebase';
 import { SokratiLogo } from '@/components/sokrati-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,11 +15,15 @@ import { Label } from '@/components/ui/label';
 export default function LoginPage() {
   const router = useRouter();
   const auth = useAuth();
+  const app = useFirebaseApp();
   const { user, loading } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetMode, setResetMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     if (user) router.push('/dashboard');
@@ -38,6 +43,22 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsResetting(true);
+    setError(null);
+    try {
+      const functions = getFunctions(app, 'us-central1');
+      const requestReset = httpsCallable(functions, 'requestPasswordResetEmail');
+      await requestReset({ email, kind: 'reset' });
+      setResetSent(true);
+    } catch {
+      setResetSent(true);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   if (loading || user) return null;
 
   return (
@@ -47,10 +68,67 @@ export default function LoginPage() {
           <SokratiLogo className="scale-110" />
           
           <div className="space-y-2">
-            <h1 className="text-4xl font-black tracking-tighter uppercase">Sign in</h1>
-            <p className="text-sm text-secondary">Use your corporate email and password to continue.</p>
+            <h1 className="text-4xl font-black tracking-tighter uppercase">{resetMode ? 'Reset password' : 'Sign in'}</h1>
+            <p className="text-sm text-secondary">
+              {resetMode
+                ? 'We will send a reset link from Aztec_Alerts@dentsu.com if the account exists.'
+                : 'Use your corporate email and password to continue.'}
+            </p>
           </div>
 
+          {resetMode ? (
+            resetSent ? (
+              <div className="space-y-6">
+                <p className="text-sm text-secondary leading-relaxed">
+                  If that inbox is registered, a branded reset email is on its way. Check spam if you do not see it within a few minutes.
+                </p>
+                <Button
+                  type="button"
+                  className="w-full h-12 font-bold uppercase tracking-[0.15em] text-xs"
+                  onClick={() => {
+                    setResetMode(false);
+                    setResetSent(false);
+                    setError(null);
+                  }}
+                >
+                  Back to sign in
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPassword} className="space-y-6">
+                <div className="space-y-1.5">
+                  <Label className="micro-label">Email</Label>
+                  <Input
+                    className="h-12 border-neutral-300 focus:border-primary focus:border-2 transition-all rounded-none"
+                    type="email"
+                    placeholder="name@dentsu.com"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isResetting}
+                  />
+                </div>
+                {error && <p className="text-sm font-medium text-destructive">{error}</p>}
+                <Button
+                  type="submit"
+                  className="w-full h-12 font-bold uppercase tracking-[0.15em] text-xs"
+                  disabled={isResetting}
+                >
+                  {isResetting ? 'Sending…' : 'Send reset email'}
+                </Button>
+                <button
+                  type="button"
+                  className="text-xs font-bold uppercase text-brand hover:underline"
+                  onClick={() => {
+                    setResetMode(false);
+                    setError(null);
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </form>
+            )
+          ) : (
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-4">
               <div className="space-y-1.5">
@@ -88,8 +166,22 @@ export default function LoginPage() {
               {isLoggingIn ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
+          )}
 
           <div className="flex flex-col gap-4 pt-6 border-t border-hairline">
+             {!resetMode && (
+               <button
+                 type="button"
+                 className="text-xs font-bold uppercase text-brand hover:underline text-left"
+                 onClick={() => {
+                   setResetMode(true);
+                   setResetSent(false);
+                   setError(null);
+                 }}
+               >
+                 Forgot password?
+               </button>
+             )}
              <div className="flex items-center gap-2">
                <span className="text-xs text-secondary">Need an account?</span>
                <Link href="/register" className="text-xs font-bold uppercase text-brand hover:underline">Request access</Link>
