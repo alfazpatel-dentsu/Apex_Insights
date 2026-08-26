@@ -18,7 +18,6 @@ export type MailJobPayload = {
   subject?: string;
   html?: string;
   text?: string;
-  resend?: boolean;
 };
 
 export async function enqueueMailJob(
@@ -44,7 +43,6 @@ export async function enqueueMailJob(
   if (payload.subject) record.subject = payload.subject;
   if (payload.html) record.html = payload.html;
   if (payload.text) record.text = payload.text;
-  if (payload.resend) record.resend = true;
 
   const ref = await addDoc(collection(db, 'mailJobs'), record);
 
