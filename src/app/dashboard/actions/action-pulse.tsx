@@ -13,6 +13,7 @@ import {
 import { ArrowUpRight, Warning, Lightning, UsersThree, CalendarBlank, X } from '@phosphor-icons/react';
 import { ActionItem, ActionPriority, ActionStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { assigneesFromItem, displayAssigned } from '@/lib/assignees';
 
 type PulseStatKey = 'open' | 'overdue' | 'today' | 'week' | 'critical' | 'completed';
 
@@ -144,12 +145,15 @@ export function ActionPulseView({
   const ownerLoad = useMemo(() => {
     const map = new Map<string, { name: string; open: number; overdue: number; critical: number }>();
     openItems.forEach((item) => {
-      const name = (item.assignedTo || 'Unassigned').trim() || 'Unassigned';
-      const row = map.get(name) || { name, open: 0, overdue: 0, critical: 0 };
-      row.open += 1;
-      if (bucketFor(item, today) === 'overdue') row.overdue += 1;
-      if (item.priority === 'Critical' || item.priority === 'High') row.critical += 1;
-      map.set(name, row);
+      const people = assigneesFromItem(item);
+      const names = people.length ? people.map((p) => p.name || p.email || 'Unassigned') : [displayAssigned(item)];
+      names.forEach((name) => {
+        const row = map.get(name) || { name, open: 0, overdue: 0, critical: 0 };
+        row.open += 1;
+        if (bucketFor(item, today) === 'overdue') row.overdue += 1;
+        if (item.priority === 'Critical' || item.priority === 'High') row.critical += 1;
+        map.set(name, row);
+      });
     });
     return Array.from(map.values())
       .sort((a, b) => b.open - a.open || b.overdue - a.overdue)
@@ -394,7 +398,7 @@ export function ActionPulseView({
                         )}
                       </div>
                       <p className="text-[10px] font-bold uppercase tracking-widest text-secondary truncate">
-                        {item.assignedTo || 'Unassigned'}
+                        {displayAssigned(item)}
                         {item.clientName ? ` · ${item.clientName}` : ''}
                         {item.section ? ` · ${item.section}` : ''}
                       </p>

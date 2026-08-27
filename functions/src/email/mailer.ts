@@ -13,13 +13,14 @@ import {EmailContent} from "./templates";
 
 export interface SendAlertOptions {
   to: string | string[];
+  cc?: string | string[];
   content: EmailContent;
   settings: EmailAutomationSettings;
   /** Dedup key — skip send if this mailLog doc already exists. */
   dedupeKey: string;
   meta?: Record<string, unknown>;
   /** In-app / Teams type. Omit to skip in-app + Teams (e.g. password reset). */
-  notificationType?: EmailAutomationKey | "test";
+  notificationType?: EmailAutomationKey | "test" | "mom";
   notificationHref?: string;
   /** Never post password-reset links to Teams. */
   notifyTeams?: boolean;
@@ -83,6 +84,7 @@ async function graphSendMail(params: {
   sender: string;
   fromName: string;
   recipients: string[];
+  cc: string[];
   content: EmailContent;
 }): Promise<void> {
   const token = await getGraphAccessToken();
@@ -97,6 +99,9 @@ async function graphSendMail(params: {
         content: params.content.html || params.content.text,
       },
       toRecipients: params.recipients.map((address) => ({
+        emailAddress: {address},
+      })),
+      ccRecipients: params.cc.map((address) => ({
         emailAddress: {address},
       })),
       from: {
@@ -150,7 +155,7 @@ async function resolveUserIdsByEmail(emails: string[]): Promise<Map<string, stri
 
 async function writeInAppNotifications(params: {
   emails: string[];
-  type: EmailAutomationKey | "test";
+  type: EmailAutomationKey | "test" | "mom";
   title: string;
   body: string;
   href?: string;
@@ -209,6 +214,8 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
   if (recipients.length === 0) {
     return {sent: false, skipped: "no-recipients"};
   }
+  const toSet = new Set(recipients);
+  const cc = normalizeRecipients(options.cc || []).filter((e) => !toSet.has(e));
 
   if (!graphCredentialsConfigured()) {
     logger.error("Microsoft Graph credentials missing — cannot send alert email", {
@@ -228,6 +235,7 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
     await logRef.create({
       status: "sending",
       to: recipients,
+      cc,
       subject: options.content.subject,
       from: options.settings.fromEmail,
       provider: "microsoft-graph",
@@ -248,6 +256,7 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
       sender,
       fromName: options.settings.fromName || "AZTEC Alerts",
       recipients,
+      cc,
       content: options.content,
     });
 
@@ -280,6 +289,7 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
     logger.info("Alert email sent via Microsoft Graph", {
       dedupeKey: options.dedupeKey,
       to: recipients,
+      cc,
       from: sender,
     });
 

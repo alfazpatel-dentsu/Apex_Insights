@@ -45,6 +45,7 @@ import { useCollection, useFirestore } from '@/firebase';
 import { ActionItem, ActionStatus, ActionPriority } from '@/lib/types';
 import { deleteActionItem, saveActionItem } from '@/lib/firestore-actions';
 import { canonicalizeActionStatus, resolveActionStatus } from '@/lib/normalize';
+import { displayAssigned } from '@/lib/assignees';
 import { useToast } from '@/hooks/use-toast';
 import { PageHeader } from '@/components/page-header';
 import { AddActionItemDialog } from './add-action-item-dialog';
@@ -182,7 +183,8 @@ export default function ActionItemsPage() {
         const q = search.toLowerCase();
         const matchesSearch =
           (a.taskName || '').toLowerCase().includes(q) ||
-          (a.assignedTo || '').toLowerCase().includes(q) ||
+          displayAssigned(a).toLowerCase().includes(q) ||
+          (a.assignees || []).some((p) => (p.email || '').toLowerCase().includes(q)) ||
           (a.clientName || '').toLowerCase().includes(q);
         const matchesSection = sectionFilter === 'all' || a.section === sectionFilter;
         return matchesSearch && matchesSection;
@@ -701,7 +703,7 @@ function ActionCard({
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-ink/5">
         <div className="flex items-center gap-1.5 min-w-0">
           <User className="h-3 w-3 text-secondary shrink-0" />
-          <span className="text-[10px] font-bold truncate">{item.assignedTo || 'Unassigned'}</span>
+          <span className="text-[10px] font-bold truncate">{displayAssigned(item)}</span>
         </div>
         <div className={cn('flex items-center gap-1 shrink-0', dueTone(item.dueDate, item.status))}>
           <Clock className="h-3 w-3" />
