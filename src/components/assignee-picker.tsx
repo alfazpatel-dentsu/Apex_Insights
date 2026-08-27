@@ -3,19 +3,22 @@
 import { useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { ActionAssignee, assigneeKey } from '@/lib/assignees';
-import { UserProfile } from '@/lib/types';
+import type { AssigneeOption } from '@/lib/assignee-options';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
 export function AssigneePicker({
-  users,
+  options,
   value,
   onChange,
+  loading,
 }: {
-  users: UserProfile[];
+  options: AssigneeOption[];
   value: ActionAssignee[];
   onChange: (next: ActionAssignee[]) => void;
+  loading?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [guestName, setGuestName] = useState('');
@@ -25,41 +28,29 @@ export function AssigneePicker({
 
   const selectedKeys = useMemo(() => new Set(value.map(assigneeKey)), [value]);
 
-  const registered = useMemo(
-    () =>
-      users.filter(
-        (u) =>
-          u.status !== 'Pending' &&
-          ((u.email || '').trim() || (u.displayName || '').trim())
-      ),
-    [users]
-  );
-
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return registered
-      .filter((u) => {
+    return options
+      .filter((opt) => {
         if (!q) return true;
         return (
-          (u.displayName || '').toLowerCase().includes(q) ||
-          (u.email || '').toLowerCase().includes(q)
+          opt.name.toLowerCase().includes(q) ||
+          (opt.email || '').toLowerCase().includes(q)
         );
       })
-      .filter((u) => {
-        const uid = u.uid || u.id;
-        if (uid && selectedKeys.has(`uid:${uid}`)) return false;
-        if (u.email && selectedKeys.has(`email:${u.email.toLowerCase()}`)) return false;
+      .filter((opt) => {
+        if (opt.userId && selectedKeys.has(`uid:${opt.userId}`)) return false;
+        if (opt.email && selectedKeys.has(`email:${opt.email.toLowerCase()}`)) return false;
+        if (opt.name && selectedKeys.has(`name:${opt.name.toLowerCase()}`)) return false;
         return true;
-      })
-      .sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email))
-      .slice(0, 8);
-  }, [registered, query, selectedKeys]);
+      });
+  }, [options, query, selectedKeys]);
 
-  const addRegistered = (user: UserProfile) => {
+  const addOption = (opt: AssigneeOption) => {
     const next: ActionAssignee = {
-      name: user.displayName || user.email,
-      email: (user.email || '').toLowerCase(),
-      userId: user.uid || user.id,
+      name: opt.name || opt.email,
+      email: (opt.email || '').toLowerCase(),
+      userId: opt.userId,
     };
     if (value.some((a) => assigneeKey(a) === assigneeKey(next))) return;
     onChange([...value, next]);
@@ -84,15 +75,13 @@ export function AssigneePicker({
 
   const saveEmail = (key: string) => {
     const email = emailDraft.trim().toLowerCase();
-    onChange(
-      value.map((a) => (assigneeKey(a) === key ? { ...a, email } : a))
-    );
+    onChange(value.map((a) => (assigneeKey(a) === key ? { ...a, email } : a)));
     setEditingKey(null);
     setEmailDraft('');
   };
 
   return (
-    <div className="space-y-3">
+    <div className="relative z-[60] space-y-3">
       {value.length > 0 && (
         <ul className="flex flex-wrap gap-2">
           {value.map((a) => {
@@ -153,26 +142,40 @@ export function AssigneePicker({
       <Input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search registered users…"
+        placeholder={loading ? 'Loading people…' : 'Search all people…'}
         className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold"
       />
 
-      {matches.length > 0 && (
-        <ul className="border border-ink/10 divide-y divide-ink/5 max-h-40 overflow-y-auto bg-white">
-          {matches.map((u) => (
-            <li key={u.uid || u.id || u.email}>
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 hover:bg-cream"
-                onClick={() => addRegistered(u)}
-              >
-                <div className="text-xs font-bold">{u.displayName || u.email}</div>
-                <div className="text-[10px] font-mono text-secondary">{u.email}</div>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="border border-ink/10 bg-white">
+        <ScrollArea className="h-64">
+          <ul className="divide-y divide-ink/5">
+            {matches.map((opt) => (
+              <li key={`${opt.userId || ''}|${opt.name}|${opt.email}`}>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 hover:bg-cream"
+                  onClick={() => addOption(opt)}
+                >
+                  <div className="text-xs font-bold">{opt.name || opt.email}</div>
+                  {opt.email ? (
+                    <div className="text-[10px] font-mono text-secondary">{opt.email}</div>
+                  ) : (
+                    <div className="text-[10px] uppercase tracking-widest text-secondary">No email yet</div>
+                  )}
+                </button>
+              </li>
+            ))}
+            {matches.length === 0 ? (
+              <li className="px-3 py-6 text-center text-[10px] font-bold uppercase tracking-widest text-secondary">
+                {loading ? 'Loading people…' : 'No matching people'}
+              </li>
+            ) : null}
+          </ul>
+        </ScrollArea>
+        <p className="px-3 py-2 text-[10px] font-mono text-secondary border-t border-ink/10">
+          {options.length} {options.length === 1 ? 'person' : 'people'} in directory · no cap · click to add several
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
         <Input
@@ -193,7 +196,8 @@ export function AssigneePicker({
         </Button>
       </div>
       <p className="text-[10px] text-secondary leading-relaxed">
-        Registered people include their app email automatically. For anyone not in the app, add a name now and an email whenever you have it — alerts only send when an email is present.
+        Everyone in the app is listed (including pending). Registered people include their email automatically.
+        For anyone not in the list, add a name now and an email later — alerts only send when an email is present.
       </p>
     </div>
   );

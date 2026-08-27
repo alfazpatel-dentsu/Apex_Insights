@@ -27,6 +27,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry, UserProfile } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection } from '@/firebase';
+import { assigneesFromItem, assignedToLabel, type ActionAssignee } from '@/lib/assignees';
+import { AssigneePicker } from '@/components/assignee-picker';
+import { buildAssigneeOptions, extraAssigneeNamesFromActions } from '@/lib/assignee-options';
 import {
   saveActionItem,
   buildActionCommentHistory,
@@ -39,8 +42,6 @@ import { resolveActionStatus } from '@/lib/normalize';
 import { format, parseISO, isValid } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn, releaseRadixPointerLock } from '@/lib/utils';
-import { assigneesFromItem, assignedToLabel, type ActionAssignee } from '@/lib/assignees';
-import { AssigneePicker } from '@/components/assignee-picker';
 
 const actionSchema = z.object({
   taskName: z.string().min(1, 'Task name is required'),
@@ -114,7 +115,18 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   
   const { data: explicitClients } = useCollection<Client>('clients');
   const { data: kpiRecords } = useCollection<KpiData>('kpis');
-  const { data: users } = useCollection<UserProfile>('users');
+  const { data: registryUsers, loading: usersLoading } = useCollection<UserProfile>('users');
+  const { data: existingActions } = useCollection<ActionItem>('actionItems');
+
+  const assigneeOptions = useMemo(
+    () =>
+      buildAssigneeOptions(registryUsers, [
+        ...extraAssigneeNamesFromActions(existingActions),
+        action?.assignedTo,
+        ...(action?.assignees || []).map((a) => a.name || a.email),
+      ]),
+    [registryUsers, existingActions, action?.assignedTo, action?.assignees]
+  );
 
   const discoveredClients = useMemo(() => {
     const uniqueList: { uniqueId: string, name: string }[] = [];
@@ -343,9 +355,10 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Assigned To</FormLabel>
                     <FormControl>
                       <AssigneePicker
-                        users={users || []}
+                        options={assigneeOptions}
                         value={field.value || []}
                         onChange={field.onChange}
+                        loading={usersLoading}
                       />
                     </FormControl>
                     <FormMessage />
