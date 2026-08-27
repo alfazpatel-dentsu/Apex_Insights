@@ -24,9 +24,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry } from '@/lib/types';
+import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry, UserProfile } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection } from '@/firebase';
+import { AssigneePicker } from '@/components/assignee-picker';
+import { buildAssigneeOptions, extraAssigneeNamesFromActions } from '@/lib/assignee-options';
 import {
   saveActionItem,
   buildActionCommentHistory,
@@ -107,6 +109,17 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   
   const { data: explicitClients } = useCollection<Client>('clients');
   const { data: kpiRecords } = useCollection<KpiData>('kpis');
+  const { data: registryUsers, loading: usersLoading } = useCollection<UserProfile>('users');
+  const { data: existingActions } = useCollection<ActionItem>('actionItems');
+
+  const assigneeOptions = useMemo(
+    () =>
+      buildAssigneeOptions(registryUsers, [
+        ...extraAssigneeNamesFromActions(existingActions),
+        action?.assignedTo,
+      ]),
+    [registryUsers, existingActions, action?.assignedTo]
+  );
 
   const discoveredClients = useMemo(() => {
     const uniqueList: { uniqueId: string, name: string }[] = [];
@@ -321,7 +334,14 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                 <FormField control={form.control} name="assignedTo" render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Assigned To</FormLabel>
-                    <FormControl><Input className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold" placeholder="Identity of owner..." {...field} /></FormControl>
+                    <FormControl>
+                      <AssigneePicker
+                        options={assigneeOptions}
+                        value={field.value}
+                        onChange={field.onChange}
+                        loading={usersLoading}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
