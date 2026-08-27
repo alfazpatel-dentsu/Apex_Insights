@@ -69,7 +69,7 @@ export function AssigneePicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[var(--radix-popover-trigger-width)] p-0 rounded-none"
+        className="z-[60] w-[var(--radix-popover-trigger-width)] p-0 rounded-none"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="p-2 border-b border-foreground/10">
