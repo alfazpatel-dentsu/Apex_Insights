@@ -29,7 +29,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection } from '@/firebase';
 import { assigneesFromItem, assignedToLabel, type ActionAssignee } from '@/lib/assignees';
 import { AssigneePicker } from '@/components/assignee-picker';
-import { buildAssigneeOptions, extraAssigneeNamesFromActions } from '@/lib/assignee-options';
+import { buildAssigneeOptions } from '@/lib/assignee-options';
 import {
   saveActionItem,
   buildActionCommentHistory,
@@ -116,16 +116,10 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const { data: explicitClients } = useCollection<Client>('clients');
   const { data: kpiRecords } = useCollection<KpiData>('kpis');
   const { data: registryUsers, loading: usersLoading } = useCollection<UserProfile>('users');
-  const { data: existingActions } = useCollection<ActionItem>('actionItems');
 
   const assigneeOptions = useMemo(
-    () =>
-      buildAssigneeOptions(registryUsers, [
-        ...extraAssigneeNamesFromActions(existingActions),
-        action?.assignedTo,
-        ...(action?.assignees || []).map((a) => a.name || a.email),
-      ]),
-    [registryUsers, existingActions, action?.assignedTo, action?.assignees]
+    () => buildAssigneeOptions(registryUsers),
+    [registryUsers]
   );
 
   const discoveredClients = useMemo(() => {
@@ -297,7 +291,13 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         data.comment
       );
 
-      const assignees = (data.assignees || []).filter((a) => (a.name || a.email).trim());
+      const assignees = (data.assignees || [])
+        .filter((a) => (a.name || a.email).trim())
+        .map((a) => ({
+          name: (a.name || a.email).trim(),
+          email: (a.email || '').trim().toLowerCase(),
+          ...(a.userId ? { userId: a.userId } : {}),
+        }));
       if (assignees.length === 0) {
         form.setError('assignees', { message: 'Assign at least one person' });
         setIsSaving(false);

@@ -98,14 +98,39 @@ const parseMonthStr = (monthStr: any, isWeeklyDate: boolean = false): string => 
 
 const throttle = () => new Promise(resolve => setTimeout(resolve, 50));
 
+/** Firestore rejects `undefined` anywhere in a document, including nested assignee.userId. */
+function omitUndefined<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.map((item) => omitUndefined(item)) as T;
+    }
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+        const out: Record<string, unknown> = {};
+        for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+            if (nested === undefined) continue;
+            out[key] = omitUndefined(nested);
+        }
+        return out as T;
+    }
+    return value;
+}
+
 export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, id?: string) => {
     const ref = id ? doc(db, 'actionItems', id) : doc(collection(db, 'actionItems'));
-    const payload = {
+    const payload = omitUndefined({
         ...data,
         id: ref.id,
         updatedAt: new Date().toISOString(),
-        createdAt: data.createdAt || new Date().toISOString()
-    };
+        createdAt: data.createdAt || new Date().toISOString(),
+        ...(data.assignees
+          ? {
+              assignees: data.assignees.map((a) => ({
+                name: (a.name || a.email || '').trim(),
+                email: (a.email || '').trim().toLowerCase(),
+                ...(a.userId ? { userId: a.userId } : {}),
+              })),
+            }
+          : {}),
+    });
     try {
         await setDoc(ref, payload, { merge: true });
     } catch (e) {
