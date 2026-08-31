@@ -132,7 +132,7 @@ export default function AdminPage() {
     setIsResending(user.uid);
     try {
       await resendInvitationEmail(auth, user.email, async (email) => {
-        await enqueueMailJob(firestore, 'invite', email, { wait: true });
+        await enqueueMailJob(firestore, { type: 'invite', email, resend: true }, undefined, { wait: true });
       });
       toast({
         title: "Invite Resent",
@@ -152,6 +152,17 @@ export default function AdminPage() {
   const handleCreateUser = async (data: any) => {
     try {
       await createUser(firestore, data);
+      try {
+        await enqueueMailJob(firestore, 'invite', data.email, { wait: true });
+      } catch (mailErr: any) {
+        toast({
+          variant: 'destructive',
+          title: 'User created, invite email failed',
+          description: mailErr?.message || 'Queue the invite again from Resend.',
+        });
+        setIsAddUserDialogOpen(false);
+        return;
+      }
       toast({
         title: "Invite Sent",
         description: `User created. An invitation from Aztec_Alerts@dentsu.com should arrive at ${data.email} shortly.`,
