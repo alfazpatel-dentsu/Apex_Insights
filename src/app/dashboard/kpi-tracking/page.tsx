@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
+import { kpiSeriesKey } from '@/lib/kpi-record-key';
 import {
   getEffectiveWeeklyTarget,
   getMonthlyStatus,
@@ -236,16 +237,21 @@ function KpiTrackingContent() {
     const groups: Record<string, any> = {};
     kpiData.forEach(item => {
       const channel = canonicalizeChannel(item.channel);
-      const key = `${item.clientName}-${item.kpi}-${channel}`;
+      const series = kpiSeriesKey({ ...item, channel });
+      let key = series;
+      if (groups[key]?.monthData?.[item.month]) {
+        key = `${series}|${item.id}`;
+      }
       if (!groups[key]) {
         groups[key] = {
-          id: item.id,
+          id: key,
           uploadRecordId: item.uploadRecordId || item.id,
           clientName: item.clientName,
           kpi: item.kpi,
           kpiType: item.kpiType || 'PRIMARY',
           channel,
           lob: item.lob,
+          clientId: item.clientId,
           direction: parseKpiDirection(item.direction, item.kpi),
           type: item.type,
           monthData: {} as Record<string, KpiData>
@@ -396,6 +402,24 @@ function KpiTrackingContent() {
   };
 
   const handleExportExcel = async () => {
+    const records = [...(kpiData || [])].sort((a, b) => {
+      const month = (a.month || '').localeCompare(b.month || '');
+      if (month !== 0) return month;
+      const client = (a.clientName || '').localeCompare(b.clientName || '');
+      if (client !== 0) return client;
+      const lob = (a.lob || '').localeCompare(b.lob || '');
+      if (lob !== 0) return lob;
+      const channel = canonicalizeChannel(a.channel).localeCompare(canonicalizeChannel(b.channel));
+      if (channel !== 0) return channel;
+      return (a.kpi || '').localeCompare(b.kpi || '');
+    });
+    if (records.length === 0) {
+      toast({
+        title: 'Nothing to export',
+        description: 'Fetch records for the months you uploaded, then export again.',
+      });
+      return;
+    }
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('KPI Records');
     const headers = [
@@ -428,8 +452,7 @@ function KpiTrackingContent() {
     worksheet.columns = headers;
     worksheet.getRow(1).font = { bold: true };
     worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
-    sortedDisplayData.forEach(group => {
-      Object.values(group.monthData).forEach((kpi: any) => {
+    records.forEach((kpi) => {
         const kpiWeeks = weeklyMap.get(kpi.id) || [];
         const getW = (n: number) => kpiWeeks.find(w => w.weekOfMonth === n);
         worksheet.addRow({
@@ -441,7 +464,7 @@ function KpiTrackingContent() {
           lob: kpi.lob,
           cduLead: kpi.cduLead,
           emCsm: kpi.emCsm,
-          channel: kpi.channel,
+          channel: canonicalizeChannel(kpi.channel),
           kpi: kpi.kpi,
           kpiType: kpi.kpiType || 'PRIMARY',
           direction: kpi.direction,
@@ -459,11 +482,10 @@ function KpiTrackingContent() {
           w5_achieved: getW(5)?.achieved ?? 0,
           w5_comment: getW(5)?.comment || '',
         });
-      });
     });
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `Aztec_KPI_Export_${format(new Date(), 'yyyyMMdd')}.xlsx`);
-    toast({ title: "Export Complete" });
+    toast({ title: "Export Complete", description: `${records.length} records exported.` });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -471,7 +493,26 @@ function KpiTrackingContent() {
     if (file) {
       setIsUploading(true); setUploadProgress(0);
       Papa.parse(file, { header: true, skipEmptyLines: 'greedy', dynamicTyping: true, complete: async (r) => {
-        try { const { processedCount } = await bulkSaveKpiData(firestore, r.data as any[], format(dateRange?.from || new Date(), 'yyyy-MM'), setUploadProgress); toast({ title: "Sync Complete", description: `${processedCount} records saved.` }); }
+        try {
+          const { processedCount, uploadedMonths } = await bulkSaveKpiData(
+            firestore,
+            r.data as any[],
+            format(dateRange?.from || new Date(), 'yyyy-MM'),
+            setUploadProgress
+          );
+          toast({
+            title: "Sync Complete",
+            description: `${processedCount} records saved${uploadedMonths.length ? ` for ${uploadedMonths.join(', ')}` : ''}.`,
+          });
+          if (uploadedMonths.length > 0) {
+            const first = parse(uploadedMonths[0], 'yyyy-MM', new Date());
+            const last = parse(uploadedMonths[uploadedMonths.length - 1], 'yyyy-MM', new Date());
+            if (isValid(first) && isValid(last)) {
+              setDateRange({ from: startOfMonth(first), to: endOfMonth(last) });
+            }
+          }
+          setShouldFetch(true);
+        }
         catch (e: any) { toast({ variant: "destructive", title: "Sync Failed", description: e.message }); }
         finally { setIsUploading(false); setUploadProgress(0); if (fileInputRef.current) fileInputRef.current.value = ''; }
       }});
