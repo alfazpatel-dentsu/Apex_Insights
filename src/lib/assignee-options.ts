@@ -1,4 +1,4 @@
-import type { ActionItem, UserProfile } from '@/lib/types';
+import type { UserProfile } from '@/lib/types';
 
 export type AssigneeOption = {
   name: string;
@@ -11,76 +11,41 @@ function personLabel(user: UserProfile): string {
   return (user.displayName || '').trim() || (user.email || '').trim();
 }
 
-function optionKey(name: string, email?: string, userId?: string): string {
-  if (userId) return `uid:${userId}`;
-  if (email?.includes('@')) return `email:${email.trim().toLowerCase()}`;
-  return `name:${name.trim().toLowerCase()}`;
+function isInAppUser(user: UserProfile): boolean {
+  const email = (user.email || '').trim().toLowerCase();
+  if (!email.includes('@')) return false;
+  if (user.status === 'Pending') return false;
+  return true;
 }
 
 /**
- * Full assignee directory: every registry profile (Invite sent, registered, pending)
- * plus historical assignedTo / assignees names that are not in the registry.
+ * Assignee search list: people who already have an app account
+ * (Invite sent or User Registered). Guests are added separately in the picker.
  */
 export function buildAssigneeOptions(
-  users: UserProfile[] | null | undefined,
-  extraNames: Array<string | undefined | null> = []
+  users: UserProfile[] | null | undefined
 ): AssigneeOption[] {
-  const byKey = new Map<string, AssigneeOption>();
+  const byEmail = new Map<string, AssigneeOption>();
 
-  const add = (name: string, email = '', userId?: string, status?: UserProfile['status']) => {
-    const label = name.trim();
-    if (!label && !email) return;
-    const cleanEmail = email.trim().toLowerCase();
-    const display = label || cleanEmail.split('@')[0] || cleanEmail;
-    const key = optionKey(display, cleanEmail, userId);
-    const existing = byKey.get(key);
+  (users || []).forEach((user) => {
+    if (!isInAppUser(user)) return;
+    const email = user.email.trim().toLowerCase();
+    const name = personLabel(user) || email;
+    const userId = user.uid || user.id;
+    const existing = byEmail.get(email);
     if (!existing) {
-      byKey.set(key, {
-        name: display,
-        email: cleanEmail,
-        userId,
-        status,
+      byEmail.set(email, {
+        name,
+        email,
+        ...(userId ? { userId } : {}),
+        status: user.status,
       });
       return;
     }
-    if (!existing.email && cleanEmail) existing.email = cleanEmail;
-    if (!existing.userId && userId) existing.userId = userId;
-    if (!existing.status && status) existing.status = status;
-  };
-
-  (users || []).forEach((user) => {
-    const name = personLabel(user);
-    if (!name) return;
-    add(name, user.email || '', user.uid || user.id, user.status);
+    if (userId && !existing.userId) existing.userId = userId;
+    if ((user.displayName || '').trim()) existing.name = user.displayName.trim();
+    if (!existing.status && user.status) existing.status = user.status;
   });
 
-  extraNames.forEach((raw) => {
-    const name = (raw || '').trim();
-    if (!name) return;
-    if (name.includes('@')) add(name.split('@')[0] || name, name);
-    else add(name);
-  });
-
-  return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function extraAssigneeNamesFromActions(
-  actions: ActionItem[] | null | undefined
-): string[] {
-  if (!actions) return [];
-  const names: string[] = [];
-  actions.forEach((item) => {
-    const raw = (item.assignedTo || '').trim();
-    if (raw) {
-      raw.split(/[,;&/]+/).forEach((part) => {
-        const name = part.trim();
-        if (name) names.push(name);
-      });
-    }
-    (item.assignees || []).forEach((a) => {
-      if (a.name) names.push(a.name);
-      if (a.email) names.push(a.email);
-    });
-  });
-  return names;
+  return Array.from(byEmail.values()).sort((a, b) => a.name.localeCompare(b.name));
 }

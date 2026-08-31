@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth, useUser, useFirestore } from '@/firebase';
 import { SokratiLogo } from '@/components/sokrati-logo';
 import { Button } from '@/components/ui/button';
@@ -47,11 +47,26 @@ export default function LoginPage() {
     e.preventDefault();
     setIsResetting(true);
     setError(null);
+    const address = email.trim().toLowerCase();
+    if (!address.includes('@')) {
+      setError('Enter the work email for the account.');
+      setIsResetting(false);
+      return;
+    }
     try {
-      await enqueueMailJob(firestore, 'reset', email);
+      await enqueueMailJob(firestore, 'reset', address);
       setResetSent(true);
-    } catch {
-      setResetSent(true);
+    } catch (jobErr) {
+      try {
+        await sendPasswordResetEmail(auth, address);
+        setResetSent(true);
+      } catch {
+        setError(
+          jobErr instanceof Error
+            ? jobErr.message
+            : 'Could not send a reset email. Try again or contact an admin.'
+        );
+      }
     } finally {
       setIsResetting(false);
     }

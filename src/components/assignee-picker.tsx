@@ -41,7 +41,6 @@ export function AssigneePicker({
       .filter((opt) => {
         if (opt.userId && selectedKeys.has(`uid:${opt.userId}`)) return false;
         if (opt.email && selectedKeys.has(`email:${opt.email.toLowerCase()}`)) return false;
-        if (opt.name && selectedKeys.has(`name:${opt.name.toLowerCase()}`)) return false;
         return true;
       });
   }, [options, query, selectedKeys]);
@@ -50,8 +49,8 @@ export function AssigneePicker({
     const next: ActionAssignee = {
       name: opt.name || opt.email,
       email: (opt.email || '').toLowerCase(),
-      userId: opt.userId,
     };
+    if (opt.userId) next.userId = opt.userId;
     if (value.some((a) => assigneeKey(a) === assigneeKey(next))) return;
     onChange([...value, next]);
     setQuery('');
@@ -142,7 +141,7 @@ export function AssigneePicker({
       <Input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder={loading ? 'Loading people…' : 'Search all people…'}
+        placeholder={loading ? 'Loading people…' : 'Search registered users…'}
         className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold"
       />
 
@@ -157,11 +156,7 @@ export function AssigneePicker({
                   onClick={() => addOption(opt)}
                 >
                   <div className="text-xs font-bold">{opt.name || opt.email}</div>
-                  {opt.email ? (
-                    <div className="text-[10px] font-mono text-secondary">{opt.email}</div>
-                  ) : (
-                    <div className="text-[10px] uppercase tracking-widest text-secondary">No email yet</div>
-                  )}
+                  <div className="text-[10px] font-mono text-secondary">{opt.email}</div>
                 </button>
               </li>
             ))}
@@ -173,7 +168,7 @@ export function AssigneePicker({
           </ul>
         </ScrollArea>
         <p className="px-3 py-2 text-[10px] font-mono text-secondary border-t border-ink/10">
-          {options.length} {options.length === 1 ? 'person' : 'people'} in directory · no cap · click to add several
+          {options.length} registered {options.length === 1 ? 'user' : 'users'} · click to add
         </p>
       </div>
 
@@ -196,8 +191,7 @@ export function AssigneePicker({
         </Button>
       </div>
       <p className="text-[10px] text-secondary leading-relaxed">
-        Everyone in the app is listed (including pending). Registered people include their email automatically.
-        For anyone not in the list, add a name now and an email later — alerts only send when an email is present.
+        The list is registered app users only (invite sent or signed in). For anyone outside the app, add a name here and an email when you have it.
       </p>
     </div>
   );

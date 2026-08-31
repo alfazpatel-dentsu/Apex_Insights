@@ -104,6 +104,7 @@ service cloud.firestore {
         || (
           isAdmin()
           && request.resource.data.type in ['test', 'invite', 'reset', 'mom']
+          && request.resource.data.status == 'queued'
         );
       allow read: if isAdmin();
       allow update, delete: if false;

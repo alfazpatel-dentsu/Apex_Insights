@@ -60,9 +60,20 @@ async function brandedPasswordLink(
   mode: "reset" | "invite"
 ): Promise<string> {
   const base = appBaseUrl.replace(/\/$/, "");
-  const firebaseLink = await getAuth().generatePasswordResetLink(email, {
-    url: `${base}/reset-password`,
-  });
+  const continueUrl = `${base}/reset-password`;
+  let firebaseLink: string;
+  try {
+    firebaseLink = await getAuth().generatePasswordResetLink(email, {
+      url: continueUrl,
+    });
+  } catch (err) {
+    logger.warn("password link with continue URL failed; using default handler", {
+      email,
+      continueUrl,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    firebaseLink = await getAuth().generatePasswordResetLink(email);
+  }
   try {
     const parsed = new URL(firebaseLink);
     const oobCode = parsed.searchParams.get("oobCode");
@@ -402,7 +413,7 @@ export const onUserEmailAutomations = functions
             cc: ccEmailsFor(settings, "userInvited"),
             content,
             settings,
-            dedupeKey: `userInvited_${uid}_${Date.now()}`,
+            dedupeKey: `userInvited_${uid}`,
             meta: {type: "userInvited", uid},
             notifyTeams: false,
           });
@@ -538,12 +549,9 @@ export const onMailJobCreated = functions
       }
 
       const automationKey = type === "invite" ? "userInvited" : "passwordReset";
-      if (!isAutomationEnabled(settings, automationKey)) {
-        await jobRef.set({status: "skipped", error: "disabled"}, {merge: true});
-        return;
-      }
+      // Account emails (invite + reset) always send; Notifications toggles do not block them.
       if (!email || !email.includes("@")) {
-        await jobRef.set({status: "skipped", error: "bad-email"}, {merge: true});
+        await jobRef.set({status: "failed", error: "bad-email"}, {merge: true});
         return;
       }
 
@@ -573,17 +581,28 @@ export const onMailJobCreated = functions
             });
 
       const hourBucket = Math.floor(Date.now() / 3_600_000);
+      const isResend = data.resend === true;
       const result = await sendAlertEmail({
         to: user.email,
         content,
         settings,
         dedupeKey:
           type === "invite"
-            ? `userInvited_resend_${user.uid}_${id}`
+            ? isResend
+              ? `userInvited_resend_${user.uid}_${id}`
+              : `userInvited_${user.uid}`
             : `passwordReset_${user.uid}_${hourBucket}`,
         meta: {type: automationKey, uid: user.uid},
         notifyTeams: false,
       });
+
+      if (!result.sent && result.skipped === "graph-not-configured") {
+        await jobRef.set(
+          {status: "failed", error: "graph-not-configured"},
+          {merge: true}
+        );
+        return;
+      }
 
       await jobRef.set(
         {

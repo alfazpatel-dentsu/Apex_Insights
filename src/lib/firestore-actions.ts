@@ -98,14 +98,39 @@ const parseMonthStr = (monthStr: any, isWeeklyDate: boolean = false): string => 
 
 const throttle = () => new Promise(resolve => setTimeout(resolve, 50));
 
+/** Firestore rejects `undefined` anywhere in a document, including nested assignee.userId. */
+function omitUndefined<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.map((item) => omitUndefined(item)) as T;
+    }
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+        const out: Record<string, unknown> = {};
+        for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+            if (nested === undefined) continue;
+            out[key] = omitUndefined(nested);
+        }
+        return out as T;
+    }
+    return value;
+}
+
 export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, id?: string) => {
     const ref = id ? doc(db, 'actionItems', id) : doc(collection(db, 'actionItems'));
-    const payload = {
+    const payload = omitUndefined({
         ...data,
         id: ref.id,
         updatedAt: new Date().toISOString(),
-        createdAt: data.createdAt || new Date().toISOString()
-    };
+        createdAt: data.createdAt || new Date().toISOString(),
+        ...(data.assignees
+          ? {
+              assignees: data.assignees.map((a) => ({
+                name: (a.name || a.email || '').trim(),
+                email: (a.email || '').trim().toLowerCase(),
+                ...(a.userId ? { userId: a.userId } : {}),
+              })),
+            }
+          : {}),
+    });
     try {
         await setDoc(ref, payload, { merge: true });
     } catch (e) {
@@ -192,20 +217,66 @@ export const deleteActionItem = async (db: Firestore, id: string) => {
     }
 };
 
+async function deleteRefsInChunks(db: Firestore, refs: ReturnType<typeof doc>[]) {
+    const unique = Array.from(new Map(refs.map((ref) => [ref.path, ref])).values());
+    const batchSize = 400;
+    for (let i = 0; i < unique.length; i += batchSize) {
+        const batch = writeBatch(db);
+        unique.slice(i, i + batchSize).forEach((ref) => batch.delete(ref));
+        await batch.commit().catch(async (err) => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: '/kpis', operation: 'delete' }));
+            throw err;
+        });
+        await throttle();
+    }
+}
+
+/** Drop existing KPI docs for the months present in an upload so the file is the source of truth. */
+async function replaceKpiMonths(db: Firestore, months: string[]) {
+    for (const month of months) {
+        const [kpiSnap, weeklySnap] = await Promise.all([
+            getDocs(query(collection(db, 'kpis'), where('month', '==', month))),
+            getDocs(query(collection(db, 'kpiWeeklyData'), where('month', '==', month))),
+        ]);
+        const refs = [
+            ...kpiSnap.docs.map((d) => d.ref),
+            ...weeklySnap.docs.map((d) => d.ref),
+        ];
+        kpiSnap.docs.forEach((d) => {
+            [1, 2, 3, 4, 5].forEach((w) => refs.push(doc(db, 'kpiWeeklyData', `${d.id}_w${w}`)));
+        });
+        await deleteRefsInChunks(db, refs);
+    }
+}
+
 export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultMonthStr: string, onProgress?: (progress: number) => void) => {
     const uploadedMonths = new Set<string>();
     let processedCount = 0;
-    const CHUNK_SIZE = 50; 
+    const CHUNK_SIZE = 50;
     const totalEntries = kpiEntries.length;
-    
-    for (let i = 0; i < totalEntries; i += CHUNK_SIZE) {
-        const chunk = kpiEntries.slice(i, i + CHUNK_SIZE);
+    const validEntries: any[] = [];
+
+    kpiEntries.forEach((entry) => {
+        if (!entry || Object.keys(entry).length < 2) return;
+        const clientName = getRowVal(entry, 'clientName', 'Client')?.toString().trim();
+        const channel = canonicalizeChannel(getRowVal(entry, 'channel', 'Channel')?.toString());
+        const kpi = getRowVal(entry, 'kpi', 'KPI')?.toString().trim();
+        if (!clientName || !channel || channel === 'N/A' || !kpi) return;
+        const monthStr = parseMonthStr(getRowVal(entry, 'Month', 'month')) || defaultMonthStr;
+        if (monthStr) uploadedMonths.add(monthStr);
+        validEntries.push(entry);
+    });
+
+    if (onProgress) onProgress(5);
+    await replaceKpiMonths(db, Array.from(uploadedMonths).sort());
+    if (onProgress) onProgress(15);
+
+    for (let i = 0; i < validEntries.length; i += CHUNK_SIZE) {
+        const chunk = validEntries.slice(i, i + CHUNK_SIZE);
         const batch = writeBatch(db);
         let batchProcessed = 0;
-        
-        chunk.forEach(entry => {
-            if (!entry || Object.keys(entry).length < 2) return;
 
+        chunk.forEach((entry) => {
             const providedRid = getRowVal(entry, 'Record ID', 'Upload Record ID', 'id')?.toString().trim();
             const kpiDocRef = providedRid ? doc(db, 'kpis', providedRid) : doc(collection(db, 'kpis'));
             const kpiId = kpiDocRef.id;
@@ -214,17 +285,13 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
             const channel = canonicalizeChannel(getRowVal(entry, 'channel', 'Channel')?.toString());
             const kpi = getRowVal(entry, 'kpi', 'KPI')?.toString().trim();
             const clientId = getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A';
-            
-            if (!clientName || !channel || channel === 'N/A' || !kpi) return;
-            
             const monthStr = parseMonthStr(getRowVal(entry, 'Month', 'month')) || defaultMonthStr;
-            if (monthStr) uploadedMonths.add(monthStr);
 
-            const kpiPayload: any = { 
-                month: monthStr, 
-                clientId, 
-                clientName, 
-                channel, 
+            const kpiPayload: any = {
+                month: monthStr,
+                clientId,
+                clientName,
+                channel,
                 kpi,
                 type: getRowVal(entry, 'Type') || 'Performance',
                 uploadRecordId: kpiId
@@ -242,15 +309,15 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
 
             batch.set(kpiDocRef, kpiPayload, { merge: true });
 
-            [1, 2, 3, 4, 5].forEach(w => {
+            [1, 2, 3, 4, 5].forEach((w) => {
                 const weeklyAchieved = getRowVal(entry, `W${w} Achieved`, `W${w} Achived`, `W${w}Achieved`, `W${w}`);
                 const weeklyComment = getRowVal(entry, `W${w} Comment`, `W${w}Comment`);
                 const weeklyId = `${kpiId}_w${w}`;
                 const weeklyDocRef = doc(db, 'kpiWeeklyData', weeklyId);
-                
-                batch.set(weeklyDocRef, { 
-                    kpiDataId: kpiId, 
-                    weekOfMonth: w, 
+
+                batch.set(weeklyDocRef, {
+                    kpiDataId: kpiId,
+                    weekOfMonth: w,
                     month: monthStr,
                     achieved: sanitizeNumber(weeklyAchieved),
                     comment: weeklyComment?.toString() || ""
@@ -267,7 +334,9 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
             processedCount += batchProcessed;
             await throttle();
         }
-        if (onProgress) onProgress(Math.min(100, Math.round(((i + chunk.length) / totalEntries) * 100)));
+        if (onProgress) {
+            onProgress(Math.min(100, Math.round(15 + ((i + chunk.length) / Math.max(validEntries.length, 1)) * 85)));
+        }
     }
     return { uploadedMonths: Array.from(uploadedMonths).sort(), processedCount };
 };
