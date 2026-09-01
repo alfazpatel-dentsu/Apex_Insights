@@ -53,13 +53,16 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
     setMounted(true);
   }, []);
 
+  const isPreview = pathname?.startsWith('/preview');
+
   const filteredNav = useMemo(() => {
+    if (isPreview) return nav;
     if (!profile) return [];
     if (profile.role === 'Admin') return nav;
     
     const userPermissions = profile.permissions || [];
     return nav.filter(item => userPermissions.includes(item.permission));
-  }, [profile]);
+  }, [profile, isPreview]);
 
   const handleSignOut = async () => {
     try {
@@ -104,11 +107,17 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
       <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto custom-scrollbar">
         {filteredNav.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(item.href + "/");
+          const previewSpendsDashboard =
+            isPreview && item.href === '/dashboard/spends-dashboard';
+          const href = previewSpendsDashboard ? '/preview/spends-dashboard' : item.href;
+          const active =
+            previewSpendsDashboard ||
+            pathname === item.href ||
+            pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               data-testid={item.testId}
               onClick={onNavigate}
               className={cn(
@@ -127,7 +136,21 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
       </nav>
 
       <div className="border-t border-ink p-3" data-testid="sidebar-user-container">
-        {mounted && profile ? (
+        {mounted && isPreview ? (
+          <div className={cn("flex items-center gap-3", isCollapsed && "justify-center")}>
+            <div className="w-9 h-9 bg-brand text-white flex items-center justify-center text-xs font-bold font-mono shrink-0">
+              DM
+            </div>
+            {!isCollapsed && (
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-ink truncate">Design Mode</div>
+                <div className="text-[10px] uppercase tracking-widest text-secondary">
+                  Preview
+                </div>
+              </div>
+            )}
+          </div>
+        ) : mounted && profile ? (
           <div className={cn("flex items-center gap-3", isCollapsed && "justify-center")}>
             <div className="w-9 h-9 bg-brand text-white flex items-center justify-center text-xs font-bold font-mono shrink-0">
               {(profile.displayName || profile.email || "AP").substring(0, 2).toUpperCase()}
