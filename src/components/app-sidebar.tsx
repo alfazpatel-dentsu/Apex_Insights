@@ -56,7 +56,7 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
   const isPreview = pathname?.startsWith('/preview');
 
   const filteredNav = useMemo(() => {
-    if (isPreview) return nav;
+    if (isPreview && !profile) return nav;
     if (!profile) return [];
     if (profile.role === 'Admin') return nav;
     
@@ -68,7 +68,7 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
     try {
       await signOut(auth);
       toast.success("Signed out");
-      router.push("/");
+      router.push(isPreview ? "/preview/spends-dashboard" : "/");
     } catch (e) {
       toast.error("Sign out failed");
     }
@@ -136,21 +136,7 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
       </nav>
 
       <div className="border-t border-ink p-3" data-testid="sidebar-user-container">
-        {mounted && isPreview ? (
-          <div className={cn("flex items-center gap-3", isCollapsed && "justify-center")}>
-            <div className="w-9 h-9 bg-brand text-white flex items-center justify-center text-xs font-bold font-mono shrink-0">
-              DM
-            </div>
-            {!isCollapsed && (
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-ink truncate">Design Mode</div>
-                <div className="text-[10px] uppercase tracking-widest text-secondary">
-                  Preview
-                </div>
-              </div>
-            )}
-          </div>
-        ) : mounted && profile ? (
+        {mounted && profile ? (
           <div className={cn("flex items-center gap-3", isCollapsed && "justify-center")}>
             <div className="w-9 h-9 bg-brand text-white flex items-center justify-center text-xs font-bold font-mono shrink-0">
               {(profile.displayName || profile.email || "AP").substring(0, 2).toUpperCase()}

@@ -49,12 +49,6 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
-export type SpendsAnalyticsProps = {
-  /** When set, skip Firestore and render this snapshot (design-mode preview). */
-  previewMonthly?: MonthlySpend[];
-  previewWeekly?: WeeklySpend[];
-};
-
 type Dimension = 'overall' | 'team' | 'channelVendor' | 'industry' | 'type' | 'brandName';
 
 const DIMENSIONS: { value: Dimension; label: string }[] = [
@@ -300,8 +294,7 @@ function SearchableFilterContent({
   );
 }
 
-export function SpendsAnalytics({ previewMonthly, previewWeekly }: SpendsAnalyticsProps = {}) {
-  const isPreview = previewMonthly != null && previewWeekly != null;
+export function SpendsAnalytics() {
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [availableYears, setAvailableYears] = useState<string[]>([]);
@@ -325,20 +318,15 @@ export function SpendsAnalytics({ previewMonthly, previewWeekly }: SpendsAnalyti
   }, []);
 
   const queryConstraints = useMemo(() => {
-    if (isPreview) return [null];
     const prevYear = (parseInt(selectedYear) - 1).toString();
     return [
       where('month', '>=', `${prevYear}-01`),
       where('month', '<=', `${selectedYear}-12`)
     ];
-  }, [selectedYear, isPreview]);
+  }, [selectedYear]);
 
-  const { data: liveMonthly, loading: monthlyLoadingLive } = useCollection<MonthlySpend>('monthlySpends', queryConstraints);
-  const { data: liveWeekly, loading: weeklyLoadingLive } = useCollection<WeeklySpend>('weeklySpends', queryConstraints);
-  const rawMonthlyData = isPreview ? previewMonthly : liveMonthly;
-  const rawWeeklyData = isPreview ? previewWeekly : liveWeekly;
-  const monthlyLoading = isPreview ? false : monthlyLoadingLive;
-  const weeklyLoading = isPreview ? false : weeklyLoadingLive;
+  const { data: rawMonthlyData, loading: monthlyLoading } = useCollection<MonthlySpend>('monthlySpends', queryConstraints);
+  const { data: rawWeeklyData, loading: weeklyLoading } = useCollection<WeeklySpend>('weeklySpends', queryConstraints);
 
   useEffect(() => {
     if (rawMonthlyData && rawMonthlyData.length > 0) {
