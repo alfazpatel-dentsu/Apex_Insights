@@ -53,19 +53,22 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
     setMounted(true);
   }, []);
 
+  const isPreview = pathname?.startsWith('/preview');
+
   const filteredNav = useMemo(() => {
+    if (isPreview && !profile) return nav;
     if (!profile) return [];
     if (profile.role === 'Admin') return nav;
     
     const userPermissions = profile.permissions || [];
     return nav.filter(item => userPermissions.includes(item.permission));
-  }, [profile]);
+  }, [profile, isPreview]);
 
   const handleSignOut = async () => {
     try {
       await signOut(auth);
       toast.success("Signed out");
-      router.push("/");
+      router.push(isPreview ? "/preview/spends-dashboard" : "/");
     } catch (e) {
       toast.error("Sign out failed");
     }
@@ -104,11 +107,17 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
       <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto custom-scrollbar">
         {filteredNav.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(item.href + "/");
+          const previewSpendsDashboard =
+            isPreview && item.href === '/dashboard/spends-dashboard';
+          const href = previewSpendsDashboard ? '/preview/spends-dashboard' : item.href;
+          const active =
+            previewSpendsDashboard ||
+            pathname === item.href ||
+            pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               data-testid={item.testId}
               onClick={onNavigate}
               className={cn(
