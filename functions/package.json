@@ -1,6 +1,6 @@
 {
   "name": "functions",
-  "description": "Firestore actionItems → Google Sheets plus email/team alerts",
+  "description": "AZTEC alert emails via Microsoft Graph",
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",

@@ -14,6 +14,12 @@ export type ActionSection = "CLIENT ENGAGEMENT" | "SALES" | "OPERATIONS" | "AZTE
 export type ActionStatus = "Work-In Progress" | "Completed" | "Overdue" | "On-Hold" | "Observation";
 export type ActionPriority = "Low" | "Medium" | "High" | "Critical";
 
+export interface ActionAssignee {
+    name: string;
+    email: string;
+    userId?: string;
+}
+
 export interface ActionCommentEntry {
     id: string;
     text: string;
@@ -27,6 +33,8 @@ export interface ActionItem {
     taskName: string;
     description: string;
     assignedTo: string;
+    /** Structured owners. `assignedTo` stays a comma-separated label for older views. */
+    assignees?: ActionAssignee[];
     section: ActionSection;
     clientId?: string;
     clientName?: string;
