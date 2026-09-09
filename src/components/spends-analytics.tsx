@@ -33,8 +33,17 @@ import { where } from 'firebase/firestore';
 import { useCollection } from '@/firebase';
 import { MonthlySpend, WeeklySpend } from '@/lib/types';
 import { canonicalizeChannel } from '@/lib/normalize';
-import { aggregateBrandSpendBreakdown, buildWowSpendsTrend, dominantImpactSpendType, toSpendNumber } from '@/lib/spend-week';
+import {
+  aggregateBrandSpendBreakdown,
+  buildWowSpendsTrend,
+  dominantImpactSpendType,
+  isMyntraOrOlaClient,
+  rankBrandPeriodMovers,
+  toSpendNumber,
+  type BrandPeriodMover,
+} from '@/lib/spend-week';
 import { PageHeader } from '@/components/page-header';
+import { SpendMoversPanel } from '@/components/spend-movers-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Select, 
@@ -46,6 +55,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -223,6 +234,26 @@ const withPeriodDeltas = (rows: Record<string, any>[]) =>
     };
   });
 
+/** Keep charts readable: top series by latest period, remainder rolled into Other. */
+const collapseChartSeries = (rows: Record<string, any>[], maxSeries = 6) => {
+  if (rows.length === 0) return rows;
+  const keys = getSeriesKeys(rows[rows.length - 1]);
+  if (keys.length <= maxSeries) return rows;
+  const last = rows[rows.length - 1];
+  const keep = [...keys]
+    .sort((a, b) => (Number(last[b]) || 0) - (Number(last[a]) || 0))
+    .slice(0, maxSeries);
+  const keepSet = new Set(keep);
+  return rows.map((row) => {
+    const next: Record<string, any> = {};
+    Object.keys(row).forEach((k) => {
+      if (META_CHART_KEYS.has(k) || keepSet.has(k)) next[k] = row[k];
+    });
+    next.Other = keys.reduce((sum, k) => (keepSet.has(k) ? sum : sum + (Number(row[k]) || 0)), 0);
+    return next;
+  });
+};
+
 const renderVarianceRow = (growth: number, varianceAmount: number | undefined, label: string) => {
   const isUp = growth > 0 || (varianceAmount != null && varianceAmount > 0);
   const isDown = growth < 0 || (varianceAmount != null && varianceAmount < 0);
@@ -309,6 +340,7 @@ export function SpendsAnalytics() {
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [excludeLargeClients, setExcludeLargeClients] = useState(false);
   
   useEffect(() => {
     setMounted(true);
@@ -361,6 +393,15 @@ export function SpendsAnalytics() {
         return channelMatch && clientMatch && teamMatch && typeMatch;
       });
   }, [rawWeeklyData, selectedChannels, selectedClients, selectedTeams, selectedTypes]);
+
+  const monthlyTrendData = useMemo(
+    () => (excludeLargeClients ? monthlyData.filter((row) => !isMyntraOrOlaClient(row)) : monthlyData),
+    [monthlyData, excludeLargeClients]
+  );
+  const weeklyTrendData = useMemo(
+    () => (excludeLargeClients ? weeklyData.filter((row) => !isMyntraOrOlaClient(row)) : weeklyData),
+    [weeklyData, excludeLargeClients]
+  );
 
   // Unique Options for Filters
   const filterOptions = useMemo(() => {
@@ -486,14 +527,15 @@ export function SpendsAnalytics() {
         gainers: calcGainersLosers(lastWeek, prevWeek).gainers,
         losers: calcGainersLosers(lastWeek, prevWeek).losers,
       },
+      keys: { lastMonthKey, prevMonthKey, lastWeekKey, prevWeekKey },
     };
   }, [monthlyData, weeklyData, selectedYear, mounted]);
 
   const wowChartData = useMemo(() => {
-    if (!weeklyData) return [];
+    if (!weeklyTrendData) return [];
     // Overall: shared helper keeps Snapshot 12-Week Momentum in lockstep.
     if (wowDimension === 'overall') {
-      const rows = buildWowSpendsTrend(weeklyData, 12).map((row) => ({
+      const rows = buildWowSpendsTrend(weeklyTrendData, 12).map((row) => ({
         week: row.week,
         timestamp: row.timestamp,
         Total: row.spend,
@@ -502,7 +544,7 @@ export function SpendsAnalytics() {
     }
 
     const groups: Record<string, Record<string, number>> = {};
-    weeklyData.forEach(item => {
+    weeklyTrendData.forEach(item => {
       const week = item.week;
       const dimKey = (item[wowDimension as keyof WeeklySpend] as string || 'N/A');
       if (!groups[week]) groups[week] = {};
@@ -516,13 +558,13 @@ export function SpendsAnalytics() {
       } catch {}
       return { week: label, timestamp: parse(week, 'dd-MM-yyyy', new Date()).getTime(), ...values };
     }).sort((a, b) => a.timestamp - b.timestamp).slice(-12);
-    return withPeriodDeltas(rows);
-  }, [weeklyData, wowDimension]);
+    return withPeriodDeltas(collapseChartSeries(rows, wowDimension === 'brandName' ? 5 : 6));
+  }, [weeklyTrendData, wowDimension]);
 
   const momChartData = useMemo(() => {
-    if (!monthlyData) return [];
+    if (!monthlyTrendData) return [];
     const groups: Record<string, Record<string, number>> = {};
-    monthlyData.forEach(item => {
+    monthlyTrendData.forEach(item => {
       const month = item.month;
       const dimKey = momDimension === 'overall' ? 'Total' : (item[momDimension as keyof MonthlySpend] as string || 'N/A');
       if (!groups[month]) groups[month] = {};
@@ -532,13 +574,13 @@ export function SpendsAnalytics() {
       .map(([month, values]) => ({ month, label: format(parse(month, 'yyyy-MM', new Date()), 'MMM yy'), ...values }))
       .sort((a, b) => a.month.localeCompare(b.month))
       .slice(-12);
-    return withPeriodDeltas(rows);
-  }, [monthlyData, momDimension]);
+    return withPeriodDeltas(collapseChartSeries(rows, momDimension === 'brandName' ? 5 : 6));
+  }, [monthlyTrendData, momDimension]);
 
   const qoqChartData = useMemo(() => {
-    if (!monthlyData) return [];
+    if (!monthlyTrendData) return [];
     const groups: Record<string, Record<string, number>> = {};
-    monthlyData.forEach(item => {
+    monthlyTrendData.forEach(item => {
       const date = parse(item.month, 'yyyy-MM', new Date());
       const q = Math.floor(date.getMonth() / 3) + 1;
       const qKey = `${date.getFullYear()}-Q${q}`;
@@ -549,8 +591,22 @@ export function SpendsAnalytics() {
     const rows = Object.entries(groups)
       .map(([quarter, values]) => ({ quarter, ...values }))
       .sort((a, b) => a.quarter.localeCompare(b.quarter));
-    return withPeriodDeltas(rows);
-  }, [monthlyData, qoqDimension]);
+    return withPeriodDeltas(collapseChartSeries(rows, qoqDimension === 'brandName' ? 5 : 6));
+  }, [monthlyTrendData, qoqDimension]);
+
+  const wowMovers = useMemo<BrandPeriodMover[]>(() => {
+    if (!stats?.keys.lastWeekKey) return [];
+    const curr = aggregateBrandSpendBreakdown(weeklyTrendData.filter((d) => d.week === stats.keys.lastWeekKey));
+    const prev = aggregateBrandSpendBreakdown(weeklyTrendData.filter((d) => d.week === stats.keys.prevWeekKey));
+    return rankBrandPeriodMovers(curr, prev);
+  }, [weeklyTrendData, stats?.keys.lastWeekKey, stats?.keys.prevWeekKey]);
+
+  const momMovers = useMemo<BrandPeriodMover[]>(() => {
+    if (!stats?.keys.lastMonthKey) return [];
+    const curr = aggregateBrandSpendBreakdown(monthlyTrendData.filter((d) => d.month === stats.keys.lastMonthKey));
+    const prev = aggregateBrandSpendBreakdown(monthlyTrendData.filter((d) => d.month === stats.keys.prevMonthKey));
+    return rankBrandPeriodMovers(curr, prev);
+  }, [monthlyTrendData, stats?.keys.lastMonthKey, stats?.keys.prevMonthKey]);
 
   const wowSeriesKeys = useMemo(() => getSeriesKeys(wowChartData[0]), [wowChartData]);
   const momSeriesKeys = useMemo(() => getSeriesKeys(momChartData[0]), [momChartData]);
@@ -577,6 +633,11 @@ export function SpendsAnalytics() {
     setSelectedTypes([]);
   };
 
+  const focusClient = (brand: string) => {
+    setSelectedClients([brand]);
+    document.getElementById('spend-movers')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const isAnyFilterActive = selectedChannels.length > 0 || selectedClients.length > 0 || selectedTeams.length > 0 || selectedTypes.length > 0;
 
   if (!mounted || monthlyLoading || weeklyLoading) return <div className="flex flex-1 items-center justify-center p-20"><Loader2 className="h-8 w-8 animate-spin text-primary/40" /></div>;
@@ -588,14 +649,20 @@ export function SpendsAnalytics() {
           <ArrowUp className="h-2 w-2 shrink-0" /> Top 3 Gainers (Vol)
         </span>
         {gainers.length > 0 ? gainers.map(g => (
-          <div key={g.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0">
+          <button
+            type="button"
+            key={g.brand}
+            onClick={() => focusClient(g.brand)}
+            className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0 w-full text-left hover:bg-cream/80"
+            title={`Filter to ${g.brand}`}
+          >
             <span className="text-[10px] font-black truncate" title={g.brand}>{g.brand}</span>
             <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate" title={g.type}>{g.type}</span></div>
             <span className="text-[9px] font-bold text-success leading-none flex items-center justify-between gap-1 mt-0.5 min-w-0">
                 <span className="truncate">+{formatCurrency(g.diff)}</span>
                 <span className="text-[7px] opacity-60 shrink-0">({g.percentage.toFixed(1)}%)</span>
             </span>
-          </div>
+          </button>
         )) : <span className="text-[9px] italic text-secondary">No gains</span>}
       </div>
       <div className="space-y-2 min-w-0">
@@ -603,14 +670,20 @@ export function SpendsAnalytics() {
           <ArrowDown className="h-2 w-2 shrink-0" /> Top 3 Losers (Vol)
         </span>
         {losers.length > 0 ? losers.map(l => (
-          <div key={l.brand} className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0">
+          <button
+            type="button"
+            key={l.brand}
+            onClick={() => focusClient(l.brand)}
+            className="flex flex-col border-b border-foreground/5 last:border-none pb-1 min-w-0 w-full text-left hover:bg-cream/80"
+            title={`Filter to ${l.brand}`}
+          >
             <span className="text-[10px] font-black truncate" title={l.brand}>{l.brand}</span>
             <div className="flex flex-wrap items-center gap-1 opacity-60"><span className="text-[8px] font-bold uppercase truncate" title={l.type}>{l.type}</span></div>
             <span className="text-[9px] font-bold text-destructive leading-none flex items-center justify-between gap-1 mt-0.5 min-w-0">
                 <span className="truncate">{formatCurrency(l.diff)}</span>
                 <span className="text-[7px] opacity-60 shrink-0">({l.percentage.toFixed(1)}%)</span>
             </span>
-          </div>
+          </button>
         )) : <span className="text-[9px] italic text-secondary">No losses</span>}
       </div>
     </div>
@@ -758,13 +831,47 @@ export function SpendsAnalytics() {
         </Card>
       </div>
 
+      <div id="spend-movers">
+        <SpendMoversPanel
+          wowMovers={wowMovers}
+          momMovers={momMovers}
+          wowLabel={stats?.weekly.weekDate || ''}
+          momLabel={stats?.monthly.monthName || ''}
+          excludeLargeClients={excludeLargeClients}
+          onExcludeChange={setExcludeLargeClients}
+          selectedBrand={selectedClients.length === 1 ? selectedClients[0] : null}
+          onSelectBrand={focusClient}
+          formatCurrency={formatCurrency}
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <ChartCard 
           title="WoW Spends Trend" 
-          description="Weekly trend tracking" 
+          description={
+            excludeLargeClients
+              ? (wowDimension === 'brandName' ? 'Top 5 clients + Other · excluding Myntra & OLA' : 'Weekly trend · excluding Myntra & OLA')
+              : (wowDimension === 'brandName' ? 'Top 5 clients + Other (full ranking is in Who moved the needle)' : 'Weekly trend tracking')
+          } 
           dimension={wowDimension} 
           setDimension={setWowDimension} 
           onExport={() => handleExportCsv(wowChartData, 'WoW_Spends')}
+          extra={
+            <div className="flex items-center gap-2 border border-ink/10 bg-cream/60 px-2 py-1">
+              <Switch
+                id="exclude-wow-large-clients"
+                checked={excludeLargeClients}
+                onCheckedChange={setExcludeLargeClients}
+                className="rounded-none data-[state=checked]:bg-brand data-[state=unchecked]:bg-ink/20 scale-90"
+              />
+              <Label
+                htmlFor="exclude-wow-large-clients"
+                className="cursor-pointer text-[8px] font-black uppercase tracking-widest text-secondary leading-tight whitespace-nowrap"
+              >
+                Exclude Myntra &amp; OLA
+              </Label>
+            </div>
+          }
         >
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={wowChartData} margin={{ top: 28, right: 16, left: 4, bottom: 8 }}>
@@ -810,7 +917,11 @@ export function SpendsAnalytics() {
 
         <ChartCard 
           title="MoM Spends Trend" 
-          description="Monthly trend comparison" 
+          description={
+            momDimension === 'brandName'
+              ? 'Top 5 clients + Other (full ranking is in Who moved the needle)'
+              : 'Monthly trend comparison'
+          } 
           dimension={momDimension} 
           setDimension={setMomDimension} 
           onExport={() => handleExportCsv(momChartData, 'MoM_Spends')}
@@ -887,6 +998,7 @@ function ChartCard({
   setDimension, 
   onExport, 
   children, 
+  extra,
   height = "350px" 
 }: { 
   title: string; 
@@ -895,16 +1007,18 @@ function ChartCard({
   setDimension: (d: Dimension) => void; 
   onExport: () => void; 
   children: React.ReactNode; 
+  extra?: React.ReactNode;
   height?: string 
 }) {
   return (
     <Card className="glass-card ">
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-row items-center justify-between gap-3">
         <div>
           <CardTitle className="text-xl font-bold font-headline">{title}</CardTitle>
           <CardDescription className="text-xs uppercase font-black tracking-widest opacity-50">{description}</CardDescription>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {extra}
           <Select value={dimension} onValueChange={(v) => setDimension(v as Dimension)}>
             <SelectTrigger className="h-8 w-24 rounded-none glass text-[10px] font-black uppercase">
               <SelectValue />

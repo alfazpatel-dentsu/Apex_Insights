@@ -390,3 +390,50 @@ export function dominantImpactSpendType(
   }
   return fallback;
 }
+
+/** Same large accounts Snapshot excludes from 12-Week Momentum (Myntra, OLA). */
+export const LARGE_SPEND_CLIENT_IDS = new Set(['CLID0081', 'CLID0084']);
+
+export function isMyntraOrOlaClient(row: { clientId?: string | null; brandName?: string | null }): boolean {
+  const id = (row.clientId || '').trim().toUpperCase();
+  if (LARGE_SPEND_CLIENT_IDS.has(id)) return true;
+  const brand = (row.brandName || '').toLowerCase();
+  return brand.includes('myntra') || /\bola\b/.test(brand);
+}
+
+export type BrandPeriodMover = {
+  brand: string;
+  type: string;
+  team: string;
+  current: number;
+  previous: number;
+  diff: number;
+  percentage: number;
+};
+
+/** Rank brands by absolute rupee change between two periods (largest movers first). */
+export function rankBrandPeriodMovers(
+  curr: BrandSpendBreakdown,
+  prev: BrandSpendBreakdown,
+): BrandPeriodMover[] {
+  const allBrands = Array.from(new Set([...Object.keys(curr.spendMap), ...Object.keys(prev.spendMap)]));
+  return allBrands
+    .map((brand) => {
+      const current = curr.spendMap[brand] || 0;
+      const previous = prev.spendMap[brand] || 0;
+      const diff = current - previous;
+      const type = dominantImpactSpendType(curr.typeSpendMap[brand], prev.typeSpendMap[brand], diff);
+      const team = curr.teamByType[brand]?.[type] || prev.teamByType[brand]?.[type] || 'N/A';
+      return {
+        brand,
+        type,
+        team,
+        current,
+        previous,
+        diff,
+        percentage: previous > 0 ? (diff / previous) * 100 : current > 0 ? 100 : 0,
+      };
+    })
+    .filter((row) => row.diff !== 0 || row.current !== 0 || row.previous !== 0)
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+}

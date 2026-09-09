@@ -38,6 +38,7 @@ import {
   dominantImpactSpendType,
   formatLatestWeekDateLabel,
   formatWeekStartLabel,
+  isMyntraOrOlaClient,
   resolveWowWeekPair,
   toSpendNumber,
 } from '@/lib/spend-week';
@@ -67,12 +68,8 @@ function normalizeClid(clientId?: string | null): string | null {
   return id || null;
 }
 
-/** Large accounts optionally excluded from Snapshot 12-Week Momentum. */
-const MOMENTUM_EXCLUDE_CLIENT_IDS = new Set(['CLID0081', 'CLID0084']);
-
-function isMomentumExcludedClient(row: Pick<WeeklySpend, 'clientId'>): boolean {
-  const id = (row.clientId || '').trim().toUpperCase();
-  return MOMENTUM_EXCLUDE_CLIENT_IDS.has(id);
+function isMomentumExcludedClient(row: Pick<WeeklySpend, 'clientId' | 'brandName'>): boolean {
+  return isMyntraOrOlaClient(row);
 }
 
 const formatCurrency = (val: number) => {
