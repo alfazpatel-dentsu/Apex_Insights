@@ -50,6 +50,7 @@ import {
   pickExistingPeriod,
   priorPeriod,
   weekInPeriod,
+  buildCompareProgression,
   type SpendCompareGrain,
 } from '@/lib/spend-compare';
 import { PageHeader } from '@/components/page-header';
@@ -695,6 +696,18 @@ export function SpendsAnalytics() {
   const baselineLabel = periodOptions.find((o) => o.id === periodA)?.label || periodA;
   const compareLabel = periodOptions.find((o) => o.id === periodB)?.label || periodB;
 
+  const compareProgression = useMemo(
+    () =>
+      buildCompareProgression({
+        grain: compareGrain,
+        periodA,
+        periodB,
+        monthly: monthlyTrendData,
+        weekly: weeklyTrendData,
+      }),
+    [compareGrain, periodA, periodB, monthlyTrendData, weeklyTrendData]
+  );
+
   const wowSeriesKeys = useMemo(() => getSeriesKeys(wowChartData[0]), [wowChartData]);
   const momSeriesKeys = useMemo(() => getSeriesKeys(momChartData[0]), [momChartData]);
   const qoqSeriesKeys = useMemo(() => getSeriesKeys(qoqChartData[0]), [qoqChartData]);
@@ -920,6 +933,7 @@ export function SpendsAnalytics() {
 
       <div id="spend-movers">
         <SpendMoversPanel
+          key={`${compareGrain}-${periodA}-${periodB}`}
           grain={compareGrain}
           onGrainChange={handleGrainChange}
           periodA={periodA}
@@ -938,6 +952,7 @@ export function SpendsAnalytics() {
           onSelectBrand={focusClient}
           formatCurrency={formatCurrency}
           onShortcut={handleCompareShortcut}
+          progression={compareProgression}
         />
       </div>
 

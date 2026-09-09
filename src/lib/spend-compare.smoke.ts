@@ -3,6 +3,8 @@
  * Run: npx tsx src/lib/spend-compare.smoke.ts
  */
 import {
+  buildCompareProgression,
+  enumerateMonthKeys,
   listPeriodOptions,
   monthInPeriod,
   periodYearsAgo,
@@ -35,5 +37,25 @@ assert(priorPeriod('2026-Q1', 'quarter') === '2025-Q4', 'prior quarter wraps');
 
 const ytdOpts = listPeriodOptions('ytd', months, []);
 assert(ytdOpts.find((o) => o.id === '2026-07')?.label === 'Jan–Jul 2026', 'ytd label');
+
+assert(enumerateMonthKeys('2024-07', '2026-07').length === 25, 'jul24-jul26 month count');
+assert(enumerateMonthKeys('2026-07', '2024-07')[0] === '2024-07', 'range is ordered');
+
+const prog = buildCompareProgression({
+  grain: 'month',
+  periodA: '2024-07',
+  periodB: '2026-07',
+  monthly: [
+    { month: '2024-07', actualSpendsInr: 100 },
+    { month: '2025-07', actualSpendsInr: 80 },
+    { month: '2026-07', actualSpendsInr: 90 },
+  ],
+  weekly: [],
+});
+assert(prog.length === 25, `progress len ${prog.length}`);
+assert(prog[0].id === '2024-07' && prog[0].spend === 100, 'start spend');
+assert(prog[12].id === '2025-07' && prog[12].spend === 80, 'mid spend');
+assert(prog[24].id === '2026-07' && prog[24].spend === 90, 'end spend');
+assert(prog[1].spend === 0, 'gap filled with 0');
 
 console.log('spend-compare.smoke.ts: OK');

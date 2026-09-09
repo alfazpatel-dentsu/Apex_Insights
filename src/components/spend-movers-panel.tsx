@@ -5,6 +5,7 @@ import { ArrowDown, ArrowLeftRight, ArrowUp, Search } from 'lucide-react';
 import { BrandPeriodMover } from '@/lib/spend-week';
 import {
   COMPARE_GRAINS,
+  type CompareProgressPoint,
   type SpendCompareGrain,
   type SpendPeriodOption,
 } from '@/lib/spend-compare';
@@ -20,6 +21,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 12;
@@ -43,6 +53,7 @@ export function SpendMoversPanel({
   onSelectBrand,
   formatCurrency,
   onShortcut,
+  progression,
 }: {
   grain: SpendCompareGrain;
   onGrainChange: (grain: SpendCompareGrain) => void;
@@ -62,6 +73,7 @@ export function SpendMoversPanel({
   onSelectBrand: (brand: string) => void;
   formatCurrency: (val: number) => string;
   onShortcut: (kind: 'prior' | 'lastYear' | 'twoYears') => void;
+  progression: CompareProgressPoint[];
 }) {
   const [query, setQuery] = useState('');
   const [side, setSide] = useState<'all' | 'up' | 'down'>('all');
@@ -220,6 +232,76 @@ export function SpendMoversPanel({
             </div>
           </div>
         </div>
+
+        {progression.length > 1 && (
+          <div className="border border-ink/10 p-3" data-testid="spend-compare-progression">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[9px] font-black uppercase tracking-widest text-secondary">
+                {grain === 'week' ? 'Weekly spends' : 'Monthly spends'} · {progression[0]?.label} → {progression[progression.length - 1]?.label}
+              </div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-secondary">
+                {progression.length} {grain === 'week' ? 'weeks' : 'months'}
+              </div>
+            </div>
+            <div className="h-[220px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={progression} margin={{ top: 18, right: 12, left: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--foreground))" opacity={0.08} />
+                  <XAxis
+                    dataKey="label"
+                    fontSize={9}
+                    fontWeight={700}
+                    axisLine={false}
+                    tickLine={false}
+                    interval="preserveStartEnd"
+                    minTickGap={16}
+                  />
+                  <YAxis
+                    fontSize={9}
+                    fontWeight={700}
+                    axisLine={false}
+                    tickLine={false}
+                    width={44}
+                    tickFormatter={(v: number) => {
+                      const abs = Math.abs(v);
+                      if (abs >= 10000000) return `${(v / 10000000).toFixed(0)}Cr`;
+                      if (abs >= 100000) return `${(v / 100000).toFixed(0)}L`;
+                      return String(v);
+                    }}
+                  />
+                  <RechartsTooltip
+                    contentStyle={{ borderRadius: 0, border: '1px solid #000' }}
+                    formatter={(val: number) => [formatCurrency(val), 'Spend']}
+                    labelFormatter={(label) => String(label)}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="spend"
+                    stroke="hsl(var(--brand))"
+                    strokeWidth={3}
+                    dot={(props: { cx?: number; cy?: number; payload?: CompareProgressPoint; index?: number }) => {
+                      const { cx, cy, payload, index } = props;
+                      if (cx == null || cy == null) return <g key={index} />;
+                      const endpoint = payload?.isEndpoint;
+                      return (
+                        <circle
+                          key={payload?.id || index}
+                          cx={cx}
+                          cy={cy}
+                          r={endpoint ? 5 : 3}
+                          fill={endpoint ? 'hsl(var(--brand))' : 'white'}
+                          stroke="hsl(var(--brand))"
+                          strokeWidth={2}
+                        />
+                      );
+                    }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex h-9 border border-ink/15">
