@@ -1,48 +1,75 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Search } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, Search } from 'lucide-react';
 import { BrandPeriodMover } from '@/lib/spend-week';
+import {
+  COMPARE_GRAINS,
+  type SpendCompareGrain,
+  type SpendPeriodOption,
+} from '@/lib/spend-compare';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 12;
 
 export function SpendMoversPanel({
-  wowMovers,
-  momMovers,
-  wowLabel,
-  momLabel,
+  grain,
+  onGrainChange,
+  periodA,
+  periodB,
+  onPeriodAChange,
+  onPeriodBChange,
+  periodOptions,
+  baselineLabel,
+  compareLabel,
+  baselineTotal,
+  compareTotal,
+  movers,
   excludeLargeClients,
   onExcludeChange,
   selectedBrand,
   onSelectBrand,
   formatCurrency,
+  onShortcut,
 }: {
-  wowMovers: BrandPeriodMover[];
-  momMovers: BrandPeriodMover[];
-  wowLabel: string;
-  momLabel: string;
+  grain: SpendCompareGrain;
+  onGrainChange: (grain: SpendCompareGrain) => void;
+  periodA: string;
+  periodB: string;
+  onPeriodAChange: (id: string) => void;
+  onPeriodBChange: (id: string) => void;
+  periodOptions: SpendPeriodOption[];
+  baselineLabel: string;
+  compareLabel: string;
+  baselineTotal: number;
+  compareTotal: number;
+  movers: BrandPeriodMover[];
   excludeLargeClients: boolean;
   onExcludeChange: (next: boolean) => void;
   selectedBrand?: string | null;
   onSelectBrand: (brand: string) => void;
   formatCurrency: (val: number) => string;
+  onShortcut: (kind: 'prior' | 'lastYear' | 'twoYears') => void;
 }) {
-  const [tab, setTab] = useState<'wow' | 'mom'>('wow');
   const [query, setQuery] = useState('');
   const [side, setSide] = useState<'all' | 'up' | 'down'>('all');
   const [visible, setVisible] = useState(PAGE_SIZE);
 
-  const rows = tab === 'wow' ? wowMovers : momMovers;
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return rows.filter((row) => {
+    return movers.filter((row) => {
       if (side === 'up' && row.diff <= 0) return false;
       if (side === 'down' && row.diff >= 0) return false;
       if (!q) return true;
@@ -52,19 +79,25 @@ export function SpendMoversPanel({
         row.team.toLowerCase().includes(q)
       );
     });
-  }, [rows, query, side]);
+  }, [movers, query, side]);
 
   const shown = filtered.slice(0, visible);
-  const net = rows.reduce((sum, r) => sum + r.diff, 0);
+  const net = compareTotal - baselineTotal;
+  const pct = baselineTotal > 0 ? (net / baselineTotal) * 100 : compareTotal > 0 ? 100 : 0;
+
+  const swap = () => {
+    onPeriodAChange(periodB);
+    onPeriodBChange(periodA);
+  };
 
   return (
     <Card className="glass-card" data-testid="spend-movers-panel">
       <CardHeader className="gap-4 space-y-0">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <CardTitle className="text-xl font-bold font-headline">Who moved the needle</CardTitle>
+            <CardTitle className="text-xl font-bold font-headline">Compare any two periods</CardTitle>
             <CardDescription className="text-xs uppercase font-black tracking-widest opacity-50 mt-1">
-              Clients ranked by rupee change vs the prior period. Click a row to filter the dashboard.
+              Month, quarter, YTD, year, or week — including Jul 2024 vs Jul 2026. Click a client to filter.
             </CardDescription>
           </div>
           <div className="flex items-center gap-3 border border-ink/10 bg-cream/60 px-3 py-2">
@@ -83,26 +116,112 @@ export function SpendMoversPanel({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Tabs
-            value={tab}
-            onValueChange={(v) => {
-              setTab(v as 'wow' | 'mom');
-              setVisible(PAGE_SIZE);
-            }}
+        <div className="flex flex-wrap items-end gap-2" data-testid="spend-compare-controls">
+          <div className="space-y-1">
+            <div className="text-[9px] font-black uppercase tracking-widest text-secondary">Grain</div>
+            <Select value={grain} onValueChange={(v) => onGrainChange(v as SpendCompareGrain)}>
+              <SelectTrigger className="h-9 w-[120px] rounded-none text-[10px] font-black uppercase tracking-widest">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-none">
+                {COMPARE_GRAINS.map((g) => (
+                  <SelectItem key={g.value} value={g.value} className="text-[10px] font-bold uppercase">
+                    {g.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1 min-w-[140px]">
+            <div className="text-[9px] font-black uppercase tracking-widest text-secondary">Baseline</div>
+            <Select value={periodA} onValueChange={onPeriodAChange}>
+              <SelectTrigger className="h-9 rounded-none text-[10px] font-black uppercase tracking-widest">
+                <SelectValue placeholder="From" />
+              </SelectTrigger>
+              <SelectContent className="rounded-none max-h-72">
+                {periodOptions.map((o) => (
+                  <SelectItem key={`a-${o.id}`} value={o.id} className="text-[10px] font-bold uppercase">
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-none"
+            onClick={swap}
+            title="Swap periods"
+            aria-label="Swap periods"
           >
-            <TabsList className="h-9">
-              <TabsTrigger value="wow" className="text-[10px] font-black uppercase tracking-widest">
-                WoW {wowLabel ? `· ${wowLabel}` : ''}
-              </TabsTrigger>
-              <TabsTrigger value="mom" className="text-[10px] font-black uppercase tracking-widest">
-                MoM {momLabel ? `· ${momLabel}` : ''}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="wow" className="hidden" />
-            <TabsContent value="mom" className="hidden" />
-          </Tabs>
+            <ArrowLeftRight className="h-4 w-4" />
+          </Button>
+          <div className="space-y-1 min-w-[140px]">
+            <div className="text-[9px] font-black uppercase tracking-widest text-secondary">Compare</div>
+            <Select value={periodB} onValueChange={onPeriodBChange}>
+              <SelectTrigger className="h-9 rounded-none text-[10px] font-black uppercase tracking-widest">
+                <SelectValue placeholder="To" />
+              </SelectTrigger>
+              <SelectContent className="rounded-none max-h-72">
+                {periodOptions.map((o) => (
+                  <SelectItem key={`b-${o.id}`} value={o.id} className="text-[10px] font-bold uppercase">
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex h-9 border border-ink/15">
+            <button
+              type="button"
+              onClick={() => onShortcut('prior')}
+              className="px-3 text-[9px] font-black uppercase tracking-widest text-secondary hover:text-ink"
+            >
+              Prior
+            </button>
+            <button
+              type="button"
+              onClick={() => onShortcut('lastYear')}
+              className="px-3 text-[9px] font-black uppercase tracking-widest text-secondary hover:text-ink border-l border-ink/15"
+            >
+              Last year
+            </button>
+            <button
+              type="button"
+              onClick={() => onShortcut('twoYears')}
+              className="px-3 text-[9px] font-black uppercase tracking-widest text-secondary hover:text-ink border-l border-ink/15"
+              data-testid="spend-compare-two-years"
+            >
+              2 years ago
+            </button>
+          </div>
+        </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="border border-ink/10 px-3 py-2">
+            <div className="text-[9px] font-black uppercase tracking-widest text-secondary">{baselineLabel || 'Baseline'}</div>
+            <div className="font-headline text-xl font-black">{formatCurrency(baselineTotal)}</div>
+          </div>
+          <div className="border border-ink/10 px-3 py-2">
+            <div className="text-[9px] font-black uppercase tracking-widest text-secondary">{compareLabel || 'Compare'}</div>
+            <div className="font-headline text-xl font-black">{formatCurrency(compareTotal)}</div>
+          </div>
+          <div className="border border-ink/10 px-3 py-2">
+            <div className="text-[9px] font-black uppercase tracking-widest text-secondary">Change</div>
+            <div className={cn('font-headline text-xl font-black', net >= 0 ? 'text-success' : 'text-destructive')}>
+              {net >= 0 ? '+' : ''}
+              {formatCurrency(net)}
+              <span className="ml-2 text-sm font-mono">
+                {pct > 0 ? '+' : ''}
+                {pct.toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex h-9 border border-ink/15">
             {([
               ['all', 'All'],
@@ -125,7 +244,6 @@ export function SpendMoversPanel({
               </button>
             ))}
           </div>
-
           <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground/60" />
             <Input
@@ -146,10 +264,6 @@ export function SpendMoversPanel({
             {filtered.length} client{filtered.length === 1 ? '' : 's'}
             {excludeLargeClients ? ' · excluding Myntra & OLA' : ''}
           </span>
-          <span className={cn(net >= 0 ? 'text-success' : 'text-destructive')}>
-            Net {net >= 0 ? '+' : ''}
-            {formatCurrency(net)}
-          </span>
         </div>
         <div className="overflow-x-auto border border-ink/10">
           <table className="w-full min-w-[720px] text-left">
@@ -158,8 +272,8 @@ export function SpendMoversPanel({
                 <th className="px-3 py-2 w-10">#</th>
                 <th className="px-3 py-2">Client</th>
                 <th className="px-3 py-2">Type</th>
-                <th className="px-3 py-2 text-right">Previous</th>
-                <th className="px-3 py-2 text-right">Current</th>
+                <th className="px-3 py-2 text-right">{baselineLabel || 'Baseline'}</th>
+                <th className="px-3 py-2 text-right">{compareLabel || 'Compare'}</th>
                 <th className="px-3 py-2 text-right">Change</th>
                 <th className="px-3 py-2 text-right">%</th>
               </tr>
@@ -168,7 +282,7 @@ export function SpendMoversPanel({
               {shown.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-xs italic text-secondary">
-                    No clients match this view.
+                    No clients match this comparison.
                   </td>
                 </tr>
               ) : (

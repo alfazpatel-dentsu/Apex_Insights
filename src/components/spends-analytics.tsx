@@ -39,9 +39,19 @@ import {
   dominantImpactSpendType,
   isMyntraOrOlaClient,
   rankBrandPeriodMovers,
+  rowSpendAmount,
   toSpendNumber,
   type BrandPeriodMover,
 } from '@/lib/spend-week';
+import {
+  listPeriodOptions,
+  monthInPeriod,
+  periodYearsAgo,
+  pickExistingPeriod,
+  priorPeriod,
+  weekInPeriod,
+  type SpendCompareGrain,
+} from '@/lib/spend-compare';
 import { PageHeader } from '@/components/page-header';
 import { SpendMoversPanel } from '@/components/spend-movers-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -341,6 +351,9 @@ export function SpendsAnalytics() {
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [excludeLargeClients, setExcludeLargeClients] = useState(false);
+  const [compareGrain, setCompareGrain] = useState<SpendCompareGrain>('month');
+  const [periodA, setPeriodA] = useState('');
+  const [periodB, setPeriodB] = useState('');
   
   useEffect(() => {
     setMounted(true);
@@ -350,10 +363,11 @@ export function SpendsAnalytics() {
   }, []);
 
   const queryConstraints = useMemo(() => {
-    const prevYear = (parseInt(selectedYear) - 1).toString();
+    const cy = new Date().getFullYear();
+    const endYear = Math.max(cy, parseInt(selectedYear, 10) || cy);
     return [
-      where('month', '>=', `${prevYear}-01`),
-      where('month', '<=', `${selectedYear}-12`)
+      where('month', '>=', '2023-01'),
+      where('month', '<=', `${endYear}-12`)
     ];
   }, [selectedYear]);
 
@@ -594,19 +608,92 @@ export function SpendsAnalytics() {
     return withPeriodDeltas(collapseChartSeries(rows, qoqDimension === 'brandName' ? 5 : 6));
   }, [monthlyTrendData, qoqDimension]);
 
-  const wowMovers = useMemo<BrandPeriodMover[]>(() => {
-    if (!stats?.keys.lastWeekKey) return [];
-    const curr = aggregateBrandSpendBreakdown(weeklyTrendData.filter((d) => d.week === stats.keys.lastWeekKey));
-    const prev = aggregateBrandSpendBreakdown(weeklyTrendData.filter((d) => d.week === stats.keys.prevWeekKey));
-    return rankBrandPeriodMovers(curr, prev);
-  }, [weeklyTrendData, stats?.keys.lastWeekKey, stats?.keys.prevWeekKey]);
+  const monthKeys = useMemo(
+    () => Array.from(new Set(monthlyData.map((d) => d.month).filter(Boolean))),
+    [monthlyData]
+  );
+  const weekKeys = useMemo(
+    () => Array.from(new Set(weeklyData.map((d) => d.week).filter(Boolean))) as string[],
+    [weeklyData]
+  );
+  const periodOptions = useMemo(
+    () => listPeriodOptions(compareGrain, monthKeys, weekKeys),
+    [compareGrain, monthKeys, weekKeys]
+  );
 
-  const momMovers = useMemo<BrandPeriodMover[]>(() => {
-    if (!stats?.keys.lastMonthKey) return [];
-    const curr = aggregateBrandSpendBreakdown(monthlyTrendData.filter((d) => d.month === stats.keys.lastMonthKey));
-    const prev = aggregateBrandSpendBreakdown(monthlyTrendData.filter((d) => d.month === stats.keys.prevMonthKey));
-    return rankBrandPeriodMovers(curr, prev);
-  }, [monthlyTrendData, stats?.keys.lastMonthKey, stats?.keys.prevMonthKey]);
+  useEffect(() => {
+    if (periodB || !stats?.keys.lastMonthKey) return;
+    const opts = listPeriodOptions('month', monthKeys, weekKeys);
+    const latest = stats.keys.lastMonthKey;
+    if (!opts.some((o) => o.id === latest)) return;
+    setCompareGrain('month');
+    setPeriodB(latest);
+    setPeriodA(
+      pickExistingPeriod(periodYearsAgo(latest, 'month', 1), opts)
+        || pickExistingPeriod(stats.keys.prevMonthKey, opts)
+        || ''
+    );
+  }, [stats?.keys.lastMonthKey, stats?.keys.prevMonthKey, monthKeys, weekKeys, periodB]);
+
+  const handleGrainChange = (grain: SpendCompareGrain) => {
+    setCompareGrain(grain);
+    const opts = listPeriodOptions(grain, monthKeys, weekKeys);
+    const latest = opts[opts.length - 1];
+    if (!latest) {
+      setPeriodA('');
+      setPeriodB('');
+      return;
+    }
+    setPeriodB(latest.id);
+    setPeriodA(
+      pickExistingPeriod(periodYearsAgo(latest.id, grain, 1), opts)
+        || pickExistingPeriod(priorPeriod(latest.id, grain), opts)
+        || opts[0]?.id
+        || ''
+    );
+  };
+
+  const handleCompareShortcut = (kind: 'prior' | 'lastYear' | 'twoYears') => {
+    if (!periodB) return;
+    const candidate =
+      kind === 'prior'
+        ? priorPeriod(periodB, compareGrain)
+        : periodYearsAgo(periodB, compareGrain, kind === 'twoYears' ? 2 : 1);
+    const existing = pickExistingPeriod(candidate, periodOptions);
+    if (existing) setPeriodA(existing);
+  };
+
+  const compareSlice = useMemo(() => {
+    if (!periodA || !periodB) return { baseline: [] as typeof monthlyTrendData, compare: [] as typeof monthlyTrendData };
+    if (compareGrain === 'week') {
+      return {
+        baseline: weeklyTrendData.filter((row) => weekInPeriod(row.week || '', periodA)),
+        compare: weeklyTrendData.filter((row) => weekInPeriod(row.week || '', periodB)),
+      };
+    }
+    return {
+      baseline: monthlyTrendData.filter((row) => monthInPeriod(row.month, compareGrain, periodA)),
+      compare: monthlyTrendData.filter((row) => monthInPeriod(row.month, compareGrain, periodB)),
+    };
+  }, [compareGrain, periodA, periodB, monthlyTrendData, weeklyTrendData]);
+
+  const compareMovers = useMemo<BrandPeriodMover[]>(() => {
+    return rankBrandPeriodMovers(
+      aggregateBrandSpendBreakdown(compareSlice.compare),
+      aggregateBrandSpendBreakdown(compareSlice.baseline)
+    );
+  }, [compareSlice]);
+
+  const baselineTotal = useMemo(
+    () => compareSlice.baseline.reduce((sum, row) => sum + rowSpendAmount(row), 0),
+    [compareSlice]
+  );
+  const compareTotal = useMemo(
+    () => compareSlice.compare.reduce((sum, row) => sum + rowSpendAmount(row), 0),
+    [compareSlice]
+  );
+  const baselineLabel = periodOptions.find((o) => o.id === periodA)?.label || periodA;
+  const compareLabel = periodOptions.find((o) => o.id === periodB)?.label || periodB;
 
   const wowSeriesKeys = useMemo(() => getSeriesKeys(wowChartData[0]), [wowChartData]);
   const momSeriesKeys = useMemo(() => getSeriesKeys(momChartData[0]), [momChartData]);
@@ -833,15 +920,24 @@ export function SpendsAnalytics() {
 
       <div id="spend-movers">
         <SpendMoversPanel
-          wowMovers={wowMovers}
-          momMovers={momMovers}
-          wowLabel={stats?.weekly.weekDate || ''}
-          momLabel={stats?.monthly.monthName || ''}
+          grain={compareGrain}
+          onGrainChange={handleGrainChange}
+          periodA={periodA}
+          periodB={periodB}
+          onPeriodAChange={setPeriodA}
+          onPeriodBChange={setPeriodB}
+          periodOptions={periodOptions}
+          baselineLabel={baselineLabel}
+          compareLabel={compareLabel}
+          baselineTotal={baselineTotal}
+          compareTotal={compareTotal}
+          movers={compareMovers}
           excludeLargeClients={excludeLargeClients}
           onExcludeChange={setExcludeLargeClients}
           selectedBrand={selectedClients.length === 1 ? selectedClients[0] : null}
           onSelectBrand={focusClient}
           formatCurrency={formatCurrency}
+          onShortcut={handleCompareShortcut}
         />
       </div>
 
