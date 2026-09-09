@@ -1,10 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowLeftRight, ArrowUp, Search } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, ChevronsUpDown, Search } from 'lucide-react';
 import { BrandPeriodMover } from '@/lib/spend-week';
 import {
   COMPARE_GRAINS,
+  type ClientCompareRow,
   type CompareProgressPoint,
   type SpendCompareGrain,
   type SpendPeriodOption,
@@ -32,7 +33,14 @@ import {
 } from 'recharts';
 import { cn } from '@/lib/utils';
 
-const PAGE_SIZE = 12;
+type SortKey = 'change' | 'pct';
+type SortDir = 'asc' | 'desc';
+
+function periodDeltaClass(current: number, previous: number | undefined, isFirst: boolean) {
+  if (isFirst || previous == null) return 'text-ink';
+  if (current === previous) return 'text-secondary';
+  return current > previous ? 'text-success' : 'text-destructive';
+}
 
 export function SpendMoversPanel({
   grain,
@@ -47,6 +55,7 @@ export function SpendMoversPanel({
   baselineTotal,
   compareTotal,
   movers,
+  clientRows,
   excludeLargeClients,
   onExcludeChange,
   selectedBrand,
@@ -67,6 +76,7 @@ export function SpendMoversPanel({
   baselineTotal: number;
   compareTotal: number;
   movers: BrandPeriodMover[];
+  clientRows?: ClientCompareRow[];
   excludeLargeClients: boolean;
   onExcludeChange: (next: boolean) => void;
   selectedBrand?: string | null;
@@ -77,11 +87,25 @@ export function SpendMoversPanel({
 }) {
   const [query, setQuery] = useState('');
   const [side, setSide] = useState<'all' | 'up' | 'down'>('all');
-  const [visible, setVisible] = useState(PAGE_SIZE);
+  const [sortKey, setSortKey] = useState<SortKey>('change');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const rows: ClientCompareRow[] = useMemo(() => {
+    if (clientRows && clientRows.length > 0) return clientRows;
+    return movers.map((row) => ({
+      ...row,
+      series: { [periodA]: row.previous, [periodB]: row.current },
+    }));
+  }, [clientRows, movers, periodA, periodB]);
+
+  const periodCols = progression.length > 0 ? progression : [
+    { id: periodA, label: baselineLabel || 'Baseline', spend: 0, isEndpoint: true },
+    { id: periodB, label: compareLabel || 'Compare', spend: 0, isEndpoint: true },
+  ].filter((p) => p.id);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return movers.filter((row) => {
+    const next = rows.filter((row) => {
       if (side === 'up' && row.diff <= 0) return false;
       if (side === 'down' && row.diff >= 0) return false;
       if (!q) return true;
@@ -91,9 +115,42 @@ export function SpendMoversPanel({
         row.team.toLowerCase().includes(q)
       );
     });
-  }, [movers, query, side]);
+    const mul = sortDir === 'desc' ? -1 : 1;
+    next.sort((a, b) => {
+      const primary = sortKey === 'pct' ? a.percentage - b.percentage : a.diff - b.diff;
+      if (primary !== 0) return mul * primary;
+      return Math.abs(b.diff) - Math.abs(a.diff);
+    });
+    return next;
+  }, [rows, query, side, sortKey, sortDir]);
 
-  const shown = filtered.slice(0, visible);
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir('desc');
+  };
+
+  const SortBtn = ({ column, label }: { column: SortKey; label: string }) => {
+    const active = sortKey === column;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(column)}
+        className="inline-flex items-center justify-end gap-1 w-full uppercase tracking-widest"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        {active ? (
+          sortDir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />
+        ) : (
+          <ChevronsUpDown className="h-3 w-3 opacity-40" />
+        )}
+      </button>
+    );
+  };
   const net = compareTotal - baselineTotal;
   const pct = baselineTotal > 0 ? (net / baselineTotal) * 100 : compareTotal > 0 ? 100 : 0;
 
@@ -109,7 +166,7 @@ export function SpendMoversPanel({
           <div>
             <CardTitle className="text-xl font-bold font-headline">Compare any two periods</CardTitle>
             <CardDescription className="text-xs uppercase font-black tracking-widest opacity-50 mt-1">
-              Month, quarter, year, or week. Click a client to filter.
+              Month, quarter, year, or week. Table lists every client with in-between periods. Click a row to filter the rest of the dashboard.
             </CardDescription>
           </div>
           <div className="flex items-center gap-3 border border-ink/10 bg-cream/60 px-3 py-2">
@@ -321,10 +378,7 @@ export function SpendMoversPanel({
               <button
                 key={id}
                 type="button"
-                onClick={() => {
-                  setSide(id);
-                  setVisible(PAGE_SIZE);
-                }}
+                onClick={() => setSide(id)}
                 className={cn(
                   'px-3 text-[10px] font-black uppercase tracking-widest',
                   side === id ? 'bg-ink text-cream' : 'text-secondary hover:text-ink'
@@ -338,10 +392,7 @@ export function SpendMoversPanel({
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground/60" />
             <Input
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setVisible(PAGE_SIZE);
-              }}
+              onChange={(e) => setQuery(e.target.value)}
               placeholder="Search client, type, team…"
               className="pl-8 h-9 rounded-none text-xs"
             />
@@ -353,32 +404,51 @@ export function SpendMoversPanel({
           <span>
             {filtered.length} client{filtered.length === 1 ? '' : 's'}
             {excludeLargeClients ? ' · excluding Myntra & OLA' : ''}
+            {periodCols.length > 2 ? ` · ${periodCols.length} periods` : ''}
+          </span>
+          <span className="normal-case tracking-normal font-bold opacity-70">
+            Sorted by {sortKey === 'pct' ? 'change %' : 'change amount'} ({sortDir === 'desc' ? 'high → low' : 'low → high'})
           </span>
         </div>
-        <div className="overflow-x-auto border border-ink/10">
-          <table className="w-full min-w-[720px] text-left">
-            <thead className="bg-cream/80 text-[9px] font-black uppercase tracking-widest text-secondary">
+        <div className="max-h-[70vh] overflow-auto border border-ink/10">
+          <table className="w-full text-left" style={{ minWidth: Math.max(720, 280 + periodCols.length * 88) }}>
+            <thead className="sticky top-0 z-20 bg-cream text-[9px] font-black uppercase tracking-widest text-secondary">
               <tr>
-                <th className="px-3 py-2 w-10">#</th>
-                <th className="px-3 py-2">Client</th>
+                <th className="px-3 py-2 w-10 sticky left-0 z-30 bg-cream">#</th>
+                <th className="px-3 py-2 sticky left-10 z-30 bg-cream min-w-[140px]">Client</th>
                 <th className="px-3 py-2">Type</th>
-                <th className="px-3 py-2 text-right">{baselineLabel || 'Baseline'}</th>
-                <th className="px-3 py-2 text-right">{compareLabel || 'Compare'}</th>
-                <th className="px-3 py-2 text-right">Change</th>
-                <th className="px-3 py-2 text-right">%</th>
+                {periodCols.map((col) => (
+                  <th
+                    key={col.id}
+                    className={cn(
+                      'px-2 py-2 text-right whitespace-nowrap',
+                      col.isEndpoint && 'text-ink'
+                    )}
+                    title={col.label}
+                  >
+                    {col.label}
+                  </th>
+                ))}
+                <th className="px-3 py-2 text-right sticky right-[88px] z-30 bg-cream min-w-[112px]">
+                  <SortBtn column="change" label="Change" />
+                </th>
+                <th className="px-3 py-2 text-right sticky right-0 z-30 bg-cream min-w-[88px]">
+                  <SortBtn column="pct" label="%" />
+                </th>
               </tr>
             </thead>
             <tbody>
-              {shown.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-xs italic text-secondary">
+                  <td colSpan={5 + periodCols.length} className="px-3 py-8 text-center text-xs italic text-secondary">
                     No clients match this comparison.
                   </td>
                 </tr>
               ) : (
-                shown.map((row, i) => {
+                filtered.map((row, i) => {
                   const up = row.diff > 0;
                   const active = selectedBrand === row.brand;
+                  const rowBg = active ? 'bg-brand/10' : 'bg-card';
                   return (
                     <tr
                       key={row.brand}
@@ -388,19 +458,37 @@ export function SpendMoversPanel({
                         active && 'bg-brand/5'
                       )}
                     >
-                      <td className="px-3 py-2 font-mono text-[10px] text-secondary">{i + 1}</td>
-                      <td className="px-3 py-2">
-                        <div className="font-black truncate max-w-[220px]" title={row.brand}>
+                      <td className={cn('px-3 py-2 font-mono text-[10px] text-secondary sticky left-0 z-10', rowBg)}>
+                        {i + 1}
+                      </td>
+                      <td className={cn('px-3 py-2 sticky left-10 z-10', rowBg)}>
+                        <div className="font-black truncate max-w-[180px]" title={row.brand}>
                           {row.brand}
                         </div>
                         <div className="text-[9px] uppercase tracking-widest text-secondary">{row.team}</div>
                       </td>
                       <td className="px-3 py-2 text-[10px] font-bold uppercase text-secondary">{row.type}</td>
-                      <td className="px-3 py-2 text-right font-mono text-[11px]">{formatCurrency(row.previous)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-[11px] font-bold">{formatCurrency(row.current)}</td>
+                      {periodCols.map((col, colIdx) => {
+                        const value = row.series?.[col.id] || 0;
+                        const prevId = periodCols[colIdx - 1]?.id;
+                        const prevVal = prevId ? row.series?.[prevId] || 0 : undefined;
+                        return (
+                          <td
+                            key={col.id}
+                            className={cn(
+                              'px-2 py-2 text-right font-mono text-[11px] whitespace-nowrap',
+                              col.isEndpoint && 'font-bold',
+                              value === 0 ? 'text-secondary/50' : periodDeltaClass(value, prevVal, colIdx === 0)
+                            )}
+                          >
+                            {value === 0 ? '—' : formatCurrency(value)}
+                          </td>
+                        );
+                      })}
                       <td
                         className={cn(
-                          'px-3 py-2 text-right font-mono text-[11px] font-bold',
+                          'px-3 py-2 text-right font-mono text-[11px] font-bold sticky right-[88px] z-10 whitespace-nowrap',
+                          rowBg,
                           up ? 'text-success' : 'text-destructive'
                         )}
                       >
@@ -412,7 +500,8 @@ export function SpendMoversPanel({
                       </td>
                       <td
                         className={cn(
-                          'px-3 py-2 text-right font-mono text-[11px]',
+                          'px-3 py-2 text-right font-mono text-[11px] sticky right-0 z-10 whitespace-nowrap',
+                          rowBg,
                           up ? 'text-success' : 'text-destructive'
                         )}
                       >
@@ -426,18 +515,6 @@ export function SpendMoversPanel({
             </tbody>
           </table>
         </div>
-        {filtered.length > visible && (
-          <div className="mt-3 flex justify-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="rounded-none text-[10px] font-black uppercase tracking-widest"
-              onClick={() => setVisible((n) => n + PAGE_SIZE)}
-            >
-              Show more ({filtered.length - visible} remaining)
-            </Button>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

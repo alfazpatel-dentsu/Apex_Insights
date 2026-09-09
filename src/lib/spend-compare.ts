@@ -283,3 +283,96 @@ export function buildCompareProgression(params: {
     };
   });
 }
+
+export type ClientCompareRow = BrandPeriodMover & {
+  series: Record<string, number>;
+};
+
+function periodIdForMonthlyRow(month: string, grain: SpendCompareGrain): string | null {
+  if (!month) return null;
+  if (grain === 'month') return month;
+  if (grain === 'quarter') return monthQuarterKey(month);
+  if (grain === 'year') return month.slice(0, 4) || null;
+  return null;
+}
+
+/** Per-client spend for every period on the compare chart (does not apply client click-filter). */
+export function buildClientCompareRows(params: {
+  grain: SpendCompareGrain;
+  periodA: string;
+  periodB: string;
+  monthly: Array<{
+    month?: string;
+    brandName?: string;
+    type?: string;
+    team?: string;
+    actualSpendsInr?: unknown;
+    spendsInr?: unknown;
+  }>;
+  weekly: Array<{
+    week?: string;
+    brandName?: string;
+    type?: string;
+    team?: string;
+    actualSpendsInr?: unknown;
+    spendsInr?: unknown;
+  }>;
+}): ClientCompareRow[] {
+  const progression = buildCompareProgression(params);
+  const allowed = new Set(progression.map((p) => p.id));
+  if (allowed.size === 0) return [];
+
+  const series: Record<string, Record<string, number>> = {};
+  const typeSpend: Record<string, Record<string, number>> = {};
+  const teamByBrand: Record<string, string> = {};
+
+  const add = (brand: string, periodId: string | null, amount: number, type?: string, team?: string) => {
+    const name = (brand || '').trim();
+    if (!name || !periodId || !allowed.has(periodId) || !amount) return;
+    if (!series[name]) series[name] = {};
+    series[name][periodId] = (series[name][periodId] || 0) + amount;
+    const t = (type || '').trim() || 'PERFORMANCE';
+    if (!typeSpend[name]) typeSpend[name] = {};
+    typeSpend[name][t] = (typeSpend[name][t] || 0) + amount;
+    if (team && !teamByBrand[name]) teamByBrand[name] = team;
+  };
+
+  if (params.grain === 'week') {
+    params.weekly.forEach((row) => {
+      add(row.brandName || '', (row.week || '').trim(), rowSpendAmount(row), row.type, row.team);
+    });
+  } else {
+    params.monthly.forEach((row) => {
+      add(
+        row.brandName || '',
+        periodIdForMonthlyRow(row.month || '', params.grain),
+        rowSpendAmount(row),
+        row.type,
+        row.team
+      );
+    });
+  }
+
+  return Object.keys(series)
+    .map((brand) => {
+      const byPeriod = series[brand];
+      const previous = byPeriod[params.periodA] || 0;
+      const current = byPeriod[params.periodB] || 0;
+      const diff = current - previous;
+      const types = typeSpend[brand] || {};
+      const type =
+        Object.entries(types).sort((a, b) => b[1] - a[1])[0]?.[0] || 'PERFORMANCE';
+      return {
+        brand,
+        type,
+        team: teamByBrand[brand] || 'N/A',
+        previous,
+        current,
+        diff,
+        percentage: previous > 0 ? (diff / previous) * 100 : current > 0 ? 100 : 0,
+        series: byPeriod,
+      };
+    })
+    .filter((row) => row.diff !== 0 || row.current !== 0 || row.previous !== 0 || Object.values(row.series).some((v) => v))
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+}

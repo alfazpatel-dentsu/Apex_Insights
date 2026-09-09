@@ -3,6 +3,7 @@
  * Run: npx tsx src/lib/spend-compare.smoke.ts
  */
 import {
+  buildClientCompareRows,
   buildCompareProgression,
   enumerateMonthKeys,
   enumerateQuarterKeys,
@@ -71,5 +72,26 @@ assert(qProg[0].id === '2025-Q3' && qProg[0].label === '2025 Q3', 'q label');
 assert(qProg[0].spend === 35, `q3 2025 ${qProg[0].spend}`);
 assert(qProg[4].id === '2026-Q3' && qProg[4].spend === 40, 'q3 2026');
 assert(qProg.every((p) => p.id.includes('-Q')), 'all points are quarters');
+
+const clients = buildClientCompareRows({
+  grain: 'month',
+  periodA: '2025-07',
+  periodB: '2026-07',
+  monthly: [
+    { month: '2025-07', brandName: 'Myntra', type: 'PERFORMANCE', team: 'ORION', actualSpendsInr: 3202 },
+    { month: '2025-10', brandName: 'Myntra', type: 'PERFORMANCE', team: 'ORION', actualSpendsInr: 4000 },
+    { month: '2026-07', brandName: 'Myntra', type: 'PERFORMANCE', team: 'ORION', actualSpendsInr: 5402 },
+    { month: '2025-07', brandName: 'OLA', type: 'PERFORMANCE', team: 'NOVA', actualSpendsInr: 100 },
+    { month: '2026-07', brandName: 'OLA', type: 'PERFORMANCE', team: 'NOVA', actualSpendsInr: 80 },
+  ],
+  weekly: [],
+});
+assert(clients.length === 2, `client count ${clients.length}`);
+assert(clients[0].brand === 'Myntra', 'largest |diff| first');
+assert(clients[0].series['2025-07'] === 3202, 'myntra start');
+assert(clients[0].series['2025-10'] === 4000, 'myntra mid');
+assert(clients[0].series['2026-07'] === 5402, 'myntra end');
+assert(Math.round(clients[0].diff) === 2200, `myntra diff ${clients[0].diff}`);
+assert(clients[1].brand === 'OLA' && clients[1].diff === -20, 'ola loser');
 
 console.log('spend-compare.smoke.ts: OK');

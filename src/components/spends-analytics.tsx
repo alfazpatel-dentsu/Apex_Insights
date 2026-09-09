@@ -50,6 +50,7 @@ import {
   pickExistingPeriod,
   priorPeriod,
   weekInPeriod,
+  buildClientCompareRows,
   buildCompareProgression,
   COMPARE_GRAINS,
   type SpendCompareGrain,
@@ -391,32 +392,40 @@ export function SpendsAnalytics() {
     }
   }, [rawMonthlyData]);
 
-  // Filtered Datasets (channel names normalized so Meta/LinkedIn variants collapse)
-  const monthlyData = useMemo(() => {
+  // Channel/team/type filters apply everywhere. Client click-filter does not shrink the compare table.
+  const monthlyDataAllClients = useMemo(() => {
     if (!rawMonthlyData) return [];
     return rawMonthlyData
       .map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }))
       .filter(item => {
         const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
-        const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.brandName);
         const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
         const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-        return channelMatch && clientMatch && teamMatch && typeMatch;
+        return channelMatch && teamMatch && typeMatch;
       });
-  }, [rawMonthlyData, selectedChannels, selectedClients, selectedTeams, selectedTypes]);
+  }, [rawMonthlyData, selectedChannels, selectedTeams, selectedTypes]);
 
-  const weeklyData = useMemo(() => {
+  const weeklyDataAllClients = useMemo(() => {
     if (!rawWeeklyData) return [];
     return rawWeeklyData
       .map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }))
       .filter(item => {
         const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
-        const clientMatch = selectedClients.length === 0 || selectedClients.includes(item.brandName);
         const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
         const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-        return channelMatch && clientMatch && teamMatch && typeMatch;
+        return channelMatch && teamMatch && typeMatch;
       });
-  }, [rawWeeklyData, selectedChannels, selectedClients, selectedTeams, selectedTypes]);
+  }, [rawWeeklyData, selectedChannels, selectedTeams, selectedTypes]);
+
+  const monthlyData = useMemo(() => {
+    if (selectedClients.length === 0) return monthlyDataAllClients;
+    return monthlyDataAllClients.filter((item) => selectedClients.includes(item.brandName));
+  }, [monthlyDataAllClients, selectedClients]);
+
+  const weeklyData = useMemo(() => {
+    if (selectedClients.length === 0) return weeklyDataAllClients;
+    return weeklyDataAllClients.filter((item) => selectedClients.includes(item.brandName));
+  }, [weeklyDataAllClients, selectedClients]);
 
   const monthlyTrendData = useMemo(
     () => (excludeLargeClients ? monthlyData.filter((row) => !isMyntraOrOlaClient(row)) : monthlyData),
@@ -425,6 +434,14 @@ export function SpendsAnalytics() {
   const weeklyTrendData = useMemo(
     () => (excludeLargeClients ? weeklyData.filter((row) => !isMyntraOrOlaClient(row)) : weeklyData),
     [weeklyData, excludeLargeClients]
+  );
+  const compareMonthlyData = useMemo(
+    () => (excludeLargeClients ? monthlyDataAllClients.filter((row) => !isMyntraOrOlaClient(row)) : monthlyDataAllClients),
+    [monthlyDataAllClients, excludeLargeClients]
+  );
+  const compareWeeklyData = useMemo(
+    () => (excludeLargeClients ? weeklyDataAllClients.filter((row) => !isMyntraOrOlaClient(row)) : weeklyDataAllClients),
+    [weeklyDataAllClients, excludeLargeClients]
   );
 
   // Unique Options for Filters
@@ -619,12 +636,12 @@ export function SpendsAnalytics() {
   }, [monthlyTrendData, qoqDimension]);
 
   const monthKeys = useMemo(
-    () => Array.from(new Set(monthlyData.map((d) => d.month).filter(Boolean))),
-    [monthlyData]
+    () => Array.from(new Set(monthlyDataAllClients.map((d) => d.month).filter(Boolean))),
+    [monthlyDataAllClients]
   );
   const weekKeys = useMemo(
-    () => Array.from(new Set(weeklyData.map((d) => d.week).filter(Boolean))) as string[],
-    [weeklyData]
+    () => Array.from(new Set(weeklyDataAllClients.map((d) => d.week).filter(Boolean))) as string[],
+    [weeklyDataAllClients]
   );
   const periodOptions = useMemo(
     () => listPeriodOptions(compareGrain, monthKeys, weekKeys),
@@ -674,18 +691,18 @@ export function SpendsAnalytics() {
   };
 
   const compareSlice = useMemo(() => {
-    if (!periodA || !periodB) return { baseline: [] as typeof monthlyTrendData, compare: [] as typeof monthlyTrendData };
+    if (!periodA || !periodB) return { baseline: [] as typeof compareMonthlyData, compare: [] as typeof compareMonthlyData };
     if (compareGrain === 'week') {
       return {
-        baseline: weeklyTrendData.filter((row) => weekInPeriod(row.week || '', periodA)),
-        compare: weeklyTrendData.filter((row) => weekInPeriod(row.week || '', periodB)),
+        baseline: compareWeeklyData.filter((row) => weekInPeriod(row.week || '', periodA)),
+        compare: compareWeeklyData.filter((row) => weekInPeriod(row.week || '', periodB)),
       };
     }
     return {
-      baseline: monthlyTrendData.filter((row) => monthInPeriod(row.month, compareGrain, periodA)),
-      compare: monthlyTrendData.filter((row) => monthInPeriod(row.month, compareGrain, periodB)),
+      baseline: compareMonthlyData.filter((row) => monthInPeriod(row.month, compareGrain, periodA)),
+      compare: compareMonthlyData.filter((row) => monthInPeriod(row.month, compareGrain, periodB)),
     };
-  }, [compareGrain, periodA, periodB, monthlyTrendData, weeklyTrendData]);
+  }, [compareGrain, periodA, periodB, compareMonthlyData, compareWeeklyData]);
 
   const compareMovers = useMemo<BrandPeriodMover[]>(() => {
     return rankBrandPeriodMovers(
@@ -711,10 +728,24 @@ export function SpendsAnalytics() {
         grain: compareGrain,
         periodA,
         periodB,
-        monthly: monthlyTrendData,
-        weekly: weeklyTrendData,
+        monthly: compareMonthlyData,
+        weekly: compareWeeklyData,
       }),
-    [compareGrain, periodA, periodB, monthlyTrendData, weeklyTrendData]
+    [compareGrain, periodA, periodB, compareMonthlyData, compareWeeklyData]
+  );
+
+  const compareClientRows = useMemo(
+    () =>
+      periodA && periodB
+        ? buildClientCompareRows({
+            grain: compareGrain,
+            periodA,
+            periodB,
+            monthly: compareMonthlyData,
+            weekly: compareWeeklyData,
+          })
+        : [],
+    [compareGrain, periodA, periodB, compareMonthlyData, compareWeeklyData]
   );
 
   const wowSeriesKeys = useMemo(() => getSeriesKeys(wowChartData[0]), [wowChartData]);
@@ -955,6 +986,7 @@ export function SpendsAnalytics() {
           baselineTotal={baselineTotal}
           compareTotal={compareTotal}
           movers={compareMovers}
+          clientRows={compareClientRows}
           excludeLargeClients={excludeLargeClients}
           onExcludeChange={setExcludeLargeClients}
           selectedBrand={selectedClients.length === 1 ? selectedClients[0] : null}
