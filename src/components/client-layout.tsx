@@ -35,8 +35,9 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const isDashboard = pathname?.startsWith('/dashboard');
-  const isAuthPage = !isDashboard;
-  const showChrome = mounted && isDashboard;
+  const isPreview = pathname?.startsWith('/preview');
+  const isAuthPage = !isDashboard && !isPreview;
+  const showChrome = mounted && (isDashboard || isPreview);
 
   return (
     <ChromeContext.Provider value={{ mobileNavOpen, setMobileNavOpen }}>

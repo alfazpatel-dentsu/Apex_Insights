@@ -9,7 +9,9 @@ import {
   buildWowSpendsTrend,
   dominantImpactSpendType,
   formatLatestWeekDateLabel,
+  isMyntraOrOlaClient,
   parseSpendWeekDate,
+  rankBrandPeriodMovers,
   resolveWowWeekPair,
   spendWeekStartKey,
   toSpendNumber,
@@ -132,5 +134,26 @@ assert(
   dominantImpactSpendType(cromaCurr.typeSpendMap.Croma, cromaPrev.typeSpendMap.Croma, cromaDelta) === 'Performance',
   'Croma gainer label must be Performance by rupee delta, not Branding %'
 );
+
+assert(isMyntraOrOlaClient({ clientId: 'CLID0081' }), 'myntra clid');
+assert(isMyntraOrOlaClient({ clientId: 'clid0084' }), 'ola clid');
+assert(isMyntraOrOlaClient({ brandName: 'Myntra Fashion' }), 'myntra name');
+assert(isMyntraOrOlaClient({ brandName: 'OLA Electric' }), 'ola name');
+assert(!isMyntraOrOlaClient({ clientId: 'CLID0001', brandName: 'ITC' }), 'itc stays');
+
+const movers = rankBrandPeriodMovers(
+  aggregateBrandSpendBreakdown([
+    { brandName: 'Myntra', spendsInr: 100 },
+    { brandName: 'ITC', spendsInr: 40 },
+    { brandName: 'Syfe', spendsInr: 10 },
+  ]),
+  aggregateBrandSpendBreakdown([
+    { brandName: 'Myntra', spendsInr: 50 },
+    { brandName: 'ITC', spendsInr: 70 },
+    { brandName: 'Syfe', spendsInr: 10 },
+  ]),
+);
+assert(movers[0].brand === 'Myntra' && movers[0].diff === 50, `top mover ${movers[0].brand} ${movers[0].diff}`);
+assert(movers[1].brand === 'ITC' && movers[1].diff === -30, `second mover ${movers[1].brand}`);
 
 console.log('spend-week.smoke.ts: OK');
