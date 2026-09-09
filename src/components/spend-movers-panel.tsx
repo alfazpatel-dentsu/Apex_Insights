@@ -405,6 +405,7 @@ export function SpendMoversPanel({
             {filtered.length} client{filtered.length === 1 ? '' : 's'}
             {excludeLargeClients ? ' · excluding Myntra & OLA' : ''}
             {periodCols.length > 2 ? ` · ${periodCols.length} periods` : ''}
+            {selectedBrand ? ` · dashboard filtered to ${selectedBrand}` : ''}
           </span>
           <span className="normal-case tracking-normal font-bold opacity-70">
             Sorted by {sortKey === 'pct' ? 'change %' : 'change amount'} ({sortDir === 'desc' ? 'high → low' : 'low → high'})
