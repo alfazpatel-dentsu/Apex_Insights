@@ -357,6 +357,9 @@ export function SpendsAnalytics() {
   const [compareGrain, setCompareGrain] = useState<SpendCompareGrain>('month');
   const [periodA, setPeriodA] = useState('');
   const [periodB, setPeriodB] = useState('');
+  const [compareClients, setCompareClients] = useState<string[]>([]);
+  const [compareTypes, setCompareTypes] = useState<string[]>([]);
+  const [compareChannels, setCompareChannels] = useState<string[]>([]);
 
   useEffect(() => {
     if (!COMPARE_GRAINS.some((g) => g.value === compareGrain)) {
@@ -435,14 +438,28 @@ export function SpendsAnalytics() {
     () => (excludeLargeClients ? weeklyData.filter((row) => !isMyntraOrOlaClient(row)) : weeklyData),
     [weeklyData, excludeLargeClients]
   );
-  const compareMonthlyData = useMemo(
-    () => (excludeLargeClients ? monthlyDataAllClients.filter((row) => !isMyntraOrOlaClient(row)) : monthlyDataAllClients),
-    [monthlyDataAllClients, excludeLargeClients]
-  );
-  const compareWeeklyData = useMemo(
-    () => (excludeLargeClients ? weeklyDataAllClients.filter((row) => !isMyntraOrOlaClient(row)) : weeklyDataAllClients),
-    [weeklyDataAllClients, excludeLargeClients]
-  );
+  const compareMonthlyData = useMemo(() => {
+    const base = excludeLargeClients
+      ? monthlyDataAllClients.filter((row) => !isMyntraOrOlaClient(row))
+      : monthlyDataAllClients;
+    return base.filter((row) => {
+      if (compareChannels.length > 0 && !compareChannels.includes(row.channelVendor)) return false;
+      if (compareTypes.length > 0 && !compareTypes.includes(row.type)) return false;
+      if (compareClients.length > 0 && !compareClients.includes(row.brandName)) return false;
+      return true;
+    });
+  }, [monthlyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients]);
+  const compareWeeklyData = useMemo(() => {
+    const base = excludeLargeClients
+      ? weeklyDataAllClients.filter((row) => !isMyntraOrOlaClient(row))
+      : weeklyDataAllClients;
+    return base.filter((row) => {
+      if (compareChannels.length > 0 && !compareChannels.includes(row.channelVendor)) return false;
+      if (compareTypes.length > 0 && !compareTypes.includes(row.type)) return false;
+      if (compareClients.length > 0 && !compareClients.includes(row.brandName)) return false;
+      return true;
+    });
+  }, [weeklyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients]);
 
   // Unique Options for Filters
   const filterOptions = useMemo(() => {
@@ -688,6 +705,12 @@ export function SpendsAnalytics() {
         : periodYearsAgo(periodB, compareGrain, kind === 'twoYears' ? 2 : 1);
     const existing = pickExistingPeriod(candidate, periodOptions);
     if (existing) setPeriodA(existing);
+  };
+
+  const toggleCompareValue = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => (value: string) => {
+    setter((prev) => (prev.includes(value) ? prev.filter((x) => x !== value) : [...prev, value]));
   };
 
   const compareSlice = useMemo(() => {
@@ -994,6 +1017,20 @@ export function SpendsAnalytics() {
           formatCurrency={formatCurrency}
           onShortcut={handleCompareShortcut}
           progression={compareProgression}
+          clientOptions={filterOptions.clients}
+          typeOptions={filterOptions.types}
+          channelOptions={filterOptions.channels}
+          compareClients={compareClients}
+          compareTypes={compareTypes}
+          compareChannels={compareChannels}
+          onToggleCompareClient={toggleCompareValue(setCompareClients)}
+          onToggleCompareType={toggleCompareValue(setCompareTypes)}
+          onToggleCompareChannel={toggleCompareValue(setCompareChannels)}
+          onClearCompareFilters={() => {
+            setCompareClients([]);
+            setCompareTypes([]);
+            setCompareChannels([]);
+          }}
         />
       </div>
 

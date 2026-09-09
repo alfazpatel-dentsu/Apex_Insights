@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowLeftRight, ArrowUp, ChevronsUpDown, Search } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, Check, ChevronsUpDown, Filter, Search, X } from 'lucide-react';
 import { BrandPeriodMover } from '@/lib/spend-week';
 import {
   COMPARE_GRAINS,
@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -42,6 +43,81 @@ function periodDeltaClass(current: number, previous: number | undefined, isFirst
   return current > previous ? 'text-success' : 'text-destructive';
 }
 
+function MultiSelectFilter({
+  label,
+  placeholder,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  placeholder: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(
+    () => options.filter((o) => (o || '').toLowerCase().includes(search.toLowerCase())),
+    [options, search]
+  );
+  const active = selected.length > 0;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-testid={`spend-compare-filter-${label.toLowerCase()}`}
+          className={cn(
+            'flex h-9 items-center gap-2 border px-3 text-[10px] font-black uppercase tracking-widest',
+            active ? 'border-ink bg-ink text-cream' : 'border-ink/15 text-secondary hover:text-ink'
+          )}
+        >
+          <Filter className="h-3 w-3" />
+          {label}
+          {active ? ` (${selected.length})` : ''}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[280px] rounded-none p-2" align="start">
+        <div className="mb-2 border-b border-foreground/5 p-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground/60" />
+            <Input
+              placeholder={placeholder}
+              className="h-9 rounded-none border-none bg-foreground/5 pl-8 text-xs focus-visible:ring-1 focus-visible:ring-primary/30"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="custom-scrollbar max-h-[280px] space-y-1 overflow-y-auto">
+          {filtered.length > 0 ? (
+            filtered.map((option) => (
+              <div
+                key={option}
+                className="flex cursor-pointer items-center gap-2 rounded-none p-2 text-xs font-bold hover:bg-foreground/5"
+                onClick={() => onToggle(option)}
+              >
+                <div
+                  className={cn(
+                    'flex h-4 w-4 items-center justify-center rounded-md border transition-colors',
+                    selected.includes(option) ? 'border-primary bg-primary text-white' : 'border-foreground/20'
+                  )}
+                >
+                  {selected.includes(option) && <Check className="h-3 w-3" />}
+                </div>
+                {option}
+              </div>
+            ))
+          ) : (
+            <div className="p-4 text-center text-[10px] italic text-muted-foreground">No results found</div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function SpendMoversPanel({
   grain,
   onGrainChange,
@@ -63,6 +139,16 @@ export function SpendMoversPanel({
   formatCurrency,
   onShortcut,
   progression,
+  clientOptions,
+  typeOptions,
+  channelOptions,
+  compareClients,
+  compareTypes,
+  compareChannels,
+  onToggleCompareClient,
+  onToggleCompareType,
+  onToggleCompareChannel,
+  onClearCompareFilters,
 }: {
   grain: SpendCompareGrain;
   onGrainChange: (grain: SpendCompareGrain) => void;
@@ -84,6 +170,16 @@ export function SpendMoversPanel({
   formatCurrency: (val: number) => string;
   onShortcut: (kind: 'prior' | 'lastYear' | 'twoYears') => void;
   progression: CompareProgressPoint[];
+  clientOptions: string[];
+  typeOptions: string[];
+  channelOptions: string[];
+  compareClients: string[];
+  compareTypes: string[];
+  compareChannels: string[];
+  onToggleCompareClient: (value: string) => void;
+  onToggleCompareType: (value: string) => void;
+  onToggleCompareChannel: (value: string) => void;
+  onClearCompareFilters: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [side, setSide] = useState<'all' | 'up' | 'down'>('all');
@@ -153,6 +249,12 @@ export function SpendMoversPanel({
   };
   const net = compareTotal - baselineTotal;
   const pct = baselineTotal > 0 ? (net / baselineTotal) * 100 : compareTotal > 0 ? 100 : 0;
+  const scopeActive = compareClients.length > 0 || compareTypes.length > 0 || compareChannels.length > 0;
+  const scopeBits = [
+    compareTypes.length ? compareTypes.join(', ') : null,
+    compareChannels.length ? compareChannels.join(', ') : null,
+    compareClients.length ? `${compareClients.length} client${compareClients.length === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
 
   const swap = () => {
     onPeriodAChange(periodB);
@@ -166,7 +268,7 @@ export function SpendMoversPanel({
           <div>
             <CardTitle className="text-xl font-bold font-headline">Compare any two periods</CardTitle>
             <CardDescription className="text-xs uppercase font-black tracking-widest opacity-50 mt-1">
-              Month, quarter, year, or week. Table lists every client with in-between periods. Click a row to filter the rest of the dashboard.
+              One row per client. Type and channel slice spend (Performance, Marketplace, Meta…) without splitting the table.
             </CardDescription>
           </div>
           <div className="flex items-center gap-3 border border-ink/10 bg-cream/60 px-3 py-2">
@@ -184,6 +286,46 @@ export function SpendMoversPanel({
             </Label>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2" data-testid="spend-compare-scopes">
+          <MultiSelectFilter
+            label="Client"
+            placeholder="Search clients…"
+            options={clientOptions}
+            selected={compareClients}
+            onToggle={onToggleCompareClient}
+          />
+          <MultiSelectFilter
+            label="Type"
+            placeholder="Search types…"
+            options={typeOptions}
+            selected={compareTypes}
+            onToggle={onToggleCompareType}
+          />
+          <MultiSelectFilter
+            label="Channel"
+            placeholder="Search channels…"
+            options={channelOptions}
+            selected={compareChannels}
+            onToggle={onToggleCompareChannel}
+          />
+          {scopeActive && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 rounded-none px-2 text-[10px] font-black uppercase tracking-widest text-destructive"
+              onClick={onClearCompareFilters}
+            >
+              <X className="mr-1 h-3 w-3" /> Clear
+            </Button>
+          )}
+        </div>
+        {scopeActive && (
+          <div className="text-[9px] font-black uppercase tracking-widest text-secondary">
+            Scoped to {scopeBits.join(' · ')} — chart, totals, and table use this slice
+          </div>
+        )}
 
         <div className="flex flex-wrap items-end gap-2" data-testid="spend-compare-controls">
           <div className="space-y-1">
@@ -405,6 +547,7 @@ export function SpendMoversPanel({
             {filtered.length} client{filtered.length === 1 ? '' : 's'}
             {excludeLargeClients ? ' · excluding Myntra & OLA' : ''}
             {periodCols.length > 2 ? ` · ${periodCols.length} periods` : ''}
+            {scopeActive ? ' · scoped' : ''}
             {selectedBrand ? ` · dashboard filtered to ${selectedBrand}` : ''}
           </span>
           <span className="normal-case tracking-normal font-bold opacity-70">
