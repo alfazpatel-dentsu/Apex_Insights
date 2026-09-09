@@ -1,7 +1,7 @@
 import { addMonths, format, isValid, parse, subMonths, subWeeks, subYears } from 'date-fns';
 import { parseSpendWeekDate, rowSpendAmount } from './spend-week';
 
-export type SpendCompareGrain = 'month' | 'quarter' | 'ytd' | 'year' | 'week';
+export type SpendCompareGrain = 'month' | 'quarter' | 'year' | 'week';
 
 export type SpendPeriodOption = {
   id: string;
@@ -12,7 +12,6 @@ export type SpendPeriodOption = {
 export const COMPARE_GRAINS: { value: SpendCompareGrain; label: string }[] = [
   { value: 'month', label: 'Month' },
   { value: 'quarter', label: 'Quarter' },
-  { value: 'ytd', label: 'YTD' },
   { value: 'year', label: 'Year' },
   { value: 'week', label: 'Week' },
 ];
@@ -65,9 +64,6 @@ export function listPeriodOptions(
       .sort()
       .map((id) => ({ id, label: formatQuarterLabel(id), sortKey: id }));
   }
-  if (grain === 'ytd') {
-    return uniqueMonths.map((id) => ({ id, label: formatYtdLabel(id), sortKey: id }));
-  }
   if (grain === 'year') {
     const years = Array.from(new Set(uniqueMonths.map((m) => m.slice(0, 4)).filter(Boolean))).sort();
     return years.map((id) => ({ id, label: id, sortKey: id }));
@@ -90,13 +86,6 @@ export function monthInPeriod(month: string, grain: SpendCompareGrain, periodId:
   if (grain === 'month') return month === periodId;
   if (grain === 'year') return month.startsWith(`${periodId}-`);
   if (grain === 'quarter') return monthQuarterKey(month) === periodId;
-  if (grain === 'ytd') {
-    const year = periodId.slice(0, 4);
-    const through = periodId.slice(5, 7);
-    if (!year || !through) return false;
-    if (!month.startsWith(`${year}-`)) return false;
-    return month.slice(5, 7) <= through;
-  }
   return false;
 }
 
@@ -106,7 +95,7 @@ export function weekInPeriod(week: string, periodId: string): boolean {
 
 export function periodYearsAgo(periodId: string, grain: SpendCompareGrain, years: number): string | null {
   if (!periodId || years === 0) return periodId || null;
-  if (grain === 'month' || grain === 'ytd') {
+  if (grain === 'month') {
     const d = parse(periodId, 'yyyy-MM', new Date());
     if (!isValid(d)) return null;
     return format(subYears(d, years), 'yyyy-MM');
@@ -128,7 +117,7 @@ export function periodYearsAgo(periodId: string, grain: SpendCompareGrain, years
 
 export function priorPeriod(periodId: string, grain: SpendCompareGrain): string | null {
   if (!periodId) return null;
-  if (grain === 'month' || grain === 'ytd') {
+  if (grain === 'month') {
     const d = parse(periodId, 'yyyy-MM', new Date());
     if (!isValid(d)) return null;
     return format(subMonths(d, 1), 'yyyy-MM');
@@ -181,43 +170,33 @@ export function enumerateMonthKeys(fromMonth: string, toMonth: string): string[]
   return keys;
 }
 
-function quarterMonthBounds(periodId: string): { start: string; end: string } | null {
-  const match = periodId.match(/^(\d{4})-Q([1-4])$/);
-  if (!match) return null;
-  const year = match[1];
-  const q = parseInt(match[2], 10);
-  const startM = (q - 1) * 3 + 1;
-  return {
-    start: `${year}-${String(startM).padStart(2, '0')}`,
-    end: `${year}-${String(startM + 2).padStart(2, '0')}`,
+export function enumerateQuarterKeys(fromQ: string, toQ: string): string[] {
+  const parseQ = (id: string) => {
+    const match = id.match(/^(\d{4})-Q([1-4])$/);
+    if (!match) return null;
+    return parseInt(match[1], 10) * 4 + parseInt(match[2], 10) - 1;
   };
+  const a = parseQ(fromQ);
+  const b = parseQ(toQ);
+  if (a == null || b == null) return [];
+  const start = Math.min(a, b);
+  const end = Math.max(a, b);
+  const keys: string[] = [];
+  for (let i = start; i <= end; i++) {
+    keys.push(`${Math.floor(i / 4)}-Q${(i % 4) + 1}`);
+  }
+  return keys;
 }
 
-/** Calendar months covering the two selected periods (ordered start → end). */
-export function compareSpanMonthKeys(
-  grain: SpendCompareGrain,
-  periodA: string,
-  periodB: string
-): string[] {
-  if (!periodA || !periodB) return [];
-  if (grain === 'month' || grain === 'ytd') return enumerateMonthKeys(periodA, periodB);
-  if (grain === 'year') {
-    const years = [periodA, periodB].map((y) => parseInt(y, 10)).filter((n) => Number.isFinite(n));
-    if (years.length === 1) return enumerateMonthKeys(`${periodA}-01`, `${periodA}-12`);
-    if (years.length < 1) return [];
-    const minY = Math.min(...years);
-    const maxY = Math.max(...years);
-    return enumerateMonthKeys(`${minY}-01`, `${maxY}-12`);
-  }
-  if (grain === 'quarter') {
-    const a = quarterMonthBounds(periodA);
-    const b = quarterMonthBounds(periodB);
-    if (!a || !b) return [];
-    const start = a.start < b.start ? a.start : b.start;
-    const end = a.end > b.end ? a.end : b.end;
-    return enumerateMonthKeys(start, end);
-  }
-  return [];
+export function enumerateYearKeys(fromYear: string, toYear: string): string[] {
+  const a = parseInt(fromYear, 10);
+  const b = parseInt(toYear, 10);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return [];
+  const start = Math.min(a, b);
+  const end = Math.max(a, b);
+  const keys: string[] = [];
+  for (let y = start; y <= end; y++) keys.push(String(y));
+  return keys;
 }
 
 export function buildCompareProgression(params: {
@@ -260,22 +239,47 @@ export function buildCompareProgression(params: {
       .map(({ sort: _sort, ...row }) => row);
   }
 
-  const monthKeys = compareSpanMonthKeys(grain, periodA, periodB);
-  const totals: Record<string, number> = {};
+  const monthTotals: Record<string, number> = {};
   monthly.forEach((row) => {
     const month = row.month || '';
     if (!month) return;
-    totals[month] = (totals[month] || 0) + rowSpendAmount(row);
+    monthTotals[month] = (monthTotals[month] || 0) + rowSpendAmount(row);
   });
-  const startId = monthKeys[0];
-  const endId = monthKeys[monthKeys.length - 1];
-  return monthKeys.map((id) => {
+
+  if (grain === 'quarter') {
+    const keys = enumerateQuarterKeys(periodA, periodB);
+    return keys.map((id, i) => ({
+      id,
+      label: formatQuarterLabel(id),
+      spend: Object.entries(monthTotals).reduce(
+        (sum, [month, amt]) => sum + (monthQuarterKey(month) === id ? amt : 0),
+        0
+      ),
+      isEndpoint: id === periodA || id === periodB || i === 0 || i === keys.length - 1,
+    }));
+  }
+
+  if (grain === 'year') {
+    const keys = enumerateYearKeys(periodA, periodB);
+    return keys.map((id, i) => ({
+      id,
+      label: id,
+      spend: Object.entries(monthTotals).reduce(
+        (sum, [month, amt]) => sum + (month.startsWith(`${id}-`) ? amt : 0),
+        0
+      ),
+      isEndpoint: id === periodA || id === periodB || i === 0 || i === keys.length - 1,
+    }));
+  }
+
+  const monthKeys = enumerateMonthKeys(periodA, periodB);
+  return monthKeys.map((id, i) => {
     const d = parse(id, 'yyyy-MM', new Date());
     return {
       id,
-      label: isValid(d) ? format(d, "MMM yy") : id,
-      spend: totals[id] || 0,
-      isEndpoint: id === periodA || id === periodB || id === startId || id === endId,
+      label: isValid(d) ? format(d, 'MMM yy') : id,
+      spend: monthTotals[id] || 0,
+      isEndpoint: id === periodA || id === periodB || i === 0 || i === monthKeys.length - 1,
     };
   });
 }

@@ -109,7 +109,7 @@ export function SpendMoversPanel({
           <div>
             <CardTitle className="text-xl font-bold font-headline">Compare any two periods</CardTitle>
             <CardDescription className="text-xs uppercase font-black tracking-widest opacity-50 mt-1">
-              Month, quarter, YTD, year, or week — including Jul 2024 vs Jul 2026. Click a client to filter.
+              Month, quarter, year, or week. Click a client to filter.
             </CardDescription>
           </div>
           <div className="flex items-center gap-3 border border-ink/10 bg-cream/60 px-3 py-2">
@@ -237,10 +237,18 @@ export function SpendMoversPanel({
           <div className="border border-ink/10 p-3" data-testid="spend-compare-progression">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="text-[9px] font-black uppercase tracking-widest text-secondary">
-                {grain === 'week' ? 'Weekly spends' : 'Monthly spends'} · {progression[0]?.label} → {progression[progression.length - 1]?.label}
+                {grain === 'week'
+                  ? 'Weekly spends'
+                  : grain === 'quarter'
+                    ? 'Quarterly spends'
+                    : grain === 'year'
+                      ? 'Yearly spends'
+                      : 'Monthly spends'}{' '}
+                · {progression[0]?.label} → {progression[progression.length - 1]?.label}
               </div>
               <div className="text-[9px] font-black uppercase tracking-widest text-secondary">
-                {progression.length} {grain === 'week' ? 'weeks' : 'months'}
+                {progression.length}{' '}
+                {grain === 'week' ? 'weeks' : grain === 'quarter' ? 'quarters' : grain === 'year' ? 'years' : 'months'}
               </div>
             </div>
             <div className="h-[220px] w-full">

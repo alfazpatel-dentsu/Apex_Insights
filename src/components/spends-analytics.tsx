@@ -51,6 +51,7 @@ import {
   priorPeriod,
   weekInPeriod,
   buildCompareProgression,
+  COMPARE_GRAINS,
   type SpendCompareGrain,
 } from '@/lib/spend-compare';
 import { PageHeader } from '@/components/page-header';
@@ -355,6 +356,14 @@ export function SpendsAnalytics() {
   const [compareGrain, setCompareGrain] = useState<SpendCompareGrain>('month');
   const [periodA, setPeriodA] = useState('');
   const [periodB, setPeriodB] = useState('');
+
+  useEffect(() => {
+    if (!COMPARE_GRAINS.some((g) => g.value === compareGrain)) {
+      setCompareGrain('month');
+      setPeriodA('');
+      setPeriodB('');
+    }
+  }, [compareGrain]);
   
   useEffect(() => {
     setMounted(true);

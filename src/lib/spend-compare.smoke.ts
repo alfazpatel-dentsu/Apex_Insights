@@ -5,6 +5,7 @@
 import {
   buildCompareProgression,
   enumerateMonthKeys,
+  enumerateQuarterKeys,
   listPeriodOptions,
   monthInPeriod,
   periodYearsAgo,
@@ -24,22 +25,17 @@ assert(monthInPeriod('2024-07', 'month', '2024-07'), 'exact month');
 assert(!monthInPeriod('2024-08', 'month', '2024-07'), 'other month');
 assert(monthInPeriod('2026-07', 'quarter', '2026-Q3'), 'jul in q3');
 assert(!monthInPeriod('2026-06', 'quarter', '2026-Q3'), 'jun not q3');
-assert(monthInPeriod('2024-03', 'ytd', '2024-07'), 'mar in jan-jul');
-assert(!monthInPeriod('2024-08', 'ytd', '2024-07'), 'aug after jul ytd');
 assert(monthInPeriod('2026-12', 'year', '2026'), 'year match');
 
 assert(periodYearsAgo('2026-07', 'month', 2) === '2024-07', 'jul 2026 minus 2y');
-assert(periodYearsAgo('2026-07', 'ytd', 2) === '2024-07', 'ytd through jul minus 2y');
 assert(periodYearsAgo('2026-Q3', 'quarter', 2) === '2024-Q3', 'q3 minus 2y');
 assert(periodYearsAgo('2026', 'year', 2) === '2024', 'year minus 2y');
 assert(priorPeriod('2026-07', 'month') === '2026-06', 'prior month');
 assert(priorPeriod('2026-Q1', 'quarter') === '2025-Q4', 'prior quarter wraps');
 
-const ytdOpts = listPeriodOptions('ytd', months, []);
-assert(ytdOpts.find((o) => o.id === '2026-07')?.label === 'Jan–Jul 2026', 'ytd label');
-
 assert(enumerateMonthKeys('2024-07', '2026-07').length === 25, 'jul24-jul26 month count');
 assert(enumerateMonthKeys('2026-07', '2024-07')[0] === '2024-07', 'range is ordered');
+assert(enumerateQuarterKeys('2025-Q3', '2026-Q3').join(',') === '2025-Q3,2025-Q4,2026-Q1,2026-Q2,2026-Q3', 'q span');
 
 const prog = buildCompareProgression({
   grain: 'month',
@@ -57,5 +53,23 @@ assert(prog[0].id === '2024-07' && prog[0].spend === 100, 'start spend');
 assert(prog[12].id === '2025-07' && prog[12].spend === 80, 'mid spend');
 assert(prog[24].id === '2026-07' && prog[24].spend === 90, 'end spend');
 assert(prog[1].spend === 0, 'gap filled with 0');
+
+const qProg = buildCompareProgression({
+  grain: 'quarter',
+  periodA: '2025-Q3',
+  periodB: '2026-Q3',
+  monthly: [
+    { month: '2025-07', actualSpendsInr: 10 },
+    { month: '2025-08', actualSpendsInr: 20 },
+    { month: '2025-09', actualSpendsInr: 5 },
+    { month: '2026-07', actualSpendsInr: 40 },
+  ],
+  weekly: [],
+});
+assert(qProg.length === 5, `q progress ${qProg.length}`);
+assert(qProg[0].id === '2025-Q3' && qProg[0].label === '2025 Q3', 'q label');
+assert(qProg[0].spend === 35, `q3 2025 ${qProg[0].spend}`);
+assert(qProg[4].id === '2026-Q3' && qProg[4].spend === 40, 'q3 2026');
+assert(qProg.every((p) => p.id.includes('-Q')), 'all points are quarters');
 
 console.log('spend-compare.smoke.ts: OK');
