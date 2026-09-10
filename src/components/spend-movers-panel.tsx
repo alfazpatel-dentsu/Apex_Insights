@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowLeftRight, ArrowUp, Check, ChevronsUpDown, Filter, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, Check, ChevronsUpDown, Download, Filter, Search, X } from 'lucide-react';
+import { saveAs } from 'file-saver';
 import { BrandPeriodMover } from '@/lib/spend-week';
 import {
   COMPARE_GRAINS,
@@ -33,6 +34,7 @@ import {
   YAxis,
 } from 'recharts';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 type SortKey = 'change' | 'pct';
 type SortDir = 'asc' | 'desc';
@@ -185,6 +187,7 @@ export function SpendMoversPanel({
   const [side, setSide] = useState<'all' | 'up' | 'down'>('all');
   const [sortKey, setSortKey] = useState<SortKey>('change');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const { toast } = useToast();
 
   const rows: ClientCompareRow[] = useMemo(() => {
     if (clientRows && clientRows.length > 0) return clientRows;
@@ -259,6 +262,128 @@ export function SpendMoversPanel({
   const swap = () => {
     onPeriodAChange(periodB);
     onPeriodBChange(periodA);
+  };
+
+  const exportComparison = async () => {
+    const filename = `Aztec_Spend_Comparison_${periodA || 'baseline'}_vs_${periodB || 'compare'}.xlsx`;
+    try {
+      const { Workbook } = await import('exceljs');
+      const workbook = new Workbook();
+      const sheet = workbook.addWorksheet('Spend comparison');
+      const periodLabels = periodCols.map((period) => period.label);
+      const selectedFilters = [
+        `Grain: ${COMPARE_GRAINS.find((option) => option.value === grain)?.label || grain}`,
+        `Baseline: ${baselineLabel || periodA || '—'}`,
+        `Compare: ${compareLabel || periodB || '—'}`,
+        `Client: ${compareClients.length ? compareClients.join(', ') : 'All'}`,
+        `Type: ${compareTypes.length ? compareTypes.join(', ') : 'All'}`,
+        `Channel: ${compareChannels.length ? compareChannels.join(', ') : 'All'}`,
+        `Exclude Myntra & OLA: ${excludeLargeClients ? 'Yes' : 'No'}`,
+        `View: ${side === 'all' ? 'All' : side === 'up' ? 'Gainers' : 'Losers'}`,
+        `Search: ${query.trim() || 'None'}`,
+      ];
+
+    sheet.addRow(['AZTEC CONTROL CENTER · SPEND COMPARISON']);
+    sheet.addRow(['Exported', new Date()]);
+    selectedFilters.forEach((filter) => sheet.addRow([filter]));
+    sheet.addRow([]);
+    const headerRow = sheet.addRow([
+      '#',
+      'Client',
+      'Type',
+      ...periodLabels,
+      'Change',
+      'Change %',
+    ]);
+
+    const brandColumnIndex = 2;
+    const typeColumnIndex = 3;
+    const periodStartIndex = 4;
+    const changeColumnIndex = periodStartIndex + periodCols.length;
+    const percentageColumnIndex = changeColumnIndex + 1;
+    const headerFill = '181818';
+    const positiveFill = 'DDF4E8';
+    const negativeFill = 'FDE2E2';
+    const neutralFill = 'F3F0EA';
+    const whiteFont = { color: { argb: 'FFFFFFFF' }, bold: true };
+
+    headerRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerFill } };
+      cell.font = { ...whiteFont, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    filtered.forEach((row, rowIndex) => {
+      const values = periodCols.map((col) => row.series?.[col.id] || 0);
+      const excelRow = sheet.addRow([
+        rowIndex + 1,
+        row.brand,
+        row.type,
+        ...values,
+        row.diff,
+        row.percentage / 100,
+      ]);
+      excelRow.getCell(brandColumnIndex).font = { bold: true };
+      excelRow.getCell(typeColumnIndex).font = { color: { argb: '666666' } };
+      periodCols.forEach((col, colIndex) => {
+        const value = values[colIndex];
+        const previous = colIndex > 0 ? values[colIndex - 1] : undefined;
+        const cell = excelRow.getCell(periodStartIndex + colIndex);
+        cell.numFmt = '₹#,##0;[Red]-₹#,##0;—';
+        cell.alignment = { horizontal: 'right' };
+        if (value === 0 || previous === undefined || value === previous) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: neutralFill } };
+        } else if (value > previous) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: positiveFill } };
+          cell.font = { color: { argb: '16834B' } };
+        } else {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: negativeFill } };
+          cell.font = { color: { argb: 'C62828' } };
+        }
+      });
+      const changeCell = excelRow.getCell(changeColumnIndex);
+      const percentageCell = excelRow.getCell(percentageColumnIndex);
+      changeCell.numFmt = '₹#,##0;[Red]-₹#,##0;—';
+      percentageCell.numFmt = '0.0%;[Red]-0.0%;—';
+      const changeColor = row.diff > 0 ? '16834B' : row.diff < 0 ? 'C62828' : '666666';
+      [changeCell, percentageCell].forEach((cell) => {
+        cell.font = { bold: true, color: { argb: changeColor } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: row.diff > 0 ? positiveFill : row.diff < 0 ? negativeFill : neutralFill },
+        };
+        cell.alignment = { horizontal: 'right' };
+      });
+    });
+
+    sheet.getCell('A1').font = { bold: true, size: 14, color: { argb: '181818' } };
+    sheet.getCell('A2').numFmt = 'dd mmm yyyy hh:mm';
+    sheet.getColumn(brandColumnIndex).width = 28;
+    sheet.getColumn(typeColumnIndex).width = 18;
+    for (let index = periodStartIndex; index <= percentageColumnIndex; index += 1) {
+      sheet.getColumn(index).width = 16;
+    }
+    sheet.views = [{ state: 'frozen', ySplit: headerRow.number }];
+    sheet.autoFilter = {
+      from: { row: headerRow.number, column: 1 },
+      to: { row: Math.max(headerRow.number, sheet.rowCount), column: percentageColumnIndex },
+    };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), filename);
+      toast({
+        title: 'Export complete',
+        description: `${filename} downloaded successfully.`,
+      });
+    } catch (error) {
+      console.error('Spend comparison export failed:', error);
+      toast({
+        title: 'Export failed',
+        description: 'The comparison could not be exported. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -408,6 +533,17 @@ export function SpendMoversPanel({
               2 years ago
             </button>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 rounded-none text-[10px] font-black uppercase tracking-widest"
+            onClick={exportComparison}
+            disabled={filtered.length === 0}
+            title="Export displayed comparison"
+          >
+            <Download className="mr-2 h-3.5 w-3.5" />
+            Export
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
