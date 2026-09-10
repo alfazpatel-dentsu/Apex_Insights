@@ -17,10 +17,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (user && !profileLoading && !userProfile && pathname.startsWith('/dashboard')) {
-      return;
-    }
-
     if (userProfile) {
       // Pending users should only see the awaiting approval page
       if (userProfile.status === 'Pending' && pathname !== '/awaiting-approval') {
@@ -72,7 +68,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
   
-  if (!user) {
+  if (!user || !userProfile) {
       return null;
   }
 

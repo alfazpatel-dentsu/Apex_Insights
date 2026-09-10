@@ -148,7 +148,7 @@ async function resolveUserIdsByEmail(emails: string[]): Promise<Map<string, stri
   return map;
 }
 
-async function writeInAppNotifications(params: {
+export async function writeInAppNotifications(params: {
   emails: string[];
   type: EmailAutomationKey | "test";
   title: string;
@@ -220,23 +220,22 @@ export async function sendAlertEmail(options: SendAlertOptions): Promise<{
   const db = getFirestore();
   const logRef = db.collection("mailLog").doc(options.dedupeKey);
   const existing = await logRef.get();
-  if (existing.exists) {
+  if (existing.exists && existing.data()?.status === "sent") {
     return {sent: false, skipped: "already-sent"};
   }
 
-  try {
-    await logRef.create({
+  await logRef.set(
+    {
       status: "sending",
       to: recipients,
       subject: options.content.subject,
       from: options.settings.fromEmail,
       provider: "microsoft-graph",
-      createdAt: FieldValue.serverTimestamp(),
+      attemptedAt: FieldValue.serverTimestamp(),
       meta: options.meta || {},
-    });
-  } catch {
-    return {sent: false, skipped: "already-sent"};
-  }
+    },
+    {merge: true}
+  );
 
   const sender =
     MS_GRAPH_SENDER.value()?.trim() ||

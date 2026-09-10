@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { 
@@ -34,7 +34,6 @@ import { EditUserRoleDialog } from "./edit-user-role-dialog";
 import { AddUserDialog } from "./add-user-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn, openDialogFromMenu } from "@/lib/utils";
-import { updateDoc, doc } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -66,12 +65,6 @@ export default function AdminPage() {
   
   const isAdmin = !profileLoading && userProfile?.role === 'Admin';
   const TARGET_EMAIL = 'alfaz.patel@dentsu.com';
-
-  useEffect(() => {
-    if (userProfile && userProfile.status === 'Invite sent' && userProfile.displayName) {
-      updateDoc(doc(firestore, 'users', userProfile.uid), { status: 'User Registered' });
-    }
-  }, [userProfile, firestore]);
 
   const handlePurge = async () => {
     setIsPurging(true);
