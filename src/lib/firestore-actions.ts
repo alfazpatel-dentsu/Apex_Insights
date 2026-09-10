@@ -4,11 +4,13 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import {
   getAuth,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   sendPasswordResetEmail,
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
   updateProfile,
+  deleteUser as deleteAuthUser,
   Auth,
   User,
 } from 'firebase/auth';
@@ -327,14 +329,18 @@ export const saveUserRoleAndPermissions = (db: Firestore, userId: string, role: 
 };
 
 export const createUser = async (db: Firestore, userData: any) => {
+    const email = String(userData.email || '').trim().toLowerCase();
+    if (!/^[^@]+@dentsu\.com$/.test(email)) {
+        throw new Error('Only @dentsu.com email addresses can be invited.');
+    }
     const tempAppName = `temp-user-${Date.now()}`;
     const tempApp = initializeApp(firebaseConfig, tempAppName);
     const tempAuth = getAuth(tempApp);
     try {
-        const userCredential = await createUserWithEmailAndPassword(tempAuth, userData.email, Math.random().toString(36).slice(-12));
+        const userCredential = await createUserWithEmailAndPassword(tempAuth, email, Math.random().toString(36).slice(-12));
         const userProfile = { 
             uid: userCredential.user.uid, 
-            email: userData.email, 
+            email,
             displayName: userData.displayName, 
             photoURL: '', 
             role: userData.role, 
@@ -348,17 +354,27 @@ export const createUser = async (db: Firestore, userData: any) => {
 };
 
 export const registerUser = async (db: Firestore, auth: Auth, userData: any) => {
-    const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+    const email = String(userData.email || '').trim().toLowerCase();
+    if (!/^[^@]+@dentsu\.com$/.test(email)) {
+        throw new Error('Only @dentsu.com email addresses can request access.');
+    }
+    const userCredential = await createUserWithEmailAndPassword(auth, email, userData.password);
     const userProfile = { 
         uid: userCredential.user.uid, 
-        email: userData.email, 
+        email,
         displayName: userData.displayName, 
         photoURL: '', 
         role: 'Client Partner', 
         status: 'Pending', 
         permissions: [] 
     };
-    await setDoc(doc(db, 'users', userCredential.user.uid), userProfile);
+    try {
+      await sendEmailVerification(userCredential.user);
+      await setDoc(doc(db, 'users', userCredential.user.uid), userProfile);
+    } catch (error) {
+      await deleteAuthUser(userCredential.user);
+      throw error;
+    }
     return userProfile;
 };
 

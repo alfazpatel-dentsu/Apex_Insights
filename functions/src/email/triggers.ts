@@ -8,7 +8,13 @@ import {
   loadEmailAutomationSettings,
   MS_GRAPH_CLIENT_SECRET,
 } from "./config";
-import {findUserByEmail, listAdminEmails, resolveUserEmail, sendAlertEmail} from "./mailer";
+import {
+  findUserByEmail,
+  listAdminEmails,
+  resolveUserEmail,
+  sendAlertEmail,
+  writeInAppNotifications,
+} from "./mailer";
 import {
   accessGrantedEmail,
   accessRequestedEmail,
@@ -200,6 +206,13 @@ export const onUserEmailAutomations = functions
             requesterName: after.displayName || "",
             requesterEmail: after.email || "",
             appBaseUrl: settings.appBaseUrl,
+          });
+          await writeInAppNotifications({
+            emails: admins,
+            type: "accessRequested",
+            title: content.subject.replace(/^\[AZTEC\]\s*/i, ""),
+            body: content.text.split("\n").filter(Boolean).slice(1, 4).join(" "),
+            href: "/dashboard/admin",
           });
           await sendAlertEmail({
             to: admins,

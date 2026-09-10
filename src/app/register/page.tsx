@@ -22,11 +22,16 @@ export default function RegisterPage() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail.endsWith('@dentsu.com')) {
+      setError('Access requests are limited to verified @dentsu.com email addresses.');
+      return;
+    }
     setIsRegistering(true);
     setError(null);
     try {
       await registerUser(firestore, auth, {
-        email,
+        email: normalizedEmail,
         displayName,
         password
       });
