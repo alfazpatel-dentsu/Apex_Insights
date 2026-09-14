@@ -4,18 +4,18 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useAuth, useUser, useFirebaseApp } from '@/firebase';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { useAuth, useUser, useFirestore } from '@/firebase';
 import { SokratiLogo } from '@/components/sokrati-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { enqueueMailJob } from '@/lib/mail-jobs';
 
 export default function LoginPage() {
   const router = useRouter();
   const auth = useAuth();
-  const app = useFirebaseApp();
+  const firestore = useFirestore();
   const { user, loading } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,13 +47,26 @@ export default function LoginPage() {
     e.preventDefault();
     setIsResetting(true);
     setError(null);
+    const address = email.trim().toLowerCase();
+    if (!address.includes('@')) {
+      setError('Enter the work email for the account.');
+      setIsResetting(false);
+      return;
+    }
     try {
-      const functions = getFunctions(app, 'us-central1');
-      const requestReset = httpsCallable(functions, 'requestPasswordResetEmail');
-      await requestReset({ email, kind: 'reset' });
+      await enqueueMailJob(firestore, 'reset', address);
       setResetSent(true);
-    } catch {
-      setResetSent(true);
+    } catch (jobErr) {
+      try {
+        await sendPasswordResetEmail(auth, address);
+        setResetSent(true);
+      } catch {
+        setError(
+          jobErr instanceof Error
+            ? jobErr.message
+            : 'Could not send a reset email. Try again or contact an admin.'
+        );
+      }
     } finally {
       setIsResetting(false);
     }

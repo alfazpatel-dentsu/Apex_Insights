@@ -100,6 +100,23 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // MAIL JOBS (test / reset / invite — processed by onMailJobCreated)
+    match /mailJobs/{id} {
+      allow create: if
+        (
+          request.resource.data.type == 'reset'
+          && request.resource.data.email is string
+          && request.resource.data.status == 'queued'
+        )
+        || (
+          isAdmin()
+          && request.resource.data.type in ['test', 'invite', 'reset', 'mom']
+          && request.resource.data.status == 'queued'
+        );
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
     // IN-APP TEAM NOTIFICATIONS
     match /notifications/{id} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
