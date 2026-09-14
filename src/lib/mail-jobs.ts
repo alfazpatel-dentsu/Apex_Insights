@@ -14,6 +14,7 @@ export type MailJobType = 'test' | 'reset' | 'invite' | 'mom';
 export type MailJobPayload = {
   type: MailJobType;
   email?: string;
+  resend?: boolean;
   emails?: string[];
   subject?: string;
   html?: string;
@@ -37,6 +38,7 @@ export async function enqueueMailJob(
     createdAt: serverTimestamp(),
   };
   if (payload.email) record.email = payload.email.trim().toLowerCase();
+  if (payload.resend) record.resend = true;
   if (payload.emails?.length) {
     record.emails = payload.emails.map((e) => e.trim().toLowerCase()).filter((e) => e.includes('@'));
   }
