@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select';
 import {
   CartesianGrid,
+  LabelList,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -38,6 +39,54 @@ import { useToast } from '@/hooks/use-toast';
 
 type SortKey = 'change' | 'pct';
 type SortDir = 'asc' | 'desc';
+
+const formatProgressCurrency = (val: number) => {
+  const absVal = Math.abs(val);
+  const sign = val < 0 ? '-' : '';
+  if (absVal >= 10000000) return `₹${sign}${(absVal / 10000000).toFixed(2)}Cr`;
+  if (absVal >= 100000) return `₹${sign}${(absVal / 100000).toFixed(2)}L`;
+  return `₹${sign}${absVal.toLocaleString()}`;
+};
+
+function SpendProgressLabel({
+  x,
+  y,
+  value,
+  index = 0,
+}: {
+  x?: number | string;
+  y?: number | string;
+  value?: number | string;
+  index?: number;
+}) {
+  if (x == null || y == null || value == null) return null;
+
+  const cx = Number(x);
+  const cy = Number(y);
+  const label = formatProgressCurrency(Number(value));
+  const placeAbove = index % 2 === 0;
+  const alignToStart = cx < 70;
+  const alignToEnd = cx > 450;
+  const textAnchor = alignToStart ? 'start' : alignToEnd ? 'end' : 'middle';
+  const labelX = alignToStart ? cx + 4 : alignToEnd ? cx - 4 : cx;
+  const labelY = Math.max(12, cy + (placeAbove ? -11 : 14));
+
+  return (
+    <text
+      x={labelX}
+      y={labelY}
+      textAnchor={textAnchor}
+      dominantBaseline="middle"
+      fill="hsl(var(--ink))"
+      fontSize={8}
+      fontWeight={700}
+      fontFamily="var(--font-mono), IBM Plex Mono, monospace"
+      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+    >
+      {label}
+    </text>
+  );
+}
 
 function periodDeltaClass(current: number, previous: number | undefined, isFirst: boolean) {
   if (isFirst || previous == null) return 'text-ink';
@@ -639,7 +688,12 @@ export function SpendMoversPanel({
                       );
                     }}
                     activeDot={{ r: 6 }}
-                  />
+                  >
+                    <LabelList
+                      dataKey="spend"
+                      content={<SpendProgressLabel />}
+                    />
+                  </Line>
                 </LineChart>
               </ResponsiveContainer>
             </div>
