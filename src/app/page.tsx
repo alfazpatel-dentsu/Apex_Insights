@@ -26,7 +26,10 @@ export default function LoginPage() {
   const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
-    if (user) router.push('/dashboard');
+    if (user) {
+      const next = new URLSearchParams(window.location.search).get('next');
+      router.push(next?.startsWith('/') ? next : '/dashboard');
+    }
   }, [user, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -35,7 +38,8 @@ export default function LoginPage() {
     setError(null);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      router.push('/dashboard');
+      const next = new URLSearchParams(window.location.search).get('next');
+      router.push(next?.startsWith('/') ? next : '/dashboard');
     } catch (error: any) {
       setError('Invalid credentials or unauthorized account.');
     } finally {
