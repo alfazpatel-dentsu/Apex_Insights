@@ -21,6 +21,26 @@ for the deployed project; otherwise Firebase will reject the deployment. This
 server-side check is required because browser validation can be bypassed by
 calling the Auth API directly.
 
+### One-time cleanup of unauthorized users
+
+From Cloud Shell, after `npm ci` and `firebase use vdc200007-ppclientcentre-prod`,
+run the cleanup in dry-run mode first:
+
+```bash
+npm run purge:non-dentsu
+```
+
+Review the listed accounts carefully. If every listed account is unauthorized,
+run:
+
+```bash
+npm run purge:non-dentsu -- --apply
+```
+
+The script removes only Firebase Authentication users and `users` documents
+whose email is missing or does not match the exact `@dentsu.com` domain. It
+does not delete application data in any other collection.
+
 ---
 
 ## Email & team notifications (`aztec_alerts@dentsu.com`)

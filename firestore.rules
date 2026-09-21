@@ -18,13 +18,13 @@ service cloud.firestore {
       return isDentsuUser() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'User Registered';
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['User Registered', 'Active'];
     }
 
     function isApproved() {
       return isDentsuUser() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['User Registered', 'Invite sent'];
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['User Registered', 'Active', 'Invite sent'];
     }
 
     // USERS
