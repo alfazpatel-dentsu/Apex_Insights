@@ -42,13 +42,13 @@ function assertDentsuAccount(email: string | undefined): void {
 }
 
 export const enforceDentsuAccounts = beforeUserCreated((event) => {
-  assertDentsuAccount(event.data.email);
+  assertDentsuAccount(event.data?.email);
   return;
 });
 
 /** Also deny sign-in for unauthorized accounts created before this trigger deployed. */
 export const enforceDentsuSignIn = beforeUserSignedIn((event) => {
-  assertDentsuAccount(event.data.email);
+  assertDentsuAccount(event.data?.email);
   return;
 });
 
@@ -56,8 +56,7 @@ export {
   onActionItemEmailAutomations,
   onUserEmailAutomations,
   sweepOverdueActionItemEmails,
-  sendTestAlertEmail,
-  requestPasswordResetEmail,
+  onMailJobCreated,
 } from "./email/triggers";
 
 const sheetsSpreadsheetId = defineString("SHEETS_SPREADSHEET_ID", {
