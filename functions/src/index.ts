@@ -1,6 +1,8 @@
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import * as functions from "firebase-functions/v1";
+import {beforeUserCreated, beforeUserSignedIn} from "firebase-functions/v2/identity";
+import {HttpsError} from "firebase-functions/v2/https";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {logger} from "firebase-functions";
 import {actionItemToRow, ActionItemDoc} from "./action-item-row";
@@ -21,6 +23,34 @@ import {
  */
 
 initializeApp();
+
+/**
+ * Enforce the registration policy at Firebase Authentication's boundary.
+ * Client-side validation can be bypassed by calling the Auth API directly.
+ *
+ * This is a blocking function, so rejected accounts are never created in
+ * Firebase Authentication and cannot leave orphaned IDs in the console.
+ */
+function assertDentsuAccount(email: string | undefined): void {
+  const normalizedEmail = email?.trim().toLowerCase() ?? "";
+  if (!/^[^@]+@dentsu\.com$/.test(normalizedEmail)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only @dentsu.com accounts can access this application."
+    );
+  }
+}
+
+export const enforceDentsuAccounts = beforeUserCreated((event) => {
+  assertDentsuAccount(event.data.email);
+  return;
+});
+
+/** Also deny sign-in for unauthorized accounts created before this trigger deployed. */
+export const enforceDentsuSignIn = beforeUserSignedIn((event) => {
+  assertDentsuAccount(event.data.email);
+  return;
+});
 
 export {
   onActionItemEmailAutomations,

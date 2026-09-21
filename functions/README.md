@@ -11,8 +11,15 @@
 | `sweepOverdueActionItemEmails` | Daily overdue sweep (03:30 UTC ≈ 09:00 IST) |
 | `sendTestAlertEmail` | Callable — Admin test email from the shared mailbox |
 | `requestPasswordResetEmail` | Callable — branded **forgot password** (public) and **resend invite** (Admin) |
+| `enforceDentsuAccounts` / `enforceDentsuSignIn` | Auth blocking triggers — reject non-`@dentsu.com` account creation and sign-in |
 
 If prompted about deleting `acceptInvite` on deploy, choose **No**.
+
+`enforceDentsuAccounts` is a Firebase Authentication blocking function. The
+project must have **Identity Platform** enabled and blocking functions enabled
+for the deployed project; otherwise Firebase will reject the deployment. This
+server-side check is required because browser validation can be bypassed by
+calling the Auth API directly.
 
 ---
 
