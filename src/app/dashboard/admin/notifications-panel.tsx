@@ -32,6 +32,10 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 function mergeSettings(remote?: EmailAutomationSettings | null): EmailAutomationSettings {
+  const defaultCcEmails = Array.isArray(remote?.defaultCcEmails)
+    ? remote.defaultCcEmails.filter((email): email is string => typeof email === 'string')
+    : [];
+
   return {
     ...DEFAULT_EMAIL_AUTOMATIONS,
     ...(remote || {}),
@@ -43,7 +47,7 @@ function mergeSettings(remote?: EmailAutomationSettings | null): EmailAutomation
       ...DEFAULT_CC_ENABLED,
       ...(remote?.ccEnabled || {}),
     },
-    defaultCcEmails: [...(remote?.defaultCcEmails || [])],
+    defaultCcEmails,
   };
 }
 
@@ -72,8 +76,12 @@ export function NotificationsPanel() {
   const registeredUsers = useMemo(
     () =>
       (users || [])
-        .filter((u) => u.status !== 'Pending' && (u.email || '').includes('@'))
-        .sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email)),
+        .filter((u) => u.status !== 'Pending' && typeof u.email === 'string' && u.email.includes('@'))
+        .sort((a, b) =>
+          (typeof a.displayName === 'string' ? a.displayName : a.email).localeCompare(
+            typeof b.displayName === 'string' ? b.displayName : b.email
+          )
+        ),
     [users]
   );
 
@@ -188,7 +196,11 @@ export function NotificationsPanel() {
   };
 
   const preview = useMemo(() => sampleEmailFor(previewKey), [previewKey]);
-  const selectedCc = new Set((draft.defaultCcEmails || []).map((e) => e.toLowerCase()));
+  const selectedCc = new Set(
+    (Array.isArray(draft.defaultCcEmails) ? draft.defaultCcEmails : [])
+      .filter((email): email is string => typeof email === 'string')
+      .map((email) => email.toLowerCase())
+  );
 
   if (settingsLoading) {
     return (
@@ -325,7 +337,8 @@ export function NotificationsPanel() {
                 );
               })}
             </ul>
-            {(draft.defaultCcEmails || [])
+            {(Array.isArray(draft.defaultCcEmails) ? draft.defaultCcEmails : [])
+              .filter((email): email is string => typeof email === 'string')
               .filter((e) => !registeredUsers.some((u) => (u.email || '').toLowerCase() === e))
               .map((email) => (
                 <label key={email} className="flex items-center gap-2 text-xs">

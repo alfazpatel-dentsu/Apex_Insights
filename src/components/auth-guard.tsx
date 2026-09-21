@@ -32,7 +32,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
       if (pathname.startsWith('/dashboard')) {
         const isAdmin = userProfile.role === 'Admin';
-        const permissions = userProfile.permissions || [];
+        const permissions = Array.isArray(userProfile.permissions) ? userProfile.permissions : [];
         
         // CRITICAL: Order matters here to prevent prefix matching overlaps
         // e.g. /dashboard/spends-dashboard should not be caught by /dashboard/spends

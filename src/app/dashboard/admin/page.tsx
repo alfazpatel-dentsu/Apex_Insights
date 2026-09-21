@@ -219,12 +219,13 @@ export default function AdminPage() {
     worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
 
     users.forEach(user => {
+      const permissions = Array.isArray(user.permissions) ? user.permissions : [];
       worksheet.addRow({
         displayName: user.displayName || 'N/A',
         email: user.email,
         role: user.role,
         status: user.status || 'Invite sent',
-        permissions: user.permissions?.join(', ') || 'None',
+        permissions: permissions.join(', ') || 'None',
       });
     });
 
@@ -316,17 +317,20 @@ export default function AdminPage() {
                 const isRegistered = user.status === 'User Registered';
                 const isPending = user.status === 'Pending';
                 const isCurrentResending = isResending === user.uid;
+                const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+                const email = typeof user.email === 'string' ? user.email : '';
+                const displayName = typeof user.displayName === 'string' ? user.displayName : '';
                 return (
                   <TableRow key={user.id} className="border-b border-ink/5 hover:bg-cream transition-colors">
                     <TableCell className="font-semibold flex items-center gap-3 py-5 pl-8">
                       <Avatar className="h-8 w-8 rounded-none border border-ink">
                         <AvatarFallback className="bg-brand text-white text-[10px] font-black font-mono">
-                          {(user.displayName || user.email).charAt(0).toUpperCase()}
+                          {(displayName || email || '?').charAt(0).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <div className="text-xs font-black uppercase tracking-tight leading-none">{user.displayName || 'PENDING'}</div>
-                        <div className="text-[9px] font-mono text-secondary uppercase mt-1">{user.email}</div>
+                        <div className="text-xs font-black uppercase tracking-tight leading-none">{displayName || 'PENDING'}</div>
+                        <div className="text-[9px] font-mono text-secondary uppercase mt-1">{email || 'NO EMAIL'}</div>
                         <Badge variant="outline" className={cn("text-[8px] font-black uppercase rounded-none px-1.5 h-4 mt-2 border-ink", 
                           isRegistered ? "bg-success/10 text-success" : 
                           isPending ? "bg-destructive/10 text-destructive animate-pulse" :
@@ -343,10 +347,10 @@ export default function AdminPage() {
                         <div className="flex flex-wrap gap-1">
                           {user.role === 'Admin' ? (
                             <Badge variant="outline" className="text-[8px] font-bold uppercase border-foreground/20">FULL ACCESS</Badge>
-                          ) : user.permissions?.map(p => (
+                          ) : permissions.map(p => (
                             <Badge key={p} variant="outline" className="text-[8px] font-bold uppercase border-foreground/10 bg-foreground/[0.03]">{p}</Badge>
                           ))}
-                          {(!user.permissions || user.permissions.length === 0) && user.role !== 'Admin' && (
+                          {permissions.length === 0 && user.role !== 'Admin' && (
                             <span className="text-[9px] font-bold text-destructive/60 uppercase">NO MODULE ACCESS</span>
                           )}
                         </div>
