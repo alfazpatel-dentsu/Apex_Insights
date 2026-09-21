@@ -12,7 +12,9 @@ import {
   ArrowRight,
   Lock,
   Unlock,
-  Zap
+  Zap,
+  Trophy,
+  ShieldAlert
 } from 'lucide-react';
 import { format, startOfWeek, addDays, isAfter, isBefore, endOfDay, startOfDay, subWeeks, addWeeks, subMonths, parse, isValid } from 'date-fns';
 import ExcelJS from 'exceljs';
@@ -22,6 +24,7 @@ import Link from 'next/link';
 
 import { useCollection, useUser, useDoc } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData } from '@/lib/types';
+import { isPrimaryKpiType, meetsTarget, parseKpiDirection } from '@/lib/kpi-rag';
 import { PageHeader } from '@/components/page-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -87,13 +90,17 @@ function WbrPageContent() {
   
   // OPTIMIZATION RITUAL: Only fetch recent KPIs for discovery to prevent loading thousands of records
   const kpiDiscoveryConstraints = useMemo(() => [
-    where('month', '>=', format(subMonths(new Date(), 3), 'yyyy-MM'))
-  ], []);
+    where('month', '>=', format(subMonths(currentWbrDate || new Date(), 2), 'yyyy-MM')),
+    where('month', '<=', format(currentWbrDate || new Date(), 'yyyy-MM')),
+  ], [currentWbrDate]);
   const { data: kpiRecords } = useCollection<KpiData>('kpis', kpiDiscoveryConstraints);
   
   const wbrConstraints = useMemo(() => {
     if (!currentWbrDate) return [null];
-    return [where('wbrDate', '==', format(currentWbrDate, 'yyyy-MM-dd'))];
+    return [
+      where('wbrDate', '>=', format(subWeeks(currentWbrDate, 2), 'yyyy-MM-dd')),
+      where('wbrDate', '<=', format(currentWbrDate, 'yyyy-MM-dd')),
+    ];
   }, [currentWbrDate]);
 
   const { data: wbrEntries, loading: wbrLoading } = useCollection<WbrEntry>('wbrEntries', wbrConstraints);
@@ -156,6 +163,79 @@ function WbrPageContent() {
     });
   }, [allClients, wbrEntries, search, selectedCluster, selectedLead, selectedManager, selectedPartner, selectedEngagementRag, selectedPerfRag]);
 
+  const latestKpiMonths = useMemo(() => {
+    return Array.from(new Set((kpiRecords || []).map((record) => record.month).filter(Boolean)))
+      .sort()
+      .slice(-2);
+  }, [kpiRecords]);
+
+  const clientCategories = useMemo(() => {
+    const entriesByClient = new Map<string, WbrEntry[]>();
+    (wbrEntries || []).forEach((entry) => {
+      const entries = entriesByClient.get(entry.clientId) || [];
+      entries.push(entry);
+      entriesByClient.set(entry.clientId, entries);
+    });
+
+    const kpisByClient = new Map<string, KpiData[]>();
+    (kpiRecords || []).forEach((record) => {
+      const records = kpisByClient.get(record.clientId) || [];
+      records.push(record);
+      kpisByClient.set(record.clientId, records);
+    });
+
+    const categories = new Map<string, 'top' | 'alert' | 'rest'>();
+    allClients.forEach((client) => {
+      const entries = (entriesByClient.get(client.uniqueId) || [])
+        .sort((a, b) => String(b.wbrDate || '').localeCompare(String(a.wbrDate || '')))
+        .slice(0, 3);
+      const topRag = entries.length === 3 &&
+        entries.every((entry) => entry.engagementRag === 'Green') &&
+        entries.every((entry) => entry.performanceRag === 'Green');
+      const alertRag = entries.length === 2 &&
+        entries.every((entry) =>
+          [entry.engagementRag, entry.performanceRag].some((rag) => rag === 'Red' || rag === 'Amber')
+        );
+
+      const primaryKpis = (kpisByClient.get(client.uniqueId) || []).filter(
+        (record) => isPrimaryKpiType(record.kpiType) && latestKpiMonths.includes(record.month)
+      );
+      const kpisByMonth = new Map<string, KpiData[]>();
+      primaryKpis.forEach((record) => {
+        const monthRecords = kpisByMonth.get(record.month) || [];
+        monthRecords.push(record);
+        kpisByMonth.set(record.month, monthRecords);
+      });
+      const latestKpiMonth = latestKpiMonths[latestKpiMonths.length - 1];
+      const hasBothKpiMonths = latestKpiMonths.length === 2 &&
+        latestKpiMonths.every((month) => (kpisByMonth.get(month) || []).length > 0);
+      const hasLatestKpiMonth = !!latestKpiMonth && (kpisByMonth.get(latestKpiMonth) || []).length > 0;
+      const achievedAllKpis = hasBothKpiMonths && primaryKpis.every((record) =>
+        meetsTarget(
+          record.achievedMonthTillYesterday,
+          record.targetMonth,
+          parseKpiDirection(record.direction, record.kpi)
+        )
+      );
+      const missedAnyKpi = hasLatestKpiMonth && primaryKpis.some((record) =>
+        !meetsTarget(
+          record.achievedMonthTillYesterday,
+          record.targetMonth,
+          parseKpiDirection(record.direction, record.kpi)
+        )
+      );
+
+      categories.set(client.uniqueId, topRag && achievedAllKpis ? 'top' : alertRag && missedAnyKpi ? 'alert' : 'rest');
+    });
+    return categories;
+  }, [allClients, kpiRecords, latestKpiMonths, wbrEntries]);
+
+  const categorizedClients = useMemo(() => {
+    const groups = { top: [] as Client[], alert: [] as Client[], rest: [] as Client[] };
+    filteredClients.forEach((client) => groups[clientCategories.get(client.uniqueId) || 'rest'].push(client));
+    return groups;
+  }, [clientCategories, filteredClients]);
+
   const handleExport = async () => {
     if (!allClients.length || !currentWbrDate) return;
     const workbook = new ExcelJS.Workbook();
@@ -199,7 +279,34 @@ function WbrPageContent() {
         <FilterGroup label="Risk" value={selectedPerfRag} onChange={setSelectedPerfRag} options={['Green', 'Amber', 'Red']} isRag />
         <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setSelectedCluster('all'); setSelectedLead('all'); setSelectedManager('all'); setSelectedPartner('all'); setSelectedEngagementRag('all'); setSelectedPerfRag('all'); }} className="text-[10px] font-black uppercase tracking-widest text-destructive">Reset</Button>
       </div>
-      {isLoading ? (<div className="flex flex-col items-center justify-center p-12 md:p-16 gap-4"><Loader2 className="animate-spin h-10 w-10 text-primary/40" /><span className="text-xs font-black uppercase tracking-widest text-secondary">Loading weekly reviews…</span></div>) : filteredClients.length > 0 ? (<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-700">{filteredClients.map(client => (<WbrClientCard key={client.uniqueId} client={client} entry={wbrEntries?.find(e => e.clientId === client.uniqueId)} href={`/dashboard/wbr/${client.uniqueId}?date=${format(currentWbrDate, 'yyyy-MM-dd')}`} />))}</div>) : (<div className="flex flex-col items-center justify-center p-12 md:p-16 glass-card border-dashed"><Zap className="h-12 w-12 text-primary/20 mb-4" /><h3 className="text-xl font-bold font-headline">No Accounts Found</h3><p className="text-sm text-muted-foreground">Adjust filters or ensure KPI records are being synchronized.</p></div>)}
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center p-12 md:p-16 gap-4"><Loader2 className="animate-spin h-10 w-10 text-primary/40" /><span className="text-xs font-black uppercase tracking-widest text-secondary">Loading weekly reviews…</span></div>
+      ) : filteredClients.length > 0 ? (
+        <div className="space-y-10 animate-in fade-in duration-700">
+          {([
+            ['top', 'TOP PERFORMING CLIENTS', 'Clients with three weeks of green RAGs and all primary KPIs achieved for the past two months.'],
+            ['alert', 'HIGH ALERT CLIENTS', 'Clients with two weeks where either RAG is amber/red and any primary KPI target missed in the latest month.'],
+            ['rest', 'OTHER CLIENTS', 'Clients outside the top-performing and high-alert criteria.'],
+          ] as const).map(([category, title, description]) => {
+            const clients = categorizedClients[category];
+            if (!clients.length) return null;
+            return (
+              <section key={category} aria-labelledby={`wbr-${category}-heading`}>
+                <div className="mb-4">
+                  <h2 id={`wbr-${category}-heading`} className="text-lg font-black uppercase tracking-tight font-headline">{title}</h2>
+                  <p className="text-xs text-secondary mt-1">{description}</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {clients.map((client) => {
+                    const href = `/dashboard/wbr/${client.uniqueId}?date=${format(currentWbrDate, 'yyyy-MM-dd')}`;
+                    return <WbrClientCard key={client.uniqueId} client={client} entry={wbrEntries?.find(e => e.clientId === client.uniqueId && e.wbrDate === format(currentWbrDate, 'yyyy-MM-dd'))} href={href} category={category} />;
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      ) : (<div className="flex flex-col items-center justify-center p-12 md:p-16 glass-card border-dashed"><Zap className="h-12 w-12 text-primary/20 mb-4" /><h3 className="text-xl font-bold font-headline">No Accounts Found</h3><p className="text-sm text-muted-foreground">Adjust filters or ensure KPI records are being synchronized.</p></div>)}
     </div>
   );
 }
@@ -210,11 +317,11 @@ function FilterGroup({ label, value, onChange, options, isRag }: { label: string
   );
 }
 
-function WbrClientCard({ client, entry, href }: { client: Client, entry?: WbrEntry, href: string }) {
+function WbrClientCard({ client, entry, href, category }: { client: Client, entry?: WbrEntry, href: string, category: 'top' | 'alert' | 'rest' }) {
   return (
     <Link href={href} className="block">
     <Card className="glass-card cursor-pointer transition-all duration-500 hover:-translate-y-2 hover: group overflow-hidden relative"><div className="absolute top-0 right-0 p-5 opacity-0 group-hover:opacity-100 transition-opacity"><div className="h-10 w-10 rounded-none bg-primary/10 flex items-center justify-center text-primary"><ArrowRight className="h-5 w-5" /></div></div>
-      <CardHeader className="pb-4"><div className="flex flex-col gap-1"><span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60">{client.uniqueId}</span><CardTitle className="text-xl font-black font-headline truncate leading-tight">{client.name}</CardTitle><div className="flex items-center gap-2 mt-2"><Badge className={cn("text-[9px] font-black uppercase h-5 rounded-md", RAG_COLORS[entry?.engagementRag || 'N/A'])}>E: {entry?.engagementRag || 'N/A'}</Badge><Badge className={cn("text-[9px] font-black uppercase h-5 rounded-md", RAG_COLORS[entry?.performanceRag || 'N/A'])}>P: {entry?.performanceRag || 'N/A'}</Badge></div></div></CardHeader>
+      <CardHeader className="pb-4"><div className="flex flex-col items-start gap-1">{category === 'top' ? <Badge className="h-6 gap-1 rounded-md bg-success text-[9px] font-black uppercase text-success-foreground"><Trophy className="h-3 w-3" /> Top Performer</Badge> : category === 'alert' ? <Badge className="h-6 gap-1 rounded-md bg-destructive text-[9px] font-black uppercase text-destructive-foreground"><ShieldAlert className="h-3 w-3" /> High Alert</Badge> : null}<span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60">{client.uniqueId}</span><CardTitle className="text-xl font-black font-headline truncate leading-tight">{client.name}</CardTitle><div className="flex items-center gap-2 mt-2"><Badge className={cn("text-[9px] font-black uppercase h-5 rounded-md", RAG_COLORS[entry?.engagementRag || 'N/A'])}>E: {entry?.engagementRag || 'N/A'}</Badge><Badge className={cn("text-[9px] font-black uppercase h-5 rounded-md", RAG_COLORS[entry?.performanceRag || 'N/A'])}>P: {entry?.performanceRag || 'N/A'}</Badge></div></div></CardHeader>
       <CardContent className="space-y-4"><div className="h-[1px] bg-foreground/5" /><div className="grid grid-cols-2 gap-4"><div className="space-y-1"><span className="text-[8px] font-black uppercase text-secondary">Contract</span><span className={cn("block text-[10px] font-bold", entry?.contractStatus === 'Expired' && 'text-destructive', entry?.contractStatus === 'Negotiation' && 'text-warning')}>{entry?.contractStatus || 'N/A'}</span></div><div className="space-y-1"><span className="text-[8px] font-black uppercase text-secondary">Billing</span><span className="block text-[10px] font-bold truncate">{entry?.financeIssues ? 'Issue Reported' : 'Clear'}</span></div></div><div className="pt-2"><span className="text-[8px] font-black uppercase text-secondary block mb-1">Strategic Summary</span><p className="text-[11px] leading-relaxed line-clamp-2 font-medium opacity-70 italic">{entry?.summary || 'No review entry for this week.'}</p></div></CardContent>
     </Card>
     </Link>
