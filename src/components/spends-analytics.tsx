@@ -360,6 +360,7 @@ export function SpendsAnalytics() {
   const [compareClients, setCompareClients] = useState<string[]>([]);
   const [compareTypes, setCompareTypes] = useState<string[]>([]);
   const [compareChannels, setCompareChannels] = useState<string[]>([]);
+  const [compareTeams, setCompareTeams] = useState<string[]>([]);
 
   useEffect(() => {
     if (!COMPARE_GRAINS.some((g) => g.value === compareGrain)) {
@@ -446,9 +447,10 @@ export function SpendsAnalytics() {
       if (compareChannels.length > 0 && !compareChannels.includes(row.channelVendor)) return false;
       if (compareTypes.length > 0 && !compareTypes.includes(row.type)) return false;
       if (compareClients.length > 0 && !compareClients.includes(row.brandName)) return false;
+      if (compareTeams.length > 0 && !compareTeams.includes(row.team)) return false;
       return true;
     });
-  }, [monthlyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients]);
+  }, [monthlyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients, compareTeams]);
   const compareWeeklyData = useMemo(() => {
     const base = excludeLargeClients
       ? weeklyDataAllClients.filter((row) => !isMyntraOrOlaClient(row))
@@ -457,9 +459,10 @@ export function SpendsAnalytics() {
       if (compareChannels.length > 0 && !compareChannels.includes(row.channelVendor)) return false;
       if (compareTypes.length > 0 && !compareTypes.includes(row.type)) return false;
       if (compareClients.length > 0 && !compareClients.includes(row.brandName)) return false;
+      if (compareTeams.length > 0 && !compareTeams.includes(row.team)) return false;
       return true;
     });
-  }, [weeklyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients]);
+  }, [weeklyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients, compareTeams]);
 
   // Unique Options for Filters
   const filterOptions = useMemo(() => {
@@ -1020,16 +1023,20 @@ export function SpendsAnalytics() {
           clientOptions={filterOptions.clients}
           typeOptions={filterOptions.types}
           channelOptions={filterOptions.channels}
+          teamOptions={filterOptions.teams}
           compareClients={compareClients}
           compareTypes={compareTypes}
           compareChannels={compareChannels}
+          compareTeams={compareTeams}
           onToggleCompareClient={toggleCompareValue(setCompareClients)}
           onToggleCompareType={toggleCompareValue(setCompareTypes)}
           onToggleCompareChannel={toggleCompareValue(setCompareChannels)}
+          onToggleCompareTeam={toggleCompareValue(setCompareTeams)}
           onClearCompareFilters={() => {
             setCompareClients([]);
             setCompareTypes([]);
             setCompareChannels([]);
+            setCompareTeams([]);
           }}
         />
       </div>

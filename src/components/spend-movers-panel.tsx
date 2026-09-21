@@ -193,12 +193,15 @@ export function SpendMoversPanel({
   clientOptions,
   typeOptions,
   channelOptions,
+  teamOptions,
   compareClients,
   compareTypes,
   compareChannels,
+  compareTeams,
   onToggleCompareClient,
   onToggleCompareType,
   onToggleCompareChannel,
+  onToggleCompareTeam,
   onClearCompareFilters,
 }: {
   grain: SpendCompareGrain;
@@ -224,12 +227,15 @@ export function SpendMoversPanel({
   clientOptions: string[];
   typeOptions: string[];
   channelOptions: string[];
+  teamOptions: string[];
   compareClients: string[];
   compareTypes: string[];
   compareChannels: string[];
+  compareTeams: string[];
   onToggleCompareClient: (value: string) => void;
   onToggleCompareType: (value: string) => void;
   onToggleCompareChannel: (value: string) => void;
+  onToggleCompareTeam: (value: string) => void;
   onClearCompareFilters: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -301,10 +307,15 @@ export function SpendMoversPanel({
   };
   const net = compareTotal - baselineTotal;
   const pct = baselineTotal > 0 ? (net / baselineTotal) * 100 : compareTotal > 0 ? 100 : 0;
-  const scopeActive = compareClients.length > 0 || compareTypes.length > 0 || compareChannels.length > 0;
+  const scopeActive =
+    compareClients.length > 0 ||
+    compareTypes.length > 0 ||
+    compareChannels.length > 0 ||
+    compareTeams.length > 0;
   const scopeBits = [
     compareTypes.length ? compareTypes.join(', ') : null,
     compareChannels.length ? compareChannels.join(', ') : null,
+    compareTeams.length ? compareTeams.join(', ') : null,
     compareClients.length ? `${compareClients.length} client${compareClients.length === 1 ? '' : 's'}` : null,
   ].filter(Boolean);
 
@@ -327,6 +338,7 @@ export function SpendMoversPanel({
         `Client: ${compareClients.length ? compareClients.join(', ') : 'All'}`,
         `Type: ${compareTypes.length ? compareTypes.join(', ') : 'All'}`,
         `Channel: ${compareChannels.length ? compareChannels.join(', ') : 'All'}`,
+        `Team: ${compareTeams.length ? compareTeams.join(', ') : 'All'}`,
         `Exclude Myntra & OLA: ${excludeLargeClients ? 'Yes' : 'No'}`,
         `View: ${side === 'all' ? 'All' : side === 'up' ? 'Gainers' : 'Losers'}`,
         `Search: ${query.trim() || 'None'}`,
@@ -482,6 +494,13 @@ export function SpendMoversPanel({
             options={channelOptions}
             selected={compareChannels}
             onToggle={onToggleCompareChannel}
+          />
+          <MultiSelectFilter
+            label="Team"
+            placeholder="Search teams…"
+            options={teamOptions}
+            selected={compareTeams}
+            onToggle={onToggleCompareTeam}
           />
           {scopeActive && (
             <Button
