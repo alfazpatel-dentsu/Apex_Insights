@@ -31,7 +31,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAdmin() || (isDentsuUser() && request.auth.uid == userId);
       allow create: if isDentsuUser() &&
-        request.resource.data.email.matches('.*@dentsu\\.com') &&
+        request.resource.data.email.matches('^[^@]+@dentsu\\.com$') &&
         request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'status', 'permissions']) &&
         ((request.auth.uid == userId &&
           request.resource.data.uid == userId &&
