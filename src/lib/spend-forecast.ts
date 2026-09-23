@@ -16,9 +16,6 @@ export {
 
 export const FORECAST_HORIZON_MONTHS = 12;
 
-/** @deprecated Use ForecastModelId */
-export type ForecastModelKind = ForecastModelId;
-
 export interface MonthAmount {
   month: string; // yyyy-MM
   amount: number;

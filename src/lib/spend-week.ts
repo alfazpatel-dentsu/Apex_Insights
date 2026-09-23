@@ -150,7 +150,7 @@ export function formatLatestWeekDateLabel<T extends { week?: unknown }>(
  * Aggregate weekly rows by Monday week-start.
  * Returns sorted ascending keys with totals.
  */
-export function aggregateSpendByWeekStart<T extends { week?: string; spendsInr?: unknown }>(
+export function aggregateSpendByWeekStart<T extends { week?: unknown; spendsInr?: unknown }>(
   rows: T[] | null | undefined
 ): { keys: string[]; totals: Record<string, number>; rowsByKey: Record<string, T[]> } {
   const totals: Record<string, number> = {};
@@ -305,10 +305,13 @@ export function spendWeekMonthKey(week: unknown): string {
 }
 
 export function rowSpendAmount(row: { actualSpendsInr?: unknown; spendsInr?: unknown }): number {
-  if (Object.prototype.hasOwnProperty.call(row, 'actualSpendsInr')) {
-    return toSpendNumber(row.actualSpendsInr);
-  }
-  return toSpendNumber(row.spendsInr);
+  const actual = toSpendNumber(row.actualSpendsInr);
+  const weekly = toSpendNumber(row.spendsInr);
+  return Object.prototype.hasOwnProperty.call(row, 'actualSpendsInr') &&
+    row.actualSpendsInr != null &&
+    row.actualSpendsInr !== ''
+    ? actual
+    : weekly;
 }
 
 export function normalizeSpendTypeLabel(type?: string | null): string {

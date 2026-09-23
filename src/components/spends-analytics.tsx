@@ -22,10 +22,6 @@ import {
   ArrowUp,
   ArrowDown,
   Download,
-  Filter,
-  Search,
-  Check,
-  X
 } from 'lucide-react';
 import { format, parse, subMonths, subWeeks, isValid } from 'date-fns';
 import { where } from 'firebase/firestore';
@@ -65,11 +61,9 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -287,57 +281,6 @@ const renderVarianceRow = (growth: number, varianceAmount: number | undefined, l
   );
 };
 
-function SearchableFilterContent({ 
-  placeholder, 
-  options, 
-  selected, 
-  onToggle 
-}: { 
-  placeholder: string, 
-  options: string[], 
-  selected: string[], 
-  onToggle: (val: string) => void 
-}) {
-  const [search, setSearch] = useState("");
-  const filtered = useMemo(() => 
-    options.filter(o => (o || '').toString().toLowerCase().includes(search.toLowerCase())), 
-    [options, search]
-  );
-  
-  return (
-    <>
-      <div className="p-2 border-b border-foreground/5 mb-2">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground/60" />
-          <Input 
-            placeholder={placeholder} 
-            className="pl-8 h-9 rounded-none text-xs bg-foreground/5 border-none focus-visible:ring-1 focus-visible:ring-primary/30" 
-            value={search} 
-            onChange={(e) => setSearch(e.target.value)} 
-          />
-        </div>
-      </div>
-      <div className="max-h-[300px] overflow-y-auto space-y-1 custom-scrollbar">
-        {filtered.length > 0 ? filtered.map(option => (
-          <div 
-            key={option} 
-            className="flex items-center gap-2 p-2 rounded-none hover:bg-foreground/5 cursor-pointer text-xs font-bold" 
-            onClick={() => onToggle(option)}
-          >
-            <div className={cn(
-              "h-4 w-4 border rounded-md flex items-center justify-center transition-colors", 
-              selected.includes(option) ? "bg-primary border-primary text-white" : "border-foreground/20"
-            )}>
-              {selected.includes(option) && <Check className="h-3 w-3" />}
-            </div>
-            {option}
-          </div>
-        )) : <div className="p-4 text-center text-[10px] text-muted-foreground italic">No results found</div>}
-      </div>
-    </>
-  );
-}
-
 export function SpendsAnalytics() {
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
@@ -348,11 +291,6 @@ export function SpendsAnalytics() {
   const [momDimension, setMomDimension] = useState<Dimension>('overall');
   const [qoqDimension, setQoqDimension] = useState<Dimension>('overall');
 
-  // Multi-select Filter State
-  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
-  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [excludeLargeClients, setExcludeLargeClients] = useState(false);
   const [compareGrain, setCompareGrain] = useState<SpendCompareGrain>('month');
   const [periodA, setPeriodA] = useState('');
@@ -396,40 +334,18 @@ export function SpendsAnalytics() {
     }
   }, [rawMonthlyData]);
 
-  // Channel/team/type filters apply everywhere. Client click-filter does not shrink the compare table.
   const monthlyDataAllClients = useMemo(() => {
     if (!rawMonthlyData) return [];
-    return rawMonthlyData
-      .map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }))
-      .filter(item => {
-        const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
-        const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
-        const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-        return channelMatch && teamMatch && typeMatch;
-      });
-  }, [rawMonthlyData, selectedChannels, selectedTeams, selectedTypes]);
+    return rawMonthlyData.map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }));
+  }, [rawMonthlyData]);
 
   const weeklyDataAllClients = useMemo(() => {
     if (!rawWeeklyData) return [];
-    return rawWeeklyData
-      .map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }))
-      .filter(item => {
-        const channelMatch = selectedChannels.length === 0 || selectedChannels.includes(item.channelVendor);
-        const teamMatch = selectedTeams.length === 0 || selectedTeams.includes(item.team);
-        const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(item.type);
-        return channelMatch && teamMatch && typeMatch;
-      });
-  }, [rawWeeklyData, selectedChannels, selectedTeams, selectedTypes]);
+    return rawWeeklyData.map(item => ({ ...item, channelVendor: canonicalizeChannel(item.channelVendor) }));
+  }, [rawWeeklyData]);
 
-  const monthlyData = useMemo(() => {
-    if (selectedClients.length === 0) return monthlyDataAllClients;
-    return monthlyDataAllClients.filter((item) => selectedClients.includes(item.brandName));
-  }, [monthlyDataAllClients, selectedClients]);
-
-  const weeklyData = useMemo(() => {
-    if (selectedClients.length === 0) return weeklyDataAllClients;
-    return weeklyDataAllClients.filter((item) => selectedClients.includes(item.brandName));
-  }, [weeklyDataAllClients, selectedClients]);
+  const monthlyData = monthlyDataAllClients;
+  const weeklyData = weeklyDataAllClients;
 
   const monthlyTrendData = useMemo(
     () => (excludeLargeClients ? monthlyData.filter((row) => !isMyntraOrOlaClient(row)) : monthlyData),
@@ -792,19 +708,9 @@ export function SpendsAnalytics() {
     toast({ title: "Export Complete", description: `${title} data has been saved.` });
   };
 
-  const clearAllFilters = () => {
-    setSelectedChannels([]);
-    setSelectedClients([]);
-    setSelectedTeams([]);
-    setSelectedTypes([]);
-  };
-
   const focusClient = (brand: string) => {
-    setSelectedClients([brand]);
     document.getElementById('spend-movers')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-
-  const isAnyFilterActive = selectedChannels.length > 0 || selectedClients.length > 0 || selectedTeams.length > 0 || selectedTypes.length > 0;
 
   if (!mounted || monthlyLoading || weeklyLoading) return <div className="flex flex-1 items-center justify-center p-20"><Loader2 className="h-8 w-8 animate-spin text-primary/40" /></div>;
 
@@ -859,85 +765,6 @@ export function SpendsAnalytics() {
     <div className="flex flex-1 flex-col gap-8 pb-10">
       <PageHeader title="SPENDS DASHBOARD" description="Strategic analytical insights and spending trends.">
         <div className="flex flex-wrap items-center gap-3">
-          {/* MULTI-SELECT FILTERS */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className={cn("flex items-center gap-2 h-9 px-4 rounded-none glass  text-[10px] font-black uppercase tracking-widest transition-all", selectedChannels.length > 0 ? "bg-primary text-white" : "text-foreground/60 hover:text-foreground")}>
-                  <Filter className="h-3 w-3" />
-                  Channel {selectedChannels.length > 0 && `(${selectedChannels.length})`}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[280px] p-2 rounded-none glass " align="start">
-                <SearchableFilterContent 
-                  placeholder="Search channels..." 
-                  options={filterOptions.channels} 
-                  selected={selectedChannels} 
-                  onToggle={(val) => setSelectedChannels(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val])} 
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className={cn("flex items-center gap-2 h-9 px-4 rounded-none glass  text-[10px] font-black uppercase tracking-widest transition-all", selectedClients.length > 0 ? "bg-primary text-white" : "text-foreground/60 hover:text-foreground")}>
-                  <Filter className="h-3 w-3" />
-                  Client {selectedClients.length > 0 && `(${selectedClients.length})`}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[280px] p-2 rounded-none glass " align="start">
-                <SearchableFilterContent 
-                  placeholder="Search clients..." 
-                  options={filterOptions.clients} 
-                  selected={selectedClients} 
-                  onToggle={(val) => setSelectedClients(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val])} 
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className={cn("flex items-center gap-2 h-9 px-4 rounded-none glass  text-[10px] font-black uppercase tracking-widest transition-all", selectedTeams.length > 0 ? "bg-primary text-white" : "text-foreground/60 hover:text-foreground")}>
-                  <Filter className="h-3 w-3" />
-                  Team {selectedTeams.length > 0 && `(${selectedTeams.length})`}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[280px] p-2 rounded-none glass " align="start">
-                <SearchableFilterContent 
-                  placeholder="Search teams..." 
-                  options={filterOptions.teams} 
-                  selected={selectedTeams} 
-                  onToggle={(val) => setSelectedTeams(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val])} 
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className={cn("flex items-center gap-2 h-9 px-4 rounded-none glass  text-[10px] font-black uppercase tracking-widest transition-all", selectedTypes.length > 0 ? "bg-primary text-white" : "text-foreground/60 hover:text-foreground")}>
-                  <Filter className="h-3 w-3" />
-                  Type {selectedTypes.length > 0 && `(${selectedTypes.length})`}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[280px] p-2 rounded-none glass " align="start">
-                <SearchableFilterContent 
-                  placeholder="Search types..." 
-                  options={filterOptions.types} 
-                  selected={selectedTypes} 
-                  onToggle={(val) => setSelectedTypes(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val])} 
-                />
-              </PopoverContent>
-            </Popover>
-
-            {isAnyFilterActive && (
-              <Button variant="ghost" size="sm" onClick={clearAllFilters} className="h-9 px-2 text-[10px] font-black uppercase text-destructive hover:bg-destructive/10">
-                <X className="h-3 w-3 mr-1" /> Clear All
-              </Button>
-            )}
-          </div>
-
-          <div className="h-8 w-px bg-foreground/10 mx-2" />
-
           <div className="flex items-center gap-2 bg-white/40 dark:bg-white/5 rounded-none p-1 backdrop-blur-md shadow-inner border border-white/20">
             <span className="text-[10px] font-black uppercase tracking-widest pl-3 opacity-50">Year:</span>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
@@ -1015,7 +842,7 @@ export function SpendsAnalytics() {
           clientRows={compareClientRows}
           excludeLargeClients={excludeLargeClients}
           onExcludeChange={setExcludeLargeClients}
-          selectedBrand={selectedClients.length === 1 ? selectedClients[0] : null}
+          selectedBrand={null}
           onSelectBrand={focusClient}
           formatCurrency={formatCurrency}
           onShortcut={handleCompareShortcut}

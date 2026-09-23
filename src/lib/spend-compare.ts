@@ -1,5 +1,5 @@
 import { addMonths, format, isValid, parse, subMonths, subWeeks, subYears } from 'date-fns';
-import { parseSpendWeekDate, rowSpendAmount } from './spend-week';
+import { parseSpendWeekDate, rowSpendAmount, type BrandPeriodMover } from './spend-week';
 
 export type SpendCompareGrain = 'month' | 'quarter' | 'year' | 'week';
 
@@ -285,6 +285,7 @@ export function buildCompareProgression(params: {
 }
 
 export type ClientCompareRow = BrandPeriodMover & {
+  channel: string;
   series: Record<string, number>;
 };
 
@@ -306,6 +307,7 @@ export function buildClientCompareRows(params: {
     brandName?: string;
     type?: string;
     team?: string;
+    channelVendor?: string;
     actualSpendsInr?: unknown;
     spendsInr?: unknown;
   }>;
@@ -314,6 +316,7 @@ export function buildClientCompareRows(params: {
     brandName?: string;
     type?: string;
     team?: string;
+    channelVendor?: string;
     actualSpendsInr?: unknown;
     spendsInr?: unknown;
   }>;
@@ -322,24 +325,50 @@ export function buildClientCompareRows(params: {
   const allowed = new Set(progression.map((p) => p.id));
   if (allowed.size === 0) return [];
 
-  const series: Record<string, Record<string, number>> = {};
-  const typeSpend: Record<string, Record<string, number>> = {};
-  const teamByBrand: Record<string, string> = {};
+  const groups: Record<
+    string,
+    { brand: string; type: string; team: string; channel: string; series: Record<string, number> }
+  > = {};
 
-  const add = (brand: string, periodId: string | null, amount: number, type?: string, team?: string) => {
+  const add = (
+    brand: string,
+    periodId: string | null,
+    amount: number,
+    type?: string,
+    team?: string,
+    channel?: string
+  ) => {
     const name = (brand || '').trim();
     if (!name || !periodId || !allowed.has(periodId) || !amount) return;
-    if (!series[name]) series[name] = {};
-    series[name][periodId] = (series[name][periodId] || 0) + amount;
-    const t = (type || '').trim() || 'PERFORMANCE';
-    if (!typeSpend[name]) typeSpend[name] = {};
-    typeSpend[name][t] = (typeSpend[name][t] || 0) + amount;
-    if (team && !teamByBrand[name]) teamByBrand[name] = team;
+    const rowType = (type || '').trim() || 'PERFORMANCE';
+    const rowTeam = (team || '').trim() || 'N/A';
+    const rowChannel = (channel || '').trim() || 'N/A';
+    const key = [name, rowType].join('\u0000');
+    if (!groups[key]) {
+      groups[key] = {
+        brand: name,
+        type: rowType,
+        team: rowTeam,
+        channel: rowChannel,
+        series: {},
+      };
+    } else {
+      if (groups[key].team !== rowTeam) groups[key].team = 'Multiple';
+      if (groups[key].channel !== rowChannel) groups[key].channel = 'Multiple';
+    }
+    groups[key].series[periodId] = (groups[key].series[periodId] || 0) + amount;
   };
 
   if (params.grain === 'week') {
     params.weekly.forEach((row) => {
-      add(row.brandName || '', (row.week || '').trim(), rowSpendAmount(row), row.type, row.team);
+      add(
+        row.brandName || '',
+        (row.week || '').trim(),
+        rowSpendAmount(row),
+        row.type,
+        row.team,
+        row.channelVendor
+      );
     });
   } else {
     params.monthly.forEach((row) => {
@@ -348,24 +377,23 @@ export function buildClientCompareRows(params: {
         periodIdForMonthlyRow(row.month || '', params.grain),
         rowSpendAmount(row),
         row.type,
-        row.team
+        row.team,
+        row.channelVendor
       );
     });
   }
 
-  return Object.keys(series)
-    .map((brand) => {
-      const byPeriod = series[brand];
+  return Object.values(groups)
+    .map((group) => {
+      const byPeriod = group.series;
       const previous = byPeriod[params.periodA] || 0;
       const current = byPeriod[params.periodB] || 0;
       const diff = current - previous;
-      const types = typeSpend[brand] || {};
-      const type =
-        Object.entries(types).sort((a, b) => b[1] - a[1])[0]?.[0] || 'PERFORMANCE';
       return {
-        brand,
-        type,
-        team: teamByBrand[brand] || 'N/A',
+        brand: group.brand,
+        type: group.type,
+        team: group.team,
+        channel: group.channel,
         previous,
         current,
         diff,

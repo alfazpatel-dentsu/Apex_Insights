@@ -248,6 +248,7 @@ export function SpendMoversPanel({
     if (clientRows && clientRows.length > 0) return clientRows;
     return movers.map((row) => ({
       ...row,
+      channel: 'N/A',
       series: { [periodA]: row.previous, [periodB]: row.current },
     }));
   }, [clientRows, movers, periodA, periodB]);
@@ -266,7 +267,8 @@ export function SpendMoversPanel({
       return (
         row.brand.toLowerCase().includes(q) ||
         row.type.toLowerCase().includes(q) ||
-        row.team.toLowerCase().includes(q)
+        row.team.toLowerCase().includes(q) ||
+        row.channel.toLowerCase().includes(q)
       );
     });
     const mul = sortDir === 'desc' ? -1 : 1;
@@ -352,6 +354,8 @@ export function SpendMoversPanel({
       '#',
       'Client',
       'Type',
+      'Team',
+      'Channel',
       ...periodLabels,
       'Change',
       'Change %',
@@ -359,7 +363,9 @@ export function SpendMoversPanel({
 
     const brandColumnIndex = 2;
     const typeColumnIndex = 3;
-    const periodStartIndex = 4;
+    const teamColumnIndex = 4;
+    const channelColumnIndex = 5;
+    const periodStartIndex = 6;
     const changeColumnIndex = periodStartIndex + periodCols.length;
     const percentageColumnIndex = changeColumnIndex + 1;
     const headerFill = '181818';
@@ -380,12 +386,16 @@ export function SpendMoversPanel({
         rowIndex + 1,
         row.brand,
         row.type,
+        row.team,
+        row.channel,
         ...values,
         row.diff,
         row.percentage / 100,
       ]);
       excelRow.getCell(brandColumnIndex).font = { bold: true };
       excelRow.getCell(typeColumnIndex).font = { color: { argb: '666666' } };
+      excelRow.getCell(teamColumnIndex).font = { color: { argb: '666666' } };
+      excelRow.getCell(channelColumnIndex).font = { color: { argb: '666666' } };
       periodCols.forEach((col, colIndex) => {
         const value = values[colIndex];
         const previous = colIndex > 0 ? values[colIndex - 1] : undefined;
@@ -422,6 +432,8 @@ export function SpendMoversPanel({
     sheet.getCell('A2').numFmt = 'dd mmm yyyy hh:mm';
     sheet.getColumn(brandColumnIndex).width = 28;
     sheet.getColumn(typeColumnIndex).width = 18;
+    sheet.getColumn(teamColumnIndex).width = 18;
+    sheet.getColumn(channelColumnIndex).width = 18;
     for (let index = periodStartIndex; index <= percentageColumnIndex; index += 1) {
       sheet.getColumn(index).width = 16;
     }
@@ -454,7 +466,7 @@ export function SpendMoversPanel({
           <div>
             <CardTitle className="text-xl font-bold font-headline">Compare any two periods</CardTitle>
             <CardDescription className="text-xs uppercase font-black tracking-widest opacity-50 mt-1">
-              One row per client. Type and channel slice spend (Performance, Marketplace, Meta…) without splitting the table.
+              One row per client and type. Amounts include all underlying team and channel records.
             </CardDescription>
           </div>
           <div className="flex items-center gap-3 border border-ink/10 bg-cream/60 px-3 py-2">
@@ -764,12 +776,13 @@ export function SpendMoversPanel({
           </span>
         </div>
         <div className="max-h-[70vh] overflow-auto border border-ink/10">
-          <table className="w-full text-left" style={{ minWidth: Math.max(720, 280 + periodCols.length * 88) }}>
+          <table className="w-full text-left" style={{ minWidth: Math.max(920, 450 + periodCols.length * 88) }}>
             <thead className="sticky top-0 z-20 bg-cream text-[9px] font-black uppercase tracking-widest text-secondary">
               <tr>
                 <th className="px-3 py-2 w-10 sticky left-0 z-30 bg-cream">#</th>
                 <th className="px-3 py-2 sticky left-10 z-30 bg-cream min-w-[140px]">Client</th>
                 <th className="px-3 py-2">Type</th>
+                <th className="px-3 py-2">Team</th>
                 {periodCols.map((col) => (
                   <th
                     key={col.id}
@@ -793,7 +806,7 @@ export function SpendMoversPanel({
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5 + periodCols.length} className="px-3 py-8 text-center text-xs italic text-secondary">
+                  <td colSpan={6 + periodCols.length} className="px-3 py-8 text-center text-xs italic text-secondary">
                     No clients match this comparison.
                   </td>
                 </tr>
@@ -804,7 +817,7 @@ export function SpendMoversPanel({
                   const rowBg = active ? 'bg-brand/10' : 'bg-card';
                   return (
                     <tr
-                      key={row.brand}
+                      key={`${row.brand}-${row.team}-${row.channel}-${row.type}`}
                       onClick={() => onSelectBrand(row.brand)}
                       className={cn(
                         'cursor-pointer border-t border-ink/5 text-xs hover:bg-cream/70',
@@ -818,9 +831,9 @@ export function SpendMoversPanel({
                         <div className="font-black truncate max-w-[180px]" title={row.brand}>
                           {row.brand}
                         </div>
-                        <div className="text-[9px] uppercase tracking-widest text-secondary">{row.team}</div>
                       </td>
                       <td className="px-3 py-2 text-[10px] font-bold uppercase text-secondary">{row.type}</td>
+                      <td className="px-3 py-2 text-[10px] font-bold uppercase text-secondary">{row.team}</td>
                       {periodCols.map((col, colIdx) => {
                         const value = row.series?.[col.id] || 0;
                         const prevId = periodCols[colIdx - 1]?.id;
