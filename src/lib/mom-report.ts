@@ -24,6 +24,7 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
+import { type AgencyId, agencyCollectionPath, DEFAULT_AGENCY } from './agencies';
 import { saveAs } from 'file-saver';
 import type {
   ActionItem,
@@ -319,9 +320,10 @@ function mapDocs<T>(snap: { docs: QueryDocumentSnapshot<DocumentData>[] }): (T &
 async function fetchCollection<T>(
   db: Firestore,
   collectionName: string,
-  constraints: QueryConstraint[] = []
+  constraints: QueryConstraint[] = [],
+  agencyId: AgencyId = DEFAULT_AGENCY
 ): Promise<(T & { id: string })[]> {
-  const ref = collection(db, collectionName);
+  const ref = collection(db, agencyCollectionPath(agencyId, collectionName));
   const snap = await getDocs(constraints.length ? query(ref, ...constraints) : ref);
   return mapDocs<T>(snap);
 }
@@ -329,7 +331,8 @@ async function fetchCollection<T>(
 async function fetchPagedById<T>(
   db: Firestore,
   collectionName: string,
-  extra: QueryConstraint[] = []
+  extra: QueryConstraint[] = [],
+  agencyId: AgencyId = DEFAULT_AGENCY
 ): Promise<(T & { id: string })[]> {
   const results: (T & { id: string })[] = [];
   let cursor: QueryDocumentSnapshot<DocumentData> | undefined;
@@ -341,7 +344,7 @@ async function fetchPagedById<T>(
       ...(cursor ? [startAfter(cursor)] : []),
       limit(PAGE),
     ];
-    const snap = await getDocs(query(collection(db, collectionName), ...constraints));
+    const snap = await getDocs(query(collection(db, agencyCollectionPath(agencyId, collectionName)), ...constraints));
     if (snap.empty) break;
     results.push(...mapDocs<T>(snap));
     if (snap.size < PAGE) break;
@@ -350,21 +353,21 @@ async function fetchPagedById<T>(
   return results;
 }
 
-async function fetchKpisForMonth(db: Firestore, month: string): Promise<KpiData[]> {
+async function fetchKpisForMonth(db: Firestore, month: string, agencyId: AgencyId = DEFAULT_AGENCY): Promise<KpiData[]> {
   try {
-    return await fetchPagedById<KpiData>(db, 'kpis', [where('month', '==', month)]);
+    return await fetchPagedById<KpiData>(db, 'kpis', [where('month', '==', month)], agencyId);
   } catch {
-    const all = await fetchCollection<KpiData>(db, 'kpis', [where('month', '==', month)]);
+    const all = await fetchCollection<KpiData>(db, 'kpis', [where('month', '==', month)], agencyId);
     return all;
   }
 }
 
-async function resolveHealthKpiMonth(db: Firestore, fallbackMonth: string): Promise<string> {
+async function resolveHealthKpiMonth(db: Firestore, fallbackMonth: string, agencyId: AgencyId = DEFAULT_AGENCY): Promise<string> {
   const calendarMonth = format(new Date(), 'yyyy-MM');
   try {
-    const calSnap = await getDocs(query(collection(db, 'kpis'), where('month', '==', calendarMonth), limit(1)));
+    const calSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId, 'kpis')), where('month', '==', calendarMonth), limit(1)));
     if (!calSnap.empty) return calendarMonth;
-    const latestSnap = await getDocs(query(collection(db, 'kpis'), orderBy('month', 'desc'), limit(1)));
+    const latestSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId, 'kpis')), orderBy('month', 'desc'), limit(1)));
     const latestMonth = latestSnap.docs[0]?.data()?.month as string | undefined;
     if (latestMonth && /^\d{4}-\d{2}$/.test(latestMonth)) return latestMonth;
   } catch {
@@ -420,7 +423,8 @@ function noteFromAction(a: ActionItem & { id: string }): MomActionNote {
 export async function assembleMomReport(
   db: Firestore,
   wbrDate: Date,
-  _origin?: string
+  _origin?: string,
+  agencyId: AgencyId = DEFAULT_AGENCY
 ): Promise<MomReportData> {
   const wbrDateKey = format(wbrDate, 'yyyy-MM-dd');
   const wbrDateLabel = format(wbrDate, 'dd MMM yyyy');
@@ -435,23 +439,23 @@ export async function assembleMomReport(
     weeklySpends = await fetchCollection<WeeklySpend>(db, 'weeklySpends', [
       where('month', '>=', weeklyFrom),
       where('month', '<=', weeklyTo),
-    ]);
+    ], agencyId);
   } catch {
-    weeklySpends = await fetchCollection<WeeklySpend>(db, 'weeklySpends');
+    weeklySpends = await fetchCollection<WeeklySpend>(db, 'weeklySpends', [], agencyId);
   }
 
   const [clients, wbrEntries, actionItems] = await Promise.all([
-    fetchCollection<Client>(db, 'clients').catch(() => [] as (Client & { id: string })[]),
+    fetchCollection<Client>(db, 'clients', [], agencyId).catch(() => [] as (Client & { id: string })[]),
     (async () => {
       try {
-        return await fetchCollection<WbrEntry>(db, 'wbrEntries', [where('wbrDate', '==', wbrDateKey)]);
+        return await fetchCollection<WbrEntry>(db, 'wbrEntries', [where('wbrDate', '==', wbrDateKey)], agencyId);
       } catch {
-        const all = await fetchCollection<WbrEntry>(db, 'wbrEntries');
+        const all = await fetchCollection<WbrEntry>(db, 'wbrEntries', [], agencyId);
         return all.filter((e) => e.wbrDate === wbrDateKey);
       }
     })(),
-    fetchPagedById<ActionItem>(db, 'actionItems').catch(() =>
-      fetchCollection<ActionItem>(db, 'actionItems').catch(() => [] as (ActionItem & { id: string })[])
+    fetchPagedById<ActionItem>(db, 'actionItems', [], agencyId).catch(() =>
+      fetchCollection<ActionItem>(db, 'actionItems', [], agencyId).catch(() => [] as (ActionItem & { id: string })[])
     ),
   ]);
 
@@ -477,8 +481,8 @@ export async function assembleMomReport(
     if (c.emcsm) csmById[clid] = c.emcsm;
   });
 
-  const kpiMonth = await resolveHealthKpiMonth(db, fallbackKpiMonth);
-  const kpiRows = await fetchKpisForMonth(db, kpiMonth).catch(() => [] as KpiData[]);
+  const kpiMonth = await resolveHealthKpiMonth(db, fallbackKpiMonth, agencyId);
+  const kpiRows = await fetchKpisForMonth(db, kpiMonth, agencyId).catch(() => [] as KpiData[]);
 
   const kpisByClient = new Map<string, KpiData[]>();
   kpiRows.forEach((kpi) => {

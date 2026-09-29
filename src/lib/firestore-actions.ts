@@ -15,7 +15,7 @@ import {
   User,
 } from 'firebase/auth';
 import { firebaseConfig } from '@/firebase/config';
-import { isAllowedWorkEmail, type AgencyId } from './agencies';
+import { isAllowedWorkEmail, type AgencyId, agencyCollectionPath, DEFAULT_AGENCY } from './agencies';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem, ActionCommentEntry } from './types';
@@ -23,6 +23,17 @@ import { format, parse, isValid, startOfWeek, addDays, subMonths, subYears, star
 import { generateBusinessSnapshot } from '@/ai/flows/business-snapshot-flow';
 import { canonicalizeChannel } from './normalize';
 import { parseKpiDirection } from './kpi-rag';
+
+// Helper to create agency-scoped collection references
+const tenantCollection = (db: Firestore, agencyId: AgencyId, collectionName: string) => {
+  return collection(db, agencyCollectionPath(agencyId, collectionName));
+};
+
+// Helper to create agency-scoped document references
+const tenantDoc = (db: Firestore, agencyId: AgencyId, collectionName: string, docId?: string) => {
+  const path = agencyCollectionPath(agencyId, collectionName);
+  return docId ? doc(db, path, docId) : doc(collection(db, path));
+};
 
 const sanitizeNumber = (val: any): number => {
     if (typeof val === 'number') return val;
@@ -117,8 +128,8 @@ function omitUndefined<T>(value: T): T {
     return value;
 }
 
-export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, id?: string) => {
-    const ref = id ? doc(db, 'actionItems', id) : doc(collection(db, 'actionItems'));
+export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, id?: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const ref = id ? tenantDoc(db, agencyId, 'actionItems', id) : tenantDoc(db, agencyId, 'actionItems');
     const payload = omitUndefined({
         ...data,
         id: ref.id,
@@ -204,16 +215,17 @@ export function removeActionComment(
 export const deleteActionComment = async (
   db: Firestore,
   actionItem: ActionItem,
-  commentId: string
+  commentId: string,
+  agencyId: AgencyId = DEFAULT_AGENCY
 ) => {
   const { comment, commentHistory } = removeActionComment(actionItem, commentId);
-  await saveActionItem(db, { comment, commentHistory }, actionItem.id);
+  await saveActionItem(db, { comment, commentHistory }, actionItem.id, agencyId);
   return { comment, commentHistory };
 };
 
-export const deleteActionItem = async (db: Firestore, id: string) => {
+export const deleteActionItem = async (db: Firestore, id: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
     try {
-        await deleteDoc(doc(db, 'actionItems', id));
+        await deleteDoc(tenantDoc(db, agencyId, 'actionItems', id));
     } catch (e) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/actionItems/${id}`, operation: 'delete' }));
         throw e;
@@ -235,24 +247,24 @@ async function deleteRefsInChunks(db: Firestore, refs: ReturnType<typeof doc>[])
 }
 
 /** Drop existing KPI docs for the months present in an upload so the file is the source of truth. */
-async function replaceKpiMonths(db: Firestore, months: string[]) {
+async function replaceKpiMonths(db: Firestore, months: string[], agencyId: AgencyId = DEFAULT_AGENCY) {
     for (const month of months) {
         const [kpiSnap, weeklySnap] = await Promise.all([
-            getDocs(query(collection(db, 'kpis'), where('month', '==', month))),
-            getDocs(query(collection(db, 'kpiWeeklyData'), where('month', '==', month))),
+            getDocs(query(tenantCollection(db, agencyId, 'kpis'), where('month', '==', month))),
+            getDocs(query(tenantCollection(db, agencyId, 'kpiWeeklyData'), where('month', '==', month))),
         ]);
         const refs = [
             ...kpiSnap.docs.map((d) => d.ref),
             ...weeklySnap.docs.map((d) => d.ref),
         ];
         kpiSnap.docs.forEach((d) => {
-            [1, 2, 3, 4, 5].forEach((w) => refs.push(doc(db, 'kpiWeeklyData', `${d.id}_w${w}`)));
+            [1, 2, 3, 4, 5].forEach((w) => refs.push(tenantDoc(db, agencyId, 'kpiWeeklyData', `${d.id}_w${w}`)));
         });
         await deleteRefsInChunks(db, refs);
     }
 }
 
-export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultMonthStr: string, onProgress?: (progress: number) => void) => {
+export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultMonthStr: string, onProgress?: (progress: number) => void, agencyId: AgencyId = DEFAULT_AGENCY) => {
     const uploadedMonths = new Set<string>();
     let processedCount = 0;
     const CHUNK_SIZE = 50;
@@ -271,7 +283,7 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
     });
 
     if (onProgress) onProgress(5);
-    await replaceKpiMonths(db, Array.from(uploadedMonths).sort());
+    await replaceKpiMonths(db, Array.from(uploadedMonths).sort(), agencyId);
     if (onProgress) onProgress(15);
 
     for (let i = 0; i < validEntries.length; i += CHUNK_SIZE) {
@@ -281,7 +293,7 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
 
         chunk.forEach((entry) => {
             const providedRid = getRowVal(entry, 'Record ID', 'Upload Record ID', 'id')?.toString().trim();
-            const kpiDocRef = providedRid ? doc(db, 'kpis', providedRid) : doc(collection(db, 'kpis'));
+            const kpiDocRef = providedRid ? tenantDoc(db, agencyId, 'kpis', providedRid) : doc(tenantCollection(db, agencyId, 'kpis'));
             const kpiId = kpiDocRef.id;
 
             const clientName = getRowVal(entry, 'clientName', 'Client')?.toString().trim();
@@ -316,7 +328,7 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
                 const weeklyAchieved = getRowVal(entry, `W${w} Achieved`, `W${w} Achived`, `W${w}Achieved`, `W${w}`);
                 const weeklyComment = getRowVal(entry, `W${w} Comment`, `W${w}Comment`);
                 const weeklyId = `${kpiId}_w${w}`;
-                const weeklyDocRef = doc(db, 'kpiWeeklyData', weeklyId);
+                const weeklyDocRef = tenantDoc(db, agencyId, 'kpiWeeklyData', weeklyId);
 
                 batch.set(weeklyDocRef, {
                     kpiDataId: kpiId,
@@ -344,9 +356,9 @@ export const bulkSaveKpiData = async (db: Firestore, kpiEntries: any[], defaultM
     return { uploadedMonths: Array.from(uploadedMonths).sort(), processedCount };
 };
 
-export const saveKpiData = async (db: Firestore, kpiData: Omit<KpiData, 'id'>, weeklyData: Omit<KpiWeeklyData, 'id' | 'kpiDataId'>[], existingKpiId?: string) => {
+export const saveKpiData = async (db: Firestore, kpiData: Omit<KpiData, 'id'>, weeklyData: Omit<KpiWeeklyData, 'id' | 'kpiDataId'>[], existingKpiId?: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
     const batch = writeBatch(db);
-    const kpiDocRef = existingKpiId ? doc(db, 'kpis', existingKpiId) : doc(collection(db, 'kpis'));
+    const kpiDocRef = existingKpiId ? tenantDoc(db, agencyId, 'kpis', existingKpiId) : doc(tenantCollection(db, agencyId, 'kpis'));
     const kpiId = kpiDocRef.id;
     
     const payload = {
@@ -358,7 +370,7 @@ export const saveKpiData = async (db: Firestore, kpiData: Omit<KpiData, 'id'>, w
 
     weeklyData.forEach(week => { 
         const weeklyId = `${kpiId}_w${week.weekOfMonth}`;
-        batch.set(doc(db, 'kpiWeeklyData', weeklyId), { ...week, kpiDataId: kpiId, month: kpiData.month }, { merge: true }); 
+        batch.set(tenantDoc(db, agencyId, 'kpiWeeklyData', weeklyId), { ...week, kpiDataId: kpiId, month: kpiData.month }, { merge: true }); 
     });
     
     await batch.commit().catch(async (e) => { 
@@ -367,15 +379,15 @@ export const saveKpiData = async (db: Firestore, kpiData: Omit<KpiData, 'id'>, w
     });
 };
 
-export const updateWeeklyComment = async (db: Firestore, id: string, comment: string) => {
-    const ref = doc(db, 'kpiWeeklyData', id);
+export const updateWeeklyComment = async (db: Firestore, id: string, comment: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const ref = tenantDoc(db, agencyId, 'kpiWeeklyData', id);
     updateDoc(ref, { comment }).catch(e => { 
       errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'update', requestResourceData: { comment } })); 
     });
 };
 
-export const clearAllKpiData = async (db: Firestore) => {
-    const [kpisSnap, weeklySnap] = await Promise.all([getDocs(collection(db, 'kpis')), getDocs(collection(db, 'kpiWeeklyData'))]);
+export const clearAllKpiData = async (db: Firestore, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const [kpisSnap, weeklySnap] = await Promise.all([getDocs(tenantCollection(db, agencyId, 'kpis')), getDocs(tenantCollection(db, agencyId, 'kpiWeeklyData'))]);
     const batchSize = 400;
     const allDocs = [...kpisSnap.docs, ...weeklySnap.docs];
     for (let i = 0; i < allDocs.length; i += batchSize) {
@@ -529,8 +541,8 @@ export const purgeCollection = async (db: Firestore, collectionName: string) => 
     return docs.length;
 };
 
-export const saveMonthlySpend = async (db: Firestore, data: Omit<MonthlySpend, 'id'>, id?: string) => {
-    const ref = id ? doc(db, 'monthlySpends', id) : doc(collection(db, 'monthlySpends'));
+export const saveMonthlySpend = async (db: Firestore, data: Omit<MonthlySpend, 'id'>, id?: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const ref = id ? tenantDoc(db, agencyId, 'monthlySpends', id) : doc(tenantCollection(db, agencyId, 'monthlySpends'));
     const payload = {
       ...data,
       channelVendor: canonicalizeChannel(data.channelVendor),
@@ -544,8 +556,8 @@ export const saveMonthlySpend = async (db: Firestore, data: Omit<MonthlySpend, '
     }
 };
 
-export const saveWeeklySpend = async (db: Firestore, data: Omit<WeeklySpend, 'id'>, id?: string) => {
-    const ref = id ? doc(db, 'weeklySpends', id) : doc(collection(db, 'weeklySpends'));
+export const saveWeeklySpend = async (db: Firestore, data: Omit<WeeklySpend, 'id'>, id?: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const ref = id ? tenantDoc(db, agencyId, 'weeklySpends', id) : doc(tenantCollection(db, agencyId, 'weeklySpends'));
     const month = parseMonthStr(data.week, true);
     const payload = {
       ...data,
@@ -561,26 +573,26 @@ export const saveWeeklySpend = async (db: Firestore, data: Omit<WeeklySpend, 'id
     }
 };
 
-export const deleteMonthlySpend = async (db: Firestore, id: string) => {
+export const deleteMonthlySpend = async (db: Firestore, id: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
     try {
-        await deleteDoc(doc(db, 'monthlySpends', id));
+        await deleteDoc(tenantDoc(db, agencyId, 'monthlySpends', id));
     } catch (e) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/monthlySpends/${id}`, operation: 'delete' }));
         throw e;
     }
 };
 
-export const deleteWeeklySpend = async (db: Firestore, id: string) => {
+export const deleteWeeklySpend = async (db: Firestore, id: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
     try {
-        await deleteDoc(doc(db, 'weeklySpends', id));
+        await deleteDoc(tenantDoc(db, agencyId, 'weeklySpends', id));
     } catch (e) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/weeklySpends/${id}`, operation: 'delete' }));
         throw e;
     }
 };
 
-export const saveLead = async (db: Firestore, data: Omit<Lead, 'id'>, id?: string) => {
-  const ref = id ? doc(db, 'leads', id) : doc(collection(db, 'leads'));
+export const saveLead = async (db: Firestore, data: Omit<Lead, 'id'>, id?: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
+  const ref = id ? tenantDoc(db, agencyId, 'leads', id) : doc(tenantCollection(db, agencyId, 'leads'));
   const payload = { ...data, updatedAt: new Date().toISOString() };
   try {
     await setDoc(ref, payload, { merge: true });
@@ -590,9 +602,9 @@ export const saveLead = async (db: Firestore, data: Omit<Lead, 'id'>, id?: strin
   }
 };
 
-export const deleteLead = async (db: Firestore, id: string) => {
+export const deleteLead = async (db: Firestore, id: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
   try {
-    await deleteDoc(doc(db, 'leads', id));
+    await deleteDoc(tenantDoc(db, agencyId, 'leads', id));
   } catch (e) {
     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/leads/${id}`, operation: 'delete' }));
     throw e;
@@ -645,12 +657,13 @@ const parseLeadDate = (raw: any): string => {
 export const bulkSaveLeads = async (
   db: Firestore,
   entries: any[],
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  agencyId: AgencyId = DEFAULT_AGENCY
 ) => {
   let processedCount = 0;
   const CHUNK_SIZE = 100;
   const totalEntries = entries.length;
-  const col = collection(db, 'leads');
+  const col = tenantCollection(db, agencyId, 'leads');
 
   for (let i = 0; i < totalEntries; i += CHUNK_SIZE) {
     const chunk = entries.slice(i, i + CHUNK_SIZE);
@@ -702,9 +715,9 @@ export const bulkSaveLeads = async (
   return { processedCount };
 };
 
-export const clearAllSpendsData = async (db: Firestore) => {
-    const monthlySnap = await getDocs(collection(db, 'monthlySpends'));
-    const weeklySnap = await getDocs(collection(db, 'weeklySpends'));
+export const clearAllSpendsData = async (db: Firestore, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const monthlySnap = await getDocs(tenantCollection(db, agencyId, 'monthlySpends'));
+    const weeklySnap = await getDocs(tenantCollection(db, agencyId, 'weeklySpends'));
     const batchSize = 400;
     const allDocs = [...monthlySnap.docs, ...weeklySnap.docs];
     for (let i = 0; i < allDocs.length; i += batchSize) {
@@ -715,8 +728,8 @@ export const clearAllSpendsData = async (db: Firestore) => {
     }
 };
 
-export const bulkSaveMonthlySpends = async (db: Firestore, entries: any[], onProgress?: (progress: number) => void) => {
-    const col = collection(db, 'monthlySpends');
+export const bulkSaveMonthlySpends = async (db: Firestore, entries: any[], onProgress?: (progress: number) => void, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const col = tenantCollection(db, agencyId, 'monthlySpends');
     let processedCount = 0;
     const CHUNK_SIZE = 100;
     const totalEntries = entries.length;
@@ -766,8 +779,8 @@ export const bulkSaveMonthlySpends = async (db: Firestore, entries: any[], onPro
     return processedCount;
 };
 
-export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProgress?: (progress: number) => void) => {
-    const col = collection(db, 'weeklySpends');
+export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProgress?: (progress: number) => void, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const col = tenantCollection(db, agencyId, 'weeklySpends');
     let processedCount = 0;
     const totalEntries = entries.length;
     const CHUNK_SIZE = 100;
@@ -823,7 +836,7 @@ export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProg
  * Saves or updates a WBR entry.
  * Uses a deterministic ID based on clientId and wbrDate.
  */
-export const saveWbrEntry = async (db: Firestore, entry: Partial<WbrEntry> & { clientId: string; wbrDate: string }) => {
+export const saveWbrEntry = async (db: Firestore, entry: Partial<WbrEntry> & { clientId: string; wbrDate: string }, agencyId: AgencyId = DEFAULT_AGENCY) => {
   const wbrId = `wbr_${entry.clientId}_${entry.wbrDate}`.replace(/[^a-zA-Z0-9]/g, '_');
   const docRef = doc(db, 'wbrEntries', wbrId);
   const payload = {
@@ -881,16 +894,16 @@ const getShifts = (
   };
 };
 
-export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string) => {
+export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
   let month = targetMonth;
-  const checkKpis = await getDocs(query(collection(db, 'kpis'), where('month', '==', targetMonth), limit(1)));
-  const checkSpends = await getDocs(query(collection(db, 'monthlySpends'), where('month', '==', targetMonth), limit(1)));
+  const checkKpis = await getDocs(query(tenantCollection(db, agencyId, 'kpis'), where('month', '==', targetMonth), limit(1)));
+  const checkSpends = await getDocs(query(tenantCollection(db, agencyId, 'monthlySpends'), where('month', '==', targetMonth), limit(1)));
 
   if (checkKpis.empty && checkSpends.empty) {
-      const latestKpi = await getDocs(query(collection(db, 'kpis'), orderBy('month', 'desc'), limit(1)));
+      const latestKpi = await getDocs(query(tenantCollection(db, agencyId, 'kpis'), orderBy('month', 'desc'), limit(1)));
       if (!latestKpi.empty) month = latestKpi.docs[0].data().month;
       else {
-          const latestSpend = await getDocs(query(collection(db, 'monthlySpends'), orderBy('month', 'desc'), limit(1)));
+          const latestSpend = await getDocs(query(tenantCollection(db, agencyId, 'monthlySpends'), orderBy('month', 'desc'), limit(1)));
           if (!latestSpend.empty) month = latestSpend.docs[0].data().month;
       }
   }
@@ -914,14 +927,14 @@ export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string
     weeklySpendsSnap, kpiWeeklySnap,
     wbrSnap, prevWbrSnap
   ] = await Promise.all([
-    getDocs(query(collection(db, 'kpis'), where('month', '==', month), limit(200))),
-    getDocs(query(collection(db, 'kpis'), where('month', '==', prevMonthStr), limit(200))),
-    getDocs(query(collection(db, 'monthlySpends'), where('month', '==', month), limit(200))),
-    getDocs(query(collection(db, 'monthlySpends'), where('month', '==', prevMonthStr), limit(200))),
-    getDocs(query(collection(db, 'monthlySpends'), where('month', '==', prePrevMonthStr), limit(200))),
-    getDocs(query(collection(db, 'monthlySpends'), where('month', '>=', yearStart), where('month', '<=', month), limit(500))),
-    getDocs(query(collection(db, 'weeklySpends'), where('month', '==', month), limit(300))),
-    getDocs(query(collection(db, 'kpiWeeklyData'), where('month', '==', month), limit(500))),
+    getDocs(query(tenantCollection(db, agencyId, 'kpis'), where('month', '==', month), limit(200))),
+    getDocs(query(tenantCollection(db, agencyId, 'kpis'), where('month', '==', prevMonthStr), limit(200))),
+    getDocs(query(tenantCollection(db, agencyId, 'monthlySpends'), where('month', '==', month), limit(200))),
+    getDocs(query(tenantCollection(db, agencyId, 'monthlySpends'), where('month', '==', prevMonthStr), limit(200))),
+    getDocs(query(tenantCollection(db, agencyId, 'monthlySpends'), where('month', '==', prePrevMonthStr), limit(200))),
+    getDocs(query(tenantCollection(db, agencyId, 'monthlySpends'), where('month', '>=', yearStart), where('month', '<=', month), limit(500))),
+    getDocs(query(tenantCollection(db, agencyId, 'weeklySpends'), where('month', '==', month), limit(300))),
+    getDocs(query(tenantCollection(db, agencyId, 'kpiWeeklyData'), where('month', '==', month), limit(500))),
     currentWbrDateStr ? getDocs(query(collection(db, 'wbrEntries'), where('wbrDate', '==', currentWbrDateStr), limit(200))) : Promise.resolve({ docs: [] } as any),
     prevWbrDateStr ? getDocs(query(collection(db, 'wbrEntries'), where('wbrDate', '==', prevWbrDateStr), limit(200))) : Promise.resolve({ docs: [] } as any)
   ]);

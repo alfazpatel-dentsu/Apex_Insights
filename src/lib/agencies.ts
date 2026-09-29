@@ -48,3 +48,23 @@ export function canViewGroupReporting(profile: UserProfile | null | undefined): 
       hasAgencyAccess(profile, 'iprospect')
   );
 }
+
+export function getActiveAgency(profile: UserProfile | null | undefined): AgencyId | null {
+  if (!profile) return null;
+
+  const memberships = profile.memberships || {};
+  const activeAgencies = AGENCIES.filter((agency) => hasAgencyAccess(profile, agency));
+
+  // If user has only one active agency, use it.
+  if (activeAgencies.length === 1) {
+    return activeAgencies[0];
+  }
+
+  // If user has multiple agencies, return Sokrati (or implement agency switcher logic later).
+  if (activeAgencies.length > 1) {
+    return 'sokrati';
+  }
+
+  // Fallback: no active agency.
+  return null;
+}
