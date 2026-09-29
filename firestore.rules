@@ -1,135 +1,130 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isDentsuUser() {
-      return isSignedIn() &&
-        request.auth.token.email.matches('^[^@]+@dentsu\\.com$');
-    }
-
-    function isAdmin() {
-      return isDentsuUser() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['User Registered', 'Active'];
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function isApproved() {
-      return isDentsuUser() &&
+      return isSignedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['User Registered', 'Active', 'Invite sent'];
+        userProfile().data.status in ['User Registered', 'Active', 'Invite sent'];
     }
 
-    // USERS
+    // Temporary compatibility for the existing Sokrati-only user documents.
+    // Delete this after all users have memberships.sokrati backfilled.
+    function isLegacySokratiUser() {
+      return isApproved() && !('memberships' in userProfile().data);
+    }
+
+    function hasAgencyAccess(agencyId) {
+      return isApproved() &&
+        'memberships' in userProfile().data &&
+        agencyId in userProfile().data.memberships &&
+        userProfile().data.memberships[agencyId].status == 'active';
+    }
+
+    function canAccessAgency(agencyId) {
+      return hasAgencyAccess(agencyId) ||
+        (agencyId == 'sokrati' && isLegacySokratiUser());
+    }
+
+    // Only platform administrators can edit agency membership records. Agency
+    // administrators must use a trusted server-side membership workflow.
+    function isPlatformAdmin() {
+      return isApproved() && (
+        (userProfile().data.role == 'Admin' && !('memberships' in userProfile().data)) ||
+        ('groupPermissions' in userProfile().data &&
+          'platform_admin' in userProfile().data.groupPermissions)
+      );
+    }
+
+    function isValidInitialMembership(memberships, agencyId) {
+      return !(agencyId in memberships) || (
+        memberships[agencyId].keys().hasOnly(['status', 'role', 'permissions']) &&
+        memberships[agencyId].status == 'pending' &&
+        memberships[agencyId].role == 'Client Partner' &&
+        memberships[agencyId].permissions == []
+      );
+    }
+
+    function isValidSelfRegistration() {
+      return request.resource.data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'photoURL', 'role', 'status', 'permissions',
+          'memberships', 'groupPermissions', 'requestedAgency'
+        ]) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.email.matches('^[^@]+@(dentsu|iprospect)\\.com$') &&
+        request.resource.data.role == 'Client Partner' &&
+        request.resource.data.status == 'Pending' &&
+        request.resource.data.permissions == [] &&
+        request.resource.data.groupPermissions == [] &&
+        request.resource.data.requestedAgency in ['sokrati', 'iprospect'] &&
+        request.resource.data.memberships.keys().hasOnly(['sokrati', 'iprospect']) &&
+        request.resource.data.requestedAgency in request.resource.data.memberships &&
+        isValidInitialMembership(request.resource.data.memberships, 'sokrati') &&
+        isValidInitialMembership(request.resource.data.memberships, 'iprospect');
+    }
+
     match /users/{userId} {
-      allow read: if isAdmin() || (isDentsuUser() && request.auth.uid == userId);
-      allow create: if isDentsuUser() &&
-        request.resource.data.email.matches('^[^@]+@dentsu\\.com$') &&
-        request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'status', 'permissions']) &&
-        ((request.auth.uid == userId &&
-          request.resource.data.uid == userId &&
-          request.resource.data.status == 'Pending' &&
-          request.resource.data.role == 'Client Partner' &&
-          request.resource.data.permissions == []) ||
-         isAdmin());
-      allow update: if isAdmin() ||
-        (isApproved() &&
-         request.auth.uid == userId &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL']));
-      allow delete: if isAdmin();
-    }
-    
-    // CLIENTS
-    match /clients/{clientId} {
-      allow read, write: if isApproved();
+      allow read: if isPlatformAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidSelfRegistration()
+        || isPlatformAdmin();
+      allow update, delete: if isPlatformAdmin();
+      allow update: if isApproved() && request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL']);
     }
 
-    // LEADS
-    match /leads/{leadId} {
-      allow read, write: if isApproved();
+    // All new business data must live below an agency. This is the security
+    // boundary that prevents one agency from reading or writing another's data.
+    match /agencies/{agencyId}/{document=**} {
+      allow read, write: if agencyId in ['sokrati', 'iprospect'] && canAccessAgency(agencyId);
     }
 
-    // KPI DATA & WEEKLY BREAKDOWN
-    match /kpis/{kpiId} {
-      allow read, write: if isApproved();
-    }
-    
-    match /kpiWeeklyData/{weeklyDataId} {
-      allow read, write: if isApproved();
-    }
+    // Legacy root collections are Sokrati-only during migration. No iProspect
+    // member can access them. Remove these matches after the migration cutover.
+    match /clients/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /leads/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /kpis/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /kpiWeeklyData/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /kpiDefinitions/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /channels/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /monthlySpends/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /weeklySpends/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /businessSnapshots/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /actionItems/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /wbrEntries/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /pageManagement/{id} { allow read, write: if canAccessAgency('sokrati'); }
+    match /clusterInsights/{id} { allow read, write: if canAccessAgency('sokrati'); }
 
-    // KPI DEFINITIONS
-    match /kpiDefinitions/{id} {
-      allow read, write: if isApproved();
-    }
-
-    // CHANNELS
-    match /channels/{id} {
-      allow read, write: if isApproved();
-    }
-
-    // SPENDS
-    match /monthlySpends/{id} {
-      allow read, write: if isApproved();
-    }
-    match /weeklySpends/{id} {
-      allow read, write: if isApproved();
-    }
-
-    // BUSINESS SNAPSHOTS
-    match /businessSnapshots/{id} {
-      allow read, write: if isApproved();
-    }
-
-    // SETTINGS (email automations, Teams webhook, etc.)
     match /settings/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read: if isApproved();
+      allow write: if isPlatformAdmin();
     }
-
-    // MAIL AUDIT LOG (written by Cloud Functions Admin SDK)
-    match /mailLog/{id} {
-      allow read: if isAdmin();
-      allow write: if false;
-    }
-
-    // MAIL JOBS (test / reset / invite — processed by onMailJobCreated)
+    match /mailLog/{id} { allow read: if isPlatformAdmin(); allow write: if false; }
     match /mailJobs/{id} {
-      allow create: if
-        (
-          request.resource.data.type == 'reset'
-          && request.resource.data.email is string
-          && request.resource.data.status == 'queued'
-        )
-        || (
-          isAdmin()
-          && request.resource.data.type in ['test', 'invite', 'reset', 'mom']
-          && request.resource.data.status == 'queued'
-        );
-      allow read: if isAdmin();
+      allow create: if request.resource.data.type == 'reset' &&
+          request.resource.data.email is string && request.resource.data.status == 'queued'
+        || (isPlatformAdmin() && request.resource.data.type in ['test', 'invite', 'reset', 'mom'] &&
+          request.resource.data.status == 'queued');
+      allow read: if isPlatformAdmin();
       allow update, delete: if false;
     }
-
-    // IN-APP TEAM NOTIFICATIONS
     match /notifications/{id} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn()
-        && resource.data.userId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
       allow create, delete: if false;
     }
-
-    // DEPRECATED COLLECTIONS (Maintenance)
-    match /actionItems/{id} { allow read, write: if isApproved(); }
-    match /wbrEntries/{id} { allow read, write: if isApproved(); }
-    match /pageManagement/{id} { allow read, write: if isApproved(); }
-    match /clusterInsights/{id} { allow read, write: if isApproved(); }
+    match /accessAuditLog/{id} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
   }
 }

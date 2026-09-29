@@ -9,6 +9,7 @@ import { SokratiLogo } from '@/components/sokrati-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AGENCIES, AGENCY_LABELS, DEFAULT_AGENCY, type AgencyId, isAllowedWorkEmail } from '@/lib/agencies';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -17,14 +18,15 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [requestedAgency, setRequestedAgency] = useState<AgencyId>(DEFAULT_AGENCY);
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail.endsWith('@dentsu.com')) {
-      setError('Access requests are limited to verified @dentsu.com email addresses.');
+    if (!isAllowedWorkEmail(normalizedEmail)) {
+      setError('Access requests are limited to verified @dentsu.com and @iprospect.com email addresses.');
       return;
     }
     setIsRegistering(true);
@@ -33,7 +35,8 @@ export default function RegisterPage() {
       await registerUser(firestore, auth, {
         email: normalizedEmail,
         displayName,
-        password
+        password,
+        requestedAgency,
       });
       router.push('/awaiting-approval');
     } catch (err: any) {
@@ -61,6 +64,17 @@ export default function RegisterPage() {
           <form onSubmit={handleRegister} className="space-y-6">
             <div className="space-y-4">
               <div className="space-y-1.5">
+                <Label className="micro-label">Agency</Label>
+                <select
+                  className="flex h-12 w-full border border-neutral-300 bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                  value={requestedAgency}
+                  onChange={(e) => setRequestedAgency(e.target.value as AgencyId)}
+                  disabled={isRegistering}
+                >
+                  {AGENCIES.map((agency) => <option key={agency} value={agency}>{AGENCY_LABELS[agency]}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
                 <Label className="micro-label">Full name</Label>
                 <Input
                   className="h-12 border-neutral-300 focus:border-primary focus:border-2 transition-all rounded-none"
@@ -76,7 +90,7 @@ export default function RegisterPage() {
                 <Input
                   className="h-12 border-neutral-300 focus:border-primary focus:border-2 transition-all rounded-none"
                   type="email"
-                  placeholder="name@dentsu.com"
+                  placeholder="name@dentsu.com or name@iprospect.com"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

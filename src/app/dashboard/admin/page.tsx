@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserProfile } from "@/lib/types";
+import { PLATFORM_ADMIN_EMAILS } from "@/lib/agencies";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +65,7 @@ export default function AdminPage() {
   const [isMaintenanceProcessing, setIsMaintenanceProcessing] = useState(false);
   const [isSheetsBackfilling, setIsSheetsBackfilling] = useState(false);
   
-  const isAdmin = !profileLoading && userProfile?.role === 'Admin';
+  const isAdmin = !profileLoading && Boolean(authUser?.email && PLATFORM_ADMIN_EMAILS.includes(authUser.email.toLowerCase() as typeof PLATFORM_ADMIN_EMAILS[number]));
   const TARGET_EMAIL = 'alfaz.patel@dentsu.com';
 
   const handlePurge = async () => {
@@ -298,7 +299,7 @@ export default function AdminPage() {
             <TableHeader>
               <TableRow className="border-none bg-foreground/[0.02] hover:bg-transparent">
                 <TableHead className="pl-8 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Identity</TableHead>
-                <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Role & Modules</TableHead>
+                <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Agency & Modules</TableHead>
                 <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 text-center">Activation</TableHead>
                 <TableHead className="sr-only">Actions</TableHead>
               </TableRow>
@@ -507,8 +508,17 @@ export default function AdminPage() {
         onOpenChange={(open) => {
           setIsEditUserDialogOpen(open);
           if (!open) setSelectedUserForEdit(null);
+        }}
+        onSave={async (d, id) => {
+          try {
+            const functions = getFunctions(app, 'us-central1');
+            await httpsCallable(functions, 'manageUserAgencyAccess')({ uid: id, agency: d.agency, permissions: d.permissions });
+            toast({ title: 'Access updated', description: 'The user has been approved and will receive the standard confirmation email.' });
+            setIsEditUserDialogOpen(false);
+          } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Access update failed', description: error?.message || 'Please try again.' });
+          }
         }} 
-        onSave={(d, id) => { saveUserRoleAndPermissions(firestore, id, d.role, d.permissions, selectedUserForEdit?.status === 'Pending' ? 'User Registered' : undefined); setIsEditUserDialogOpen(false); }} 
         user={selectedUserForEdit} 
       />
 
