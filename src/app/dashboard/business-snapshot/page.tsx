@@ -30,6 +30,7 @@ import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
 import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, type ClientPath } from '@/lib/kpi-rag';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import {
   aggregateBrandSpendBreakdown,
@@ -174,7 +175,7 @@ const PATH_RANK: Record<ClientPath, number> = { 'off-path': 0, 'no-signal': 1, '
 const KPI_PAGE_SIZE = 500;
 
 /** Load every KPI row for a month (Firestore queries are capped; paginate past the first page). */
-async function fetchAllKpisForMonth(db: Firestore, month: string): Promise<KpiData[]> {
+async function fetchAllKpisForMonth(db: Firestore, month: string, agencyId: string): Promise<KpiData[]> {
   const results: KpiData[] = [];
   let cursor: QueryDocumentSnapshot<DocumentData> | undefined;
 
@@ -185,7 +186,7 @@ async function fetchAllKpisForMonth(db: Firestore, month: string): Promise<KpiDa
       ...(cursor ? [startAfter(cursor)] : []),
       limit(KPI_PAGE_SIZE),
     ];
-    const snap = await getDocs(query(collection(db, 'kpis'), ...constraints));
+    const snap = await getDocs(query(collection(db, agencyCollectionPath(agencyId as any, 'kpis')), ...constraints));
     if (snap.empty) break;
     for (const d of snap.docs) {
       results.push({ id: d.id, ...(d.data() as object) } as KpiData);
@@ -201,12 +202,12 @@ async function fetchAllKpisForMonth(db: Firestore, month: string): Promise<KpiDa
  * Path MTD month should follow KPI Tracker (current month when data exists),
  * not lag behind the latest spends month.
  */
-async function resolveHealthKpiMonth(db: Firestore, spendsMonth: string): Promise<string> {
+async function resolveHealthKpiMonth(db: Firestore, spendsMonth: string, agencyId: string): Promise<string> {
   const calendarMonth = format(new Date(), 'yyyy-MM');
-  const calSnap = await getDocs(query(collection(db, 'kpis'), where('month', '==', calendarMonth), limit(1)));
+  const calSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId as any, 'kpis')), where('month', '==', calendarMonth), limit(1)));
   if (!calSnap.empty) return calendarMonth;
 
-  const latestSnap = await getDocs(query(collection(db, 'kpis'), orderBy('month', 'desc'), limit(1)));
+  const latestSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId as any, 'kpis')), orderBy('month', 'desc'), limit(1)));
   const latestMonth = latestSnap.docs[0]?.data()?.month as string | undefined;
   if (latestMonth && /^\d{4}-\d{2}$/.test(latestMonth)) return latestMonth;
 
@@ -218,7 +219,8 @@ export default function BusinessSnapshotPage() {
   const { user } = useUser();
   const { toast } = useToast();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
-  
+  const activeAgency = getActiveAgency(userProfile);
+
   const [mounted, setMounted] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -259,8 +261,11 @@ export default function BusinessSnapshotPage() {
     setMonthlyWindow([where('month', '>=', ytdCompareStart)]);
   }, []);
 
-  const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>('monthlySpends', monthlyWindow);
-  const { data: weeklySpends } = useCollection<WeeklySpend>('weeklySpends', statsWindow);
+  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
+  const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>(monthlyPath, monthlyWindow);
+
+  const weeklyPath = activeAgency ? agencyCollectionPath(activeAgency, 'weeklySpends') : null;
+  const { data: weeklySpends } = useCollection<WeeklySpend>(weeklyPath, statsWindow);
 
   const channelSpendPulse = useMemo(() => {
     const { keys, rowsByKey } = aggregateSpendByWeekStart(weeklySpends);
@@ -306,12 +311,12 @@ export default function BusinessSnapshotPage() {
         };
 
         const [wbrSnap, actionsSnap, leadsSnap, clientSnap, kpiRefSnap] = await Promise.all([
-          getDocs(query(collection(firestore, 'wbrEntries'), orderBy('wbrDate', 'desc'), limit(15))),
-          getDocs(query(collection(firestore, 'actionItems'), orderBy('updatedAt', 'desc'), limit(100))),
-          getDocs(query(collection(firestore, 'leads'), limit(100))),
-          getDocs(collection(firestore, 'clients')),
+          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency!, 'wbrEntries')), orderBy('wbrDate', 'desc'), limit(15))),
+          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency!, 'actionItems')), orderBy('updatedAt', 'desc'), limit(100))),
+          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency!, 'leads')), limit(100))),
+          getDocs(collection(firestore, agencyCollectionPath(activeAgency!, 'clients'))),
           getDocs(query(
-            collection(firestore, 'kpis'),
+            collection(firestore, agencyCollectionPath(activeAgency!, 'kpis')),
             where('month', '>=', format(subMonths(new Date(), 3), 'yyyy-MM')),
             limit(500)
           )),
@@ -342,14 +347,14 @@ export default function BusinessSnapshotPage() {
         const unresolvedIds = wbrClientIds.filter(cid => looksLikeClientId(nameLookup[cid], cid)).slice(0, 15);
         await Promise.all(unresolvedIds.map(async (cid) => {
           const byUniqueId = await getDocs(
-            query(collection(firestore, 'clients'), where('uniqueId', '==', cid), limit(1))
+            query(collection(firestore, agencyCollectionPath(activeAgency!, 'clients')), where('uniqueId', '==', cid), limit(1))
           );
           if (!byUniqueId.empty) {
             rememberName(cid, (byUniqueId.docs[0].data() as Client).name);
             if (!looksLikeClientId(nameLookup[cid], cid)) return;
           }
           const byKpi = await getDocs(
-            query(collection(firestore, 'kpis'), where('clientId', '==', cid), limit(1))
+            query(collection(firestore, agencyCollectionPath(activeAgency!, 'kpis')), where('clientId', '==', cid), limit(1))
           );
           if (!byKpi.empty) {
             rememberName(cid, (byKpi.docs[0].data() as KpiData).clientName);
@@ -532,15 +537,15 @@ export default function BusinessSnapshotPage() {
         }
         setHealthCycleDate(cycleDate || null);
 
-        const kpiMonth = await resolveHealthKpiMonth(firestore, stats.month);
+        const kpiMonth = await resolveHealthKpiMonth(firestore, stats.month, activeAgency!);
         setHealthKpiMonth(kpiMonth);
 
         const [kpiRows, clientSnap, wbrSnap] = await Promise.all([
-          fetchAllKpisForMonth(firestore, kpiMonth),
-          getDocs(collection(firestore, 'clients')),
+          fetchAllKpisForMonth(firestore, kpiMonth, activeAgency!),
+          getDocs(collection(firestore, agencyCollectionPath(activeAgency!, 'clients'))),
           cycleDate
             ? getDocs(
-                query(collection(firestore, 'wbrEntries'), where('wbrDate', '==', cycleDate), limit(500))
+                query(collection(firestore, agencyCollectionPath(activeAgency!, 'wbrEntries')), where('wbrDate', '==', cycleDate), limit(500))
               )
             : Promise.resolve(null),
         ]);
@@ -684,10 +689,10 @@ export default function BusinessSnapshotPage() {
   const isAdmin = userProfile?.role === 'Admin' || userProfile?.role === 'Cluster Lead';
 
   const handleRefresh = async () => {
-    if (!stats?.month) return;
+    if (!stats?.month || !activeAgency) return;
     setIsRefreshing(true);
     try {
-      await refreshBusinessSnapshot(firestore, stats.month);
+      await refreshBusinessSnapshot(firestore, stats.month, activeAgency);
       toast({ title: "Data Updated" });
     } catch (e: any) {
       toast({ variant: 'destructive', title: "Refresh Error", description: e.message });
