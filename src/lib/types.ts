@@ -1,4 +1,15 @@
 
+export const AGENCIES = ['sokrati', 'iprospect'] as const;
+
+export type AgencyId = typeof AGENCIES[number];
+export type AgencyMembershipStatus = 'pending' | 'active' | 'disabled';
+
+export interface AgencyMembership {
+    status: AgencyMembershipStatus;
+    role: string;
+    permissions: string[];
+}
+
 export interface UserProfile {
     id: string;
     uid: string;
@@ -8,6 +19,15 @@ export interface UserProfile {
     photoURL: string;
     status?: 'Invite sent' | 'User Registered' | 'Pending';
     permissions?: string[];
+    /**
+     * Tenant-scoped access. Legacy role and permissions remain temporarily while
+     * existing Sokrati users and data are migrated.
+     */
+    memberships?: Partial<Record<AgencyId, AgencyMembership>>;
+    /** Allows an explicitly approved, read-only cross-agency reporting view. */
+    groupPermissions?: string[];
+    /** Agency selected during self-registration; administrators approve it. */
+    requestedAgency?: AgencyId;
 }
 
 export type ActionSection = "CLIENT ENGAGEMENT" | "SALES" | "OPERATIONS" | "AZTEC" | "HR" | "MANAGEMENT";

@@ -27,7 +27,7 @@ import { UserProfile } from '@/lib/types';
 import { useEffect } from 'react';
 
 const roleSchema = z.object({
-  role: z.enum(['Admin', 'Cluster Lead', 'EM/CSM', 'Client Partner']),
+  agency: z.enum(['sokrati', 'iprospect']),
   permissions: z.array(z.string()).min(1, 'Select at least one page permission'),
 });
 
@@ -39,8 +39,6 @@ interface EditUserRoleDialogProps {
   onSave: (data: UserSettingsFormValues, userId: string) => void;
   user?: UserProfile;
 }
-
-const userRoles = ['Admin', 'Cluster Lead', 'EM/CSM', 'Client Partner'];
 
 const pageOptions = [
   { id: 'snapshot', label: 'Snapshot' },
@@ -58,7 +56,7 @@ export function EditUserRoleDialog({ isOpen, onOpenChange, onSave, user }: EditU
   const form = useForm<UserSettingsFormValues>({
     resolver: zodResolver(roleSchema),
     defaultValues: {
-      role: 'Client Partner',
+      agency: 'sokrati',
       permissions: ['snapshot', 'wbr', 'actions'],
     }
   });
@@ -66,8 +64,8 @@ export function EditUserRoleDialog({ isOpen, onOpenChange, onSave, user }: EditU
   useEffect(() => {
     if (isOpen && user) {
         form.reset({
-            role: user.role as any,
-            permissions: user.permissions || ['snapshot', 'wbr', 'actions'],
+            agency: user.requestedAgency || 'sokrati',
+            permissions: user.memberships?.[user.requestedAgency || 'sokrati']?.permissions || user.permissions || ['snapshot', 'wbr', 'actions'],
         });
     }
   }, [user, form, isOpen]);
@@ -84,27 +82,26 @@ export function EditUserRoleDialog({ isOpen, onOpenChange, onSave, user }: EditU
         <DialogHeader>
           <DialogTitle className="font-headline text-2xl">Manage Access</DialogTitle>
           <DialogDescription>
-            Configure role and page visibility for {user?.displayName || user?.email}.
+            Assign an agency and exactly which pages {user?.displayName || user?.email} can access.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
             <FormField
               control={form.control}
-              name="role"
+              name="agency"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">System Role</FormLabel>
+                  <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Agency</FormLabel>
                    <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="rounded-none bg-foreground/5 border-none">
-                        <SelectValue placeholder="Select a role" />
+                        <SelectValue placeholder="Select an agency" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent className="rounded-none glass ">
-                      {userRoles.map(role => (
-                        <SelectItem key={role} value={role}>{role}</SelectItem>
-                      ))}
+                      <SelectItem value="sokrati">Sokrati</SelectItem>
+                      <SelectItem value="iprospect">iProspect</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
