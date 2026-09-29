@@ -4,6 +4,7 @@ import { useUser, useDoc } from '@/firebase';
 import { UserProfile } from '@/lib/types';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+import { hasAgencyAccess } from '@/lib/agencies';
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useUser();
@@ -31,6 +32,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       }
 
       if (pathname.startsWith('/dashboard')) {
+        // Legacy dashboard routes read root-level Sokrati collections. Never
+        // let an iProspect-only user enter them while tenant-scoped pages are
+        // being rolled out; otherwise the page issues denied reads and can
+        // display stale client state from a prior account.
+        if (hasAgencyAccess(userProfile, 'iprospect') && !hasAgencyAccess(userProfile, 'sokrati')) {
+          router.replace('/iprospect');
+          return;
+        }
+
         const isAdmin = userProfile.role === 'Admin';
         const permissions = Array.isArray(userProfile.permissions) ? userProfile.permissions : [];
         
