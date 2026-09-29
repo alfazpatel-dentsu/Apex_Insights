@@ -5,6 +5,7 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "purge:non-dentsu": "node scripts/purge-non-dentsu-users.js",
+    "migrate:sokrati": "node scripts/migrate-sokrati-to-agency.js",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"

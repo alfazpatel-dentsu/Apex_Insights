@@ -15,6 +15,7 @@ import {
   User,
 } from 'firebase/auth';
 import { firebaseConfig } from '@/firebase/config';
+import { isAllowedWorkEmail, type AgencyId } from './agencies';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem, ActionCommentEntry } from './types';
@@ -399,8 +400,8 @@ export const saveUserRoleAndPermissions = (db: Firestore, userId: string, role: 
 
 export const createUser = async (db: Firestore, userData: any) => {
     const email = String(userData.email || '').trim().toLowerCase();
-    if (!/^[^@]+@dentsu\.com$/.test(email)) {
-        throw new Error('Only @dentsu.com email addresses can be invited.');
+    if (!isAllowedWorkEmail(email)) {
+        throw new Error('Only @dentsu.com and @iprospect.com email addresses can be invited.');
     }
     const tempAppName = `temp-user-${Date.now()}`;
     const tempApp = initializeApp(firebaseConfig, tempAppName);
@@ -414,7 +415,15 @@ export const createUser = async (db: Firestore, userData: any) => {
             photoURL: '', 
             role: userData.role, 
             status: 'Invite sent', 
-            permissions: userData.permissions || ['snapshot', 'tracker', 'wbr', 'actions'] 
+            permissions: userData.permissions || ['snapshot', 'tracker', 'wbr', 'actions'],
+            memberships: {
+              sokrati: {
+                status: 'active',
+                role: userData.role,
+                permissions: userData.permissions || ['snapshot', 'tracker', 'wbr', 'actions'],
+              },
+            },
+            groupPermissions: [],
         };
         await setDoc(doc(db, 'users', userCredential.user.uid), userProfile);
         // Invite email is sent from aztec_alerts@dentsu.com by Cloud Function onUserEmailAutomations.
@@ -422,10 +431,10 @@ export const createUser = async (db: Firestore, userData: any) => {
     } catch (authError: any) { throw authError; } finally { await deleteApp(tempApp); }
 };
 
-export const registerUser = async (db: Firestore, auth: Auth, userData: any) => {
+export const registerUser = async (db: Firestore, auth: Auth, userData: { email: string; displayName: string; password: string; requestedAgency: AgencyId }) => {
     const email = String(userData.email || '').trim().toLowerCase();
-    if (!/^[^@]+@dentsu\.com$/.test(email)) {
-        throw new Error('Only @dentsu.com email addresses can request access.');
+    if (!isAllowedWorkEmail(email)) {
+        throw new Error('Only @dentsu.com and @iprospect.com email addresses can request access.');
     }
     const userCredential = await createUserWithEmailAndPassword(auth, email, userData.password);
     const userProfile = { 
@@ -435,7 +444,16 @@ export const registerUser = async (db: Firestore, auth: Auth, userData: any) => 
         photoURL: '', 
         role: 'Client Partner', 
         status: 'Pending', 
-        permissions: [] 
+        permissions: [],
+        requestedAgency: userData.requestedAgency,
+        memberships: {
+          [userData.requestedAgency]: {
+            status: 'pending',
+            role: 'Client Partner',
+            permissions: [],
+          },
+        },
+        groupPermissions: [],
     };
     try {
       await sendEmailVerification(userCredential.user);

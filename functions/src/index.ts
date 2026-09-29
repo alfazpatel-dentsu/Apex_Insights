@@ -24,6 +24,70 @@ import {
 
 initializeApp();
 
+const PLATFORM_ADMIN_EMAILS = new Set([
+  "alfaz.patel@dentsu.com",
+  "hasnain.rasiwalla1@dentsu.com",
+  "mehul.kulkarni@dentsu.com",
+]);
+const AGENCIES = new Set(["sokrati", "iprospect"]);
+const PAGE_PERMISSIONS = new Set([
+  "snapshot", "sales", "tracker", "spends", "dashboard", "forecast", "wbr", "actions", "admin",
+]);
+
+function requirePlatformAdmin(context: functions.https.CallableContext): void {
+  const email = context.auth?.token.email?.toLowerCase();
+  if (!email || !PLATFORM_ADMIN_EMAILS.has(email)) {
+    throw new functions.https.HttpsError("permission-denied", "Platform administrator access is required.");
+  }
+}
+
+/**
+ * Approves or updates one agency membership. User access is intentionally
+ * page-based; the membership role is a neutral internal value only.
+ */
+export const manageUserAgencyAccess = functions
+  .region("us-central1")
+  .https.onCall(async (data, context) => {
+    requirePlatformAdmin(context);
+    const uid = typeof data?.uid === "string" ? data.uid.trim() : "";
+    const agency = typeof data?.agency === "string" ? data.agency.trim() : "";
+    const status = data?.status === "disabled" ? "disabled" : "active";
+    const permissions = Array.isArray(data?.permissions)
+      ? [...new Set(data.permissions.filter((value: unknown): value is string =>
+        typeof value === "string" && PAGE_PERMISSIONS.has(value)))]
+      : [];
+    if (!uid || !AGENCIES.has(agency)) {
+      throw new functions.https.HttpsError("invalid-argument", "A valid user and agency are required.");
+    }
+
+    const db = getFirestore();
+    const ref = db.doc(`users/${uid}`);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) throw new functions.https.HttpsError("not-found", "User profile not found.");
+    const current = snapshot.data() || {};
+    const memberships = {...(current.memberships || {})};
+    memberships[agency] = {status, role: "User", permissions};
+
+    const nextStatus = status === "active" ? "User Registered" : current.status;
+    await ref.update({
+      memberships,
+      status: nextStatus,
+      // Retained during the UI migration for existing route guards.
+      permissions,
+      accessUpdatedAt: new Date().toISOString(),
+      accessUpdatedBy: context.auth?.token.email || "",
+    });
+    await db.collection("accessAuditLog").add({
+      userId: uid,
+      agency,
+      status,
+      permissions,
+      changedBy: context.auth?.token.email || "",
+      changedAt: new Date().toISOString(),
+    });
+    return {uid, agency, status, permissions};
+  });
+
 /**
  * Enforce the registration policy at Firebase Authentication's boundary.
  * Client-side validation can be bypassed by calling the Auth API directly.
@@ -31,24 +95,24 @@ initializeApp();
  * This is a blocking function, so rejected accounts are never created in
  * Firebase Authentication and cannot leave orphaned IDs in the console.
  */
-function assertDentsuAccount(email: string | undefined): void {
+function assertAllowedWorkAccount(email: string | undefined): void {
   const normalizedEmail = email?.trim().toLowerCase() ?? "";
-  if (!/^[^@]+@dentsu\.com$/.test(normalizedEmail)) {
+  if (!/^[^@]+@(dentsu|iprospect)\.com$/.test(normalizedEmail)) {
     throw new HttpsError(
       "permission-denied",
-      "Only @dentsu.com accounts can access this application."
+      "Only @dentsu.com and @iprospect.com accounts can access this application."
     );
   }
 }
 
 export const enforceDentsuAccounts = beforeUserCreated((event) => {
-  assertDentsuAccount(event.data?.email);
+  assertAllowedWorkAccount(event.data?.email);
   return;
 });
 
 /** Also deny sign-in for unauthorized accounts created before this trigger deployed. */
 export const enforceDentsuSignIn = beforeUserSignedIn((event) => {
-  assertDentsuAccount(event.data?.email);
+  assertAllowedWorkAccount(event.data?.email);
   return;
 });
 
