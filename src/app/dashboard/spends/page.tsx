@@ -51,8 +51,9 @@ import {
   FormMessage 
 } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useCollection, useFirestore } from '@/firebase';
-import { MonthlySpend, WeeklySpend } from '@/lib/types';
+import { useCollection, useFirestore, useUser, useDoc } from '@/firebase';
+import { MonthlySpend, WeeklySpend, UserProfile } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { 
   saveMonthlySpend, 
   saveWeeklySpend, 
@@ -115,6 +116,9 @@ const weeklySpendSchema = z.object({
 function SpendsContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
   const [activeTab, setActiveTab] = useState('monthly');
   const [searchQuery, setSearchQuery] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -140,12 +144,13 @@ function SpendsContent() {
     ];
   }, [dateRange, shouldFetch]);
 
-  const { data: monthlySpends, loading: monthlyLoading } = useCollection<MonthlySpend>('monthlySpends', monthlyConstraints);
+  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
+  const { data: monthlySpends, loading: monthlyLoading } = useCollection<MonthlySpend>(monthlyPath, monthlyConstraints);
   const [weeklySpends, setWeeklySpends] = useState<WeeklySpend[] | null>(null);
   const [weeklyLoading, setWeeklyLoading] = useState(false);
 
   useEffect(() => {
-    if (!shouldFetch || !dateRange?.from || !dateRange?.to) {
+    if (!shouldFetch || !dateRange?.from || !dateRange?.to || !activeAgency) {
       setWeeklySpends(null);
       setWeeklyLoading(false);
       return;
@@ -156,14 +161,14 @@ function SpendsContent() {
       try {
         const startStr = format(dateRange.from!, 'yyyy-MM');
         const endStr = format(dateRange.to!, 'yyyy-MM');
-        
+
         const q = query(
-          collection(firestore, 'weeklySpends'),
+          collection(firestore, agencyCollectionPath(activeAgency, 'weeklySpends')),
           where('month', '>=', startStr),
           where('month', '<=', endStr)
         );
         const snap = await getDocs(q);
-        
+
         const results = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
         setWeeklySpends(results);
       } catch (err) {
@@ -174,7 +179,7 @@ function SpendsContent() {
     };
 
     fetchWeekly();
-  }, [dateRange, firestore, shouldFetch]);
+  }, [dateRange, firestore, shouldFetch, activeAgency]);
 
   const [isMonthlyDialogOpen, setIsMonthlyDialogOpen] = useState(false);
   const [isWeeklyDialogOpen, setIsWeeklyDialogOpen] = useState(false);

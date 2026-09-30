@@ -30,7 +30,8 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus } from '@/lib/types';
+import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus, UserProfile } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { canonicalizeChannel } from '@/lib/normalize';
 import { kpiSeriesKey } from '@/lib/kpi-record-key';
 import {
@@ -44,7 +45,7 @@ import { KpiDialog } from './kpi-dialog';
 import { format, parse, isValid, startOfMonth, endOfMonth, startOfWeek, addDays, eachMonthOfInterval } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/page-header';
-import { useCollection, useFirestore } from '@/firebase';
+import { useCollection, useFirestore, useUser, useDoc } from '@/firebase';
 import { saveKpiData, bulkSaveKpiData, updateWeeklyComment } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -103,6 +104,9 @@ function KpiTrackingContent() {
   const monthFromUrl = searchParams.get('month');
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
   
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     if (monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl)) {
@@ -186,7 +190,7 @@ function KpiTrackingContent() {
   const kpiIdsKey = useMemo(() => kpiData?.map(k => k.id).sort().join(',') || "", [kpiData]);
 
   useEffect(() => {
-    if (!shouldFetch || !kpiData || kpiData.length === 0) {
+    if (!shouldFetch || !kpiData || kpiData.length === 0 || !activeAgency) {
       setWeeklyData([]);
       setWeeklyLoading(false);
       return;
@@ -198,19 +202,19 @@ function KpiTrackingContent() {
         const kpiIds = kpiData.map(k => k.id);
         for (let i = 0; i < kpiIds.length; i += 30) {
           const chunk = kpiIds.slice(i, i + 30);
-          const q = query(collection(firestore, 'kpiWeeklyData'), where('kpiDataId', 'in', chunk));
+          const q = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpiWeeklyData')), where('kpiDataId', 'in', chunk));
           const snap = await getDocs(q);
           snap.forEach(doc => { allWeekly.push({ id: doc.id, ...doc.data() } as KpiWeeklyData); });
         }
         setWeeklyData(allWeekly);
-      } catch (err) { 
-        console.error("Weekly data fetch failed:", err); 
-      } finally { 
-        setWeeklyLoading(false); 
+      } catch (err) {
+        console.error("Weekly data fetch failed:", err);
+      } finally {
+        setWeeklyLoading(false);
       }
     };
     fetchWeekly();
-  }, [kpiIdsKey, firestore, shouldFetch, kpiData]);
+  }, [kpiIdsKey, firestore, shouldFetch, kpiData, activeAgency]);
 
   const weeklyMap = useMemo(() => {
     const map = new Map<string, KpiWeeklyData[]>();

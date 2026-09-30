@@ -29,8 +29,9 @@ import {
   YAxis 
 } from 'recharts';
 
-import { useFirestore } from '@/firebase';
-import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, Client } from '@/lib/types';
+import { useFirestore, useUser, useDoc } from '@/firebase';
+import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, Client, UserProfile } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -43,6 +44,9 @@ export default function ClientDeepDivePage() {
   const params = useParams();
   const router = useRouter();
   const firestore = useFirestore();
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
   const clientId = params.clientId as string;
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -59,18 +63,18 @@ export default function ClientDeepDivePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!clientId) return;
-    
+    if (!clientId || !activeAgency) return;
+
     const fetchData = async () => {
       setIsLoading(true);
       try {
         // Discovery Logic: Find client context
-        const clientRefQ = query(collection(firestore, 'clients'), where('uniqueId', '==', clientId));
+        const clientRefQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'clients')), where('uniqueId', '==', clientId));
         const clientSnap = await getDocs(clientRefQ);
         if (!clientSnap.empty) {
           setClientInfo(clientSnap.docs[0].data() as Client);
         } else {
-          const kpiRefQ = query(collection(firestore, 'kpis'), where('clientId', '==', clientId), limit(1));
+          const kpiRefQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpis')), where('clientId', '==', clientId), limit(1));
           const kpiRefSnap = await getDocs(kpiRefQ);
           if (!kpiRefSnap.empty) {
             const d = kpiRefSnap.docs[0].data();
@@ -79,7 +83,7 @@ export default function ClientDeepDivePage() {
         }
 
         // Fetch Data Sets
-        const kpiQ = query(collection(firestore, 'kpis'), where('clientId', '==', clientId));
+        const kpiQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpis')), where('clientId', '==', clientId));
         const kpiSnap = await getDocs(kpiQ);
         const kpiList = kpiSnap.docs.map(d => ({ id: d.id, ...d.data() } as KpiData));
         setKpis(kpiList);
@@ -89,18 +93,18 @@ export default function ClientDeepDivePage() {
           const kpiIds = kpiList.map(k => k.id);
           for (let i = 0; i < kpiIds.length; i += 30) {
             const chunk = kpiIds.slice(i, i + 30);
-            const wq = query(collection(firestore, 'kpiWeeklyData'), where('kpiDataId', 'in', chunk));
+            const wq = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpiWeeklyData')), where('kpiDataId', 'in', chunk));
             const wSnap = await getDocs(wq);
             wSnap.forEach(d => weeklyKpiList.push({ id: d.id, ...d.data() } as KpiWeeklyData));
           }
           setWeeklyKpis(weeklyKpiList);
         }
 
-        const mSpendsQ = query(collection(firestore, 'monthlySpends'), where('clientId', '==', clientId));
+        const mSpendsQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'monthlySpends')), where('clientId', '==', clientId));
         const mSnap = await getDocs(mSpendsQ);
         setMonthlySpends(mSnap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlySpend)));
 
-        const wSpendsQ = query(collection(firestore, 'weeklySpends'), where('clientId', '==', clientId));
+        const wSpendsQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'weeklySpends')), where('clientId', '==', clientId));
         const wSnap = await getDocs(wSpendsQ);
         setWeeklySpends(wSnap.docs.map(d => ({ id: d.id, ...d.data() } as WeeklySpend)));
 
@@ -112,7 +116,7 @@ export default function ClientDeepDivePage() {
     };
 
     fetchData();
-  }, [clientId, firestore]);
+  }, [clientId, firestore, activeAgency]);
 
   const kpiChannels = Array.from(new Set(kpis.map(k => k.channel))).sort();
 

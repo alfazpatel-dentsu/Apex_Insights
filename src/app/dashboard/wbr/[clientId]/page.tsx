@@ -47,6 +47,7 @@ import { query, collection, where, getDocs, getDoc, doc, limit, type Firestore }
 
 import { useFirestore, useUser, useDoc, useCollection } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, RagStatus, ActionItem } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { displayAssigned } from '@/lib/assignees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,10 +103,11 @@ async function fetchClientMonthRange<T extends { month?: string }>(
   clientId: string,
   startMonth: string,
   endMonth: string,
+  agencyId: string,
 ): Promise<(T & { id: string })[]> {
   try {
     const snap = await getDocs(query(
-      collection(db, collectionName),
+      collection(db, agencyCollectionPath(agencyId as any, collectionName)),
       where('clientId', '==', clientId),
       where('month', '>=', startMonth),
       where('month', '<=', endMonth),
@@ -113,7 +115,7 @@ async function fetchClientMonthRange<T extends { month?: string }>(
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) } as T & { id: string }));
   } catch {
     const snap = await getDocs(query(
-      collection(db, collectionName),
+      collection(db, agencyCollectionPath(agencyId as any, collectionName)),
       where('clientId', '==', clientId),
     ));
     return snap.docs
@@ -134,6 +136,7 @@ export default function WbrEditPage() {
   const { toast } = useToast();
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
 
   const clientId = params.clientId as string;
   const actualClientId = clientId.startsWith('discovered_') ? clientId.replace('discovered_', '') : clientId;
@@ -152,8 +155,9 @@ export default function WbrEditPage() {
 
   const [isActionDialogOpen, setIsActionDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionItem | null>(null);
+  const actionsPath = activeAgency ? agencyCollectionPath(activeAgency, 'actionItems') : null;
   const actionsConstraints = useMemo(() => [where('clientId', '==', actualClientId), limit(50)], [actualClientId]);
-  const { data: clientActions } = useCollection<ActionItem>('actionItems', actionsConstraints);
+  const { data: clientActions } = useCollection<ActionItem>(actionsPath, actionsConstraints);
 
   const [monthlyDateRange, setMonthlyDateRange] = useState<DateRange | undefined>(() => ({
     from: startOfMonth(subMonths(new Date(), 5)),
@@ -201,7 +205,7 @@ export default function WbrEditPage() {
   });
 
   useEffect(() => {
-    if (!actualClientId) return;
+    if (!actualClientId || !activeAgency) return;
     let cancelled = false;
 
     const fetchCore = async () => {
@@ -209,8 +213,8 @@ export default function WbrEditPage() {
       try {
         const wbrId = wbrEntryId(actualClientId, wbrDate);
         const [clientSnap, wbrDirect] = await Promise.all([
-          getDocs(query(collection(firestore, 'clients'), where('uniqueId', '==', actualClientId), limit(1))),
-          getDoc(doc(firestore, 'wbrEntries', wbrId)),
+          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency, 'clients')), where('uniqueId', '==', actualClientId), limit(1))),
+          getDoc(doc(firestore, agencyCollectionPath(activeAgency, 'wbrEntries'), wbrId)),
         ]);
 
         let cData: Partial<Client> | null = null;
@@ -218,7 +222,7 @@ export default function WbrEditPage() {
           cData = clientSnap.docs[0].data() as Client;
         } else {
           const kpiRefSnap = await getDocs(query(
-            collection(firestore, 'kpis'),
+            collection(firestore, agencyCollectionPath(activeAgency, 'kpis')),
             where('clientId', '==', actualClientId),
             limit(1)
           ));
@@ -241,7 +245,7 @@ export default function WbrEditPage() {
           existingEntry = { id: wbrDirect.id, ...wbrDirect.data() } as WbrEntry;
         } else {
           const byDate = await getDocs(query(
-            collection(firestore, 'wbrEntries'),
+            collection(firestore, agencyCollectionPath(activeAgency, 'wbrEntries')),
             where('clientId', '==', actualClientId),
             where('wbrDate', '==', wbrDate),
             limit(1)
@@ -295,10 +299,10 @@ export default function WbrEditPage() {
     return () => {
       cancelled = true;
     };
-  }, [actualClientId, wbrDate, firestore, form]);
+  }, [actualClientId, wbrDate, firestore, form, activeAgency]);
 
   useEffect(() => {
-    if (!actualClientId || !monthlyDateRange?.from || !monthlyDateRange?.to || !weeklyDateRange?.from || !weeklyDateRange?.to) return;
+    if (!actualClientId || !monthlyDateRange?.from || !monthlyDateRange?.to || !weeklyDateRange?.from || !weeklyDateRange?.to || !activeAgency) return;
     let cancelled = false;
 
     const fetchMetrics = async () => {
@@ -312,9 +316,9 @@ export default function WbrEditPage() {
         const fetchEndStr = monthlyEndStr > weeklyEndStr ? monthlyEndStr : weeklyEndStr;
 
         const [kpiList, monthSpends, weekSpends] = await Promise.all([
-          fetchClientMonthRange<KpiData>(firestore, 'kpis', actualClientId, fetchStartStr, fetchEndStr),
-          fetchClientMonthRange<MonthlySpend>(firestore, 'monthlySpends', actualClientId, fetchStartStr, fetchEndStr),
-          fetchClientMonthRange<WeeklySpend>(firestore, 'weeklySpends', actualClientId, fetchStartStr, fetchEndStr),
+          fetchClientMonthRange<KpiData>(firestore, 'kpis', actualClientId, fetchStartStr, fetchEndStr, activeAgency),
+          fetchClientMonthRange<MonthlySpend>(firestore, 'monthlySpends', actualClientId, fetchStartStr, fetchEndStr, activeAgency),
+          fetchClientMonthRange<WeeklySpend>(firestore, 'weeklySpends', actualClientId, fetchStartStr, fetchEndStr, activeAgency),
         ]);
         if (cancelled) return;
 
@@ -327,7 +331,7 @@ export default function WbrEditPage() {
           const chunks: string[][] = [];
           for (let i = 0; i < kpiIds.length; i += 30) chunks.push(kpiIds.slice(i, i + 30));
           const weeklyParts = await Promise.all(chunks.map((chunk) =>
-            getDocs(query(collection(firestore, 'kpiWeeklyData'), where('kpiDataId', 'in', chunk)))
+            getDocs(query(collection(firestore, agencyCollectionPath(activeAgency, 'kpiWeeklyData')), where('kpiDataId', 'in', chunk)))
           ));
           if (cancelled) return;
           const weeklyKpiList: KpiWeeklyData[] = [];
@@ -349,7 +353,7 @@ export default function WbrEditPage() {
     return () => {
       cancelled = true;
     };
-  }, [actualClientId, firestore, monthlyDateRange, weeklyDateRange]);
+  }, [actualClientId, firestore, monthlyDateRange, weeklyDateRange, activeAgency]);
 
   const isAdmin = userProfile?.role === 'Admin';
 
