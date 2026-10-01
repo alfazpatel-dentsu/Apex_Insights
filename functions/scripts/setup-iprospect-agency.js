@@ -110,12 +110,13 @@ async function createTestUsers() {
         role: user.role,
         status: 'Active',
         createdAt: Timestamp.now(),
-        agencies: {
+        memberships: {
           'iprospect': {
             agencyId: 'iprospect',
             role: user.role === 'Admin' ? 'Admin' : 'User',
             joinedAt: Timestamp.now(),
             permissions: ['read', 'write'],
+            status: 'active',
           },
         },
         activeAgency: 'iprospect',
