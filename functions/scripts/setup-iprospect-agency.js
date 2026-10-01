@@ -115,8 +115,7 @@ async function createTestUsers() {
         email: user.email,
         displayName: user.displayName,
         role: user.role,
-        // DO NOT set status field—it triggers backward-compat Sokrati access
-        // Only memberships.iprospect gives this user access
+        status: 'Active', // Required for Firestore security rules isApproved() check
         createdAt: Timestamp.now(),
         memberships: {
           'iprospect': {

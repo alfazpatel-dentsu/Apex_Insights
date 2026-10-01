@@ -26,9 +26,10 @@ async function fixProfiles() {
       const userRecord = await auth.getUserByEmail(email);
       console.log(`Found user: ${email} (UID: ${userRecord.uid})`);
 
-      // Update Firestore profile - REMOVE status field, keep ONLY iprospect membership
+      // Update Firestore profile - keep status for Firestore isApproved() check, but keep ONLY iprospect membership
       const userProfileRef = db.doc(`users/${userRecord.uid}`);
       await userProfileRef.update({
+        status: 'Active', // Required for Firestore security rules isApproved() check
         memberships: {
           'iprospect': {
             agencyId: 'iprospect',
