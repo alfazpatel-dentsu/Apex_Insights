@@ -530,7 +530,7 @@ export default function BusinessSnapshotPage() {
         let cycleDate = snapshotDoc?.stats?.wbrCycleDate || '';
         if (!cycleDate) {
           const recentWbr = await getDocs(
-            query(collection(firestore, 'wbrEntries'), orderBy('wbrDate', 'desc'), limit(50))
+            query(collection(firestore, agencyCollectionPath(activeAgency!, 'wbrEntries')), orderBy('wbrDate', 'desc'), limit(50))
           );
           const dates = Array.from(new Set(recentWbr.docs.map((d) => d.data().wbrDate).filter(Boolean))).sort().reverse();
           cycleDate = dates[0] || '';
