@@ -8,6 +8,7 @@
     "migrate:sokrati": "node scripts/migrate-sokrati-to-agency.js",
     "verify:migration": "node scripts/verify-migration.js",
     "setup:iprospect": "node scripts/setup-iprospect-agency.js",
+    "fix:iprospect": "node scripts/fix-iprospect-profiles.js",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
