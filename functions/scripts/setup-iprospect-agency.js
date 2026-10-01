@@ -70,19 +70,14 @@ async function setupCollections() {
     const collectionPath = `agencies/iprospect/${collectionName}`;
 
     if (!execute) {
-      console.log(`Would create collection: ${collectionPath}`);
+      console.log(`Would initialize collection: ${collectionPath}`);
       continue;
     }
 
-    // Create a marker document to ensure collection exists
-    // (Firestore doesn't create empty collections)
-    const markerRef = db.doc(`${collectionPath}/__metadata__`);
-    await markerRef.set({
-      _type: 'metadata',
-      createdAt: Timestamp.now(),
-      description: 'Placeholder document to initialize collection',
-    });
-    console.log(`✓ Initialized collection: ${collectionPath}`);
+    // Firestore creates collections automatically when data is added
+    // No need to explicitly create empty collections
+    // They will be created during data migration
+    console.log(`✓ Collection ready: ${collectionPath} (will be created on first data write)`);
   }
 }
 
