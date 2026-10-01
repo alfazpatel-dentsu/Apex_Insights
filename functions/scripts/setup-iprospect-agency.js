@@ -86,29 +86,37 @@ async function createTestUsers() {
 
   for (const user of testUsers) {
     if (!execute) {
-      console.log(`Would create user: ${user.email} (${user.displayName})`);
+      console.log(`Would create/update user: ${user.email} (${user.displayName})`);
       continue;
     }
 
     try {
-      // Create Auth user
-      const userRecord = await auth.createUser({
-        email: user.email,
-        password: 'TempPassword123!@#', // User should change this on first login
-        displayName: user.displayName,
-        emailVerified: false,
-      });
+      let userRecord;
 
-      console.log(`✓ Created Auth user: ${user.email} (UID: ${userRecord.uid})`);
+      // Try to get existing user by email
+      try {
+        userRecord = await auth.getUserByEmail(user.email);
+        console.log(`✓ Found existing Auth user: ${user.email} (UID: ${userRecord.uid})`);
+      } catch (notFoundError) {
+        // User doesn't exist, create new one
+        userRecord = await auth.createUser({
+          email: user.email,
+          password: 'TempPassword123!@#', // User should change this on first login
+          displayName: user.displayName,
+          emailVerified: false,
+        });
+        console.log(`✓ Created Auth user: ${user.email} (UID: ${userRecord.uid})`);
+      }
 
-      // Create Firestore user profile with iProspect membership
+      // Create or update Firestore user profile with iProspect membership
       const userProfileRef = db.doc(`users/${userRecord.uid}`);
       await userProfileRef.set({
         uid: userRecord.uid,
         email: user.email,
         displayName: user.displayName,
         role: user.role,
-        status: 'Active',
+        // DO NOT set status field—it triggers backward-compat Sokrati access
+        // Only memberships.iprospect gives this user access
         createdAt: Timestamp.now(),
         memberships: {
           'iprospect': {
@@ -123,9 +131,9 @@ async function createTestUsers() {
         lastLogin: null,
       });
 
-      console.log(`✓ Created user profile: ${user.email} with iProspect membership`);
+      console.log(`✓ Updated user profile: ${user.email} with iProspect membership (removed Sokrati access)`);
     } catch (error) {
-      console.error(`✗ Error creating user ${user.email}:`, error.message);
+      console.error(`✗ Error setting up user ${user.email}:`, error.message);
     }
   }
 }
