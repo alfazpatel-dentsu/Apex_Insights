@@ -30,8 +30,8 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
+import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus, UserProfile, AgencyId } from '@/lib/types';
+import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { canonicalizeChannel } from '@/lib/normalize';
 import { kpiSeriesKey } from '@/lib/kpi-record-key';
 import {
@@ -501,6 +501,10 @@ function KpiTrackingContent() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!activeAgency) {
+        toast({ variant: 'destructive', title: 'Upload failed', description: 'Your account does not have an active agency.' });
+        return;
+      }
       setIsUploading(true); setUploadProgress(0);
       Papa.parse(file, { header: true, skipEmptyLines: 'greedy', dynamicTyping: true, complete: async (r) => {
         try {
@@ -508,7 +512,8 @@ function KpiTrackingContent() {
             firestore,
             r.data as any[],
             format(dateRange?.from || new Date(), 'yyyy-MM'),
-            setUploadProgress
+            setUploadProgress,
+            activeAgency
           );
           toast({
             title: "Sync Complete",
@@ -761,7 +766,7 @@ function KpiTrackingContent() {
                                   );
                                   const weeklyColor = ragStatusTextClass(weeklyStatus) || 'text-secondary';
                                   return (
-                                      <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} /></div></TooltipTrigger><TooltipContent className="rounded-none glass p-3 max-w-[220px]"><div className="space-y-1">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}{weeklyPacingTarget != null && <div className="text-[10px] font-mono text-secondary">Week target: {Math.round(weeklyPacingTarget).toLocaleString()}</div>}</div></TooltipContent></Tooltip></TooltipProvider></TableCell>
+                                      <TableCell key={`cell-${group.id}-${w.id}`} className="text-center p-1"><TooltipProvider><Tooltip><TooltipTrigger asChild><div className="flex items-center justify-center gap-1.5 group"><span className={cn("font-black text-[11px]", weeklyColor)}>{wd.achieved.toLocaleString()}</span><QuickCommentPopover weekData={wd} agencyId={activeAgency} /></div></TooltipTrigger><TooltipContent className="rounded-none glass p-3 max-w-[220px]"><div className="space-y-1">{wd.comment && <div className="text-xs font-medium leading-relaxed">{wd.comment}</div>}{weeklyPacingTarget != null && <div className="text-[10px] font-mono text-secondary">Week target: {Math.round(weeklyPacingTarget).toLocaleString()}</div>}</div></TooltipContent></Tooltip></TooltipProvider></TableCell>
                                   );
                               })}
                               <TableCell className="px-4 text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-none glass p-2"><DropdownMenuItem className="rounded-lg text-xs font-bold" onSelect={openDialogFromMenu(() => { setSelectedKpiId(group.latestId); setIsDialogOpen(true); })}>Edit Latest Month</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
@@ -778,6 +783,7 @@ function KpiTrackingContent() {
         setIsDialogOpen(open);
         if (!open) setSelectedKpiId(null);
       }} onSave={async (data) => {
+        if (!activeAgency) throw new Error('Your account does not have an active agency.');
         const { clientId, clientName, cluster, lob, cduLead, emCsm, channel, kpi, kpiType, currency, ...rest } = data;
         const weeklyT = [rest.w1_target, rest.w2_target, rest.w3_target, rest.w4_target, rest.w5_target];
         const weeklyA = [rest.w1_achieved, rest.w2_achieved, rest.w3_achieved, rest.w4_achieved, rest.w5_achieved];
@@ -786,7 +792,7 @@ function KpiTrackingContent() {
           month: format(dateRange?.to || new Date(), 'yyyy-MM'), 
           clientId: clientId || 'N/A', clientName, cluster: cluster || 'Unassigned', lob: lob || 'N/A', cduLead: cduLead || 'N/A', emCsm: emCsm || 'N/A', channel, kpi, kpiType, currency: currency || 'INR', 
           targetMonth: weeklyT.reduce((a, b) => a + b, 0), achievedMonthTillYesterday: weeklyA.reduce((a, b) => a + b, 0), targetMonthTillYesterday: 0, type: 'Performance' 
-        }, weeklyT.map((t, i) => ({ weekOfMonth: i + 1, target: t, achieved: weeklyA[i], comment: weeklyC[i] || "" })), selectedKpiId);
+        }, weeklyT.map((t, i) => ({ weekOfMonth: i + 1, target: t, achieved: weeklyA[i], comment: weeklyC[i] || "" })), selectedKpiId, activeAgency);
         setIsDialogOpen(false);
       }} kpi={selectedKpi} weeklyData={selectedWeeklyData} currentMonth={format(dateRange?.to || new Date(), "MMMM yyyy")} weekDates={weekDates.filter(w => w.monthKey === format(dateRange?.to || new Date(), 'yyyy-MM')) as any} clients={clients || []} kpis={kpiDefinitions || []} channels={channels || []} />
     </div>
@@ -797,7 +803,7 @@ export default function KpiTrackingPage() {
   return ( <Suspense fallback={<div className="flex items-center justify-center py-10"><Loader2 className="animate-spin h-6 w-6 text-primary/40" /></div>}><KpiTrackingContent /></Suspense> );
 }
 
-export function QuickCommentPopover({ weekData }: { weekData: KpiWeeklyData }) {
+export function QuickCommentPopover({ weekData, agencyId }: { weekData: KpiWeeklyData; agencyId: AgencyId | null }) {
     const firestore = useFirestore();
     const [comment, setComment] = useState(weekData.comment || "");
     const [isSaving, setIsSaving] = useState(false);
@@ -809,7 +815,22 @@ export function QuickCommentPopover({ weekData }: { weekData: KpiWeeklyData }) {
             <PopoverContent className="w-[260px] p-4 rounded-none glass space-y-3" align="center" onClick={(e) => e.stopPropagation()}>
                 <span className="text-[10px] font-black uppercase tracking-widest text-primary/80">Add Comment (W{weekData.weekOfMonth})</span>
                 <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Provide context..." className="min-h-[80px] rounded-none bg-foreground/5 border-none text-xs" />
-                <div className="flex justify-end pt-1"><Button size="sm" className="h-8 rounded-lg font-bold text-[10px]" onClick={async () => { setIsSaving(true); await updateWeeklyComment(firestore, weekData.id, comment); toast({ title: "Comment saved" }); setIsSaving(false); setIsOpen(false); }} disabled={isSaving}>{isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}Save</Button></div>
+                <div className="flex justify-end pt-1"><Button size="sm" className="h-8 rounded-lg font-bold text-[10px]" onClick={async () => {
+                  if (!agencyId) {
+                    toast({ variant: 'destructive', title: 'Save failed', description: 'Your account does not have an active agency.' });
+                    return;
+                  }
+                  setIsSaving(true);
+                  try {
+                    await updateWeeklyComment(firestore, weekData.id, comment, agencyId);
+                    toast({ title: 'Comment saved' });
+                    setIsOpen(false);
+                  } catch (error) {
+                    toast({ variant: 'destructive', title: 'Save failed', description: error instanceof Error ? error.message : 'Could not save comment.' });
+                  } finally {
+                    setIsSaving(false);
+                  }
+                }} disabled={isSaving}>{isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}Save</Button></div>
             </PopoverContent>
         </Popover>
     );

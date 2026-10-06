@@ -24,7 +24,7 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
-import { type AgencyId, agencyCollectionPath, DEFAULT_AGENCY } from './agencies';
+import { type AgencyId, getCollectionPath, DEFAULT_AGENCY } from './agencies';
 import { saveAs } from 'file-saver';
 import type {
   ActionItem,
@@ -323,7 +323,7 @@ async function fetchCollection<T>(
   constraints: QueryConstraint[] = [],
   agencyId: AgencyId = DEFAULT_AGENCY
 ): Promise<(T & { id: string })[]> {
-  const ref = collection(db, agencyCollectionPath(agencyId, collectionName));
+  const ref = collection(db, getCollectionPath(agencyId, collectionName)!);
   const snap = await getDocs(constraints.length ? query(ref, ...constraints) : ref);
   return mapDocs<T>(snap);
 }
@@ -344,7 +344,7 @@ async function fetchPagedById<T>(
       ...(cursor ? [startAfter(cursor)] : []),
       limit(PAGE),
     ];
-    const snap = await getDocs(query(collection(db, agencyCollectionPath(agencyId, collectionName)), ...constraints));
+    const snap = await getDocs(query(collection(db, getCollectionPath(agencyId, collectionName)!), ...constraints));
     if (snap.empty) break;
     results.push(...mapDocs<T>(snap));
     if (snap.size < PAGE) break;
@@ -365,9 +365,9 @@ async function fetchKpisForMonth(db: Firestore, month: string, agencyId: AgencyI
 async function resolveHealthKpiMonth(db: Firestore, fallbackMonth: string, agencyId: AgencyId = DEFAULT_AGENCY): Promise<string> {
   const calendarMonth = format(new Date(), 'yyyy-MM');
   try {
-    const calSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId, 'kpis')), where('month', '==', calendarMonth), limit(1)));
+    const calSnap = await getDocs(query(collection(db, getCollectionPath(agencyId, 'kpis')!), where('month', '==', calendarMonth), limit(1)));
     if (!calSnap.empty) return calendarMonth;
-    const latestSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId, 'kpis')), orderBy('month', 'desc'), limit(1)));
+    const latestSnap = await getDocs(query(collection(db, getCollectionPath(agencyId, 'kpis')!), orderBy('month', 'desc'), limit(1)));
     const latestMonth = latestSnap.docs[0]?.data()?.month as string | undefined;
     if (latestMonth && /^\d{4}-\d{2}$/.test(latestMonth)) return latestMonth;
   } catch {

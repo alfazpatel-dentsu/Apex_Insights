@@ -175,7 +175,8 @@ function SalesTrackerContent() {
 
   const handleSave = async (data: any) => {
     try {
-      await saveLead(firestore, data, selectedLead?.id);
+      if (!activeAgency) throw new Error('Your account does not have an active agency.');
+      await saveLead(firestore, data, selectedLead?.id, activeAgency);
       toast({ title: selectedLead ? "Lead updated" : "New prospect registered" });
     } catch (e: any) {
       toast({ variant: 'destructive', title: "Save failed", description: e.message });
@@ -240,6 +241,10 @@ function SalesTrackerContent() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!activeAgency) {
+      toast({ variant: 'destructive', title: 'Upload failed', description: 'Your account does not have an active agency.' });
+      return;
+    }
     setIsUploading(true);
     setUploadProgress(0);
     Papa.parse(file, {
@@ -248,7 +253,7 @@ function SalesTrackerContent() {
       dynamicTyping: true,
       complete: async (r) => {
         try {
-          const { processedCount } = await bulkSaveLeads(firestore, r.data as any[], setUploadProgress);
+          const { processedCount } = await bulkSaveLeads(firestore, r.data as any[], setUploadProgress, activeAgency);
           toast({ title: 'Sync Complete', description: `${processedCount} leads saved.` });
         } catch (err: any) {
           toast({ variant: 'destructive', title: 'Sync Failed', description: err.message });
@@ -438,7 +443,8 @@ function SalesTrackerContent() {
             <AlertDialogCancel className="rounded-none h-12 px-6 font-bold uppercase text-[10px] tracking-widest">Abort</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-none h-12 px-8 font-black uppercase text-[10px] tracking-widest" onClick={async () => {
               if (deletingId) {
-                await deleteLead(firestore, deletingId);
+                if (!activeAgency) throw new Error('Your account does not have an active agency.');
+                await deleteLead(firestore, deletingId, activeAgency);
                 toast({ title: 'Lead deleted' });
                 setDeletingId(null);
               }

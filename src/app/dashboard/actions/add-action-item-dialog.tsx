@@ -110,7 +110,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const firestore = useFirestore();
   const { toast } = useToast();
   const { user } = useUser();
-  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const { data: userProfile, loading: userProfileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const activeAgency = getActiveAgency(userProfile);
   const clientsPath = getCollectionPath(activeAgency, 'clients');
   const kpisPath = getCollectionPath(activeAgency, 'kpis');
@@ -122,12 +122,9 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
 
   const { data: explicitClients } = useCollection<Client>(clientsPath);
   const { data: kpiRecords } = useCollection<KpiData>(kpisPath);
-  // Note: users collection is not scoped by agency; try to load if activeAgency exists
-  const { data: registryUsers, loading: usersLoading } = useCollection<UserProfile>(activeAgency ? 'users' : null);
-
   const assigneeOptions = useMemo(
-    () => buildAssigneeOptions(registryUsers),
-    [registryUsers]
+    () => buildAssigneeOptions(userProfile ? [userProfile] : []),
+    [userProfile]
   );
 
   const discoveredClients = useMemo(() => {
@@ -250,10 +247,12 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
           ),
         }),
       };
+      if (!activeAgency) throw new Error('Your account does not have an active agency.');
       const { commentHistory } = await deleteActionComment(
         firestore,
         base,
-        deletingCommentId
+        deletingCommentId,
+        activeAgency
       );
       setLocalHistory(
         [...commentHistory].sort(
@@ -277,6 +276,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const onSubmit = async (data: ActionFormValues) => {
     setIsSaving(true);
     try {
+      if (!activeAgency) throw new Error('Your account does not have an active agency.');
       let finalClientName = data.clientName;
       if (data.clientId && !data.clientName) {
           const found = discoveredClients?.find(c => c.uniqueId === data.clientId);
@@ -324,7 +324,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
           commentHistory,
           createdAt: action?.createdAt,
         },
-        action?.id
+        action?.id,
+        activeAgency
       );
       toast({ title: action ? "Task updated" : "Task created" });
       handleOpenChange(false);
@@ -366,7 +367,7 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                         options={assigneeOptions}
                         value={field.value || []}
                         onChange={field.onChange}
-                        loading={usersLoading}
+                        loading={userProfileLoading}
                       />
                     </FormControl>
                     <FormMessage />
@@ -575,4 +576,3 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
     </Dialog>
   );
 }
-

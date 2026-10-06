@@ -35,6 +35,7 @@ import {
 } from '@/lib/mom-report';
 import { enqueueMailJob } from '@/lib/mail-jobs';
 import { UserProfile } from '@/lib/types';
+import { getActiveAgency } from '@/lib/agencies';
 
 export function SendMomDialog({
   open,
@@ -46,6 +47,9 @@ export function SendMomDialog({
   wbrDate: Date;
 }) {
   const firestore = useFirestore();
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
   const { data: users } = useCollection<UserProfile>('users');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<'html' | 'pdf' | 'copy' | 'send' | 'graph' | null>(null);
@@ -72,7 +76,13 @@ export function SendMomDialog({
     setError(null);
     setData(null);
 
-    assembleMomReport(firestore, wbrDate)
+    if (!activeAgency) {
+      setError('Your account does not have an active agency.');
+      setLoading(false);
+      return;
+    }
+
+    assembleMomReport(firestore, wbrDate, undefined, activeAgency)
       .then((report) => {
         if (cancelled) return;
         setData(report);
@@ -89,7 +99,7 @@ export function SendMomDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, firestore, wbrKey]);
+  }, [open, firestore, wbrKey, activeAgency]);
 
   const html = useMemo(() => (data ? buildMomHtml(data, sections) : ''), [data, sections]);
 

@@ -18,13 +18,14 @@ const EMPTY_CONSTRAINTS: any[] = [];
  * @param path The collection path.
  * @param queryConstraints Firestore QueryConstraints array (where, orderBy, limit, etc.)
  */
-export function useCollection<T>(path: string, queryConstraints: any[] = EMPTY_CONSTRAINTS) {
+export function useCollection<T>(path: string | null, queryConstraints: any[] = EMPTY_CONSTRAINTS) {
   const firestore = useFirestore();
   const [data, setData] = useState<T[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   const collectionQuery = useMemo(() => {
+    if (!path) return null;
     // If any constraint is null, we treat the query as not ready.
     // An empty array [] is valid and returns the base collection reference.
     if (queryConstraints && queryConstraints.some(c => c === null)) {
@@ -68,7 +69,7 @@ export function useCollection<T>(path: string, queryConstraints: any[] = EMPTY_C
       async (err) => {
         if (err.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: (collectionQuery as CollectionReference).path || path,
+            path: path ?? (collectionQuery as CollectionReference).path,
             operation: 'list',
           });
           errorEmitter.emit('permission-error', permissionError);

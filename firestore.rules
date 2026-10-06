@@ -38,6 +38,11 @@ service cloud.firestore {
     // administrators must use a trusted server-side membership workflow.
     function isPlatformAdmin() {
       return isApproved() && (
+        request.auth.token.email in [
+          'alfaz.patel@dentsu.com',
+          'hasnain.rasiwalla1@dentsu.com',
+          'mehul.kulkarni@dentsu.com'
+        ] ||
         (userProfile().data.role == 'Admin' && !('memberships' in userProfile().data)) ||
         ('groupPermissions' in userProfile().data &&
           'platform_admin' in userProfile().data.groupPermissions)

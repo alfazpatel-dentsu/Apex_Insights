@@ -46,8 +46,8 @@ import {
 import { query, collection, where, getDocs, getDoc, doc, limit, type Firestore } from 'firebase/firestore';
 
 import { useFirestore, useUser, useDoc, useCollection } from '@/firebase';
-import { Client, WbrEntry, UserProfile, KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, RagStatus, ActionItem } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
+import { Client, WbrEntry, UserProfile, KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, RagStatus, ActionItem, AgencyId } from '@/lib/types';
+import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { displayAssigned } from '@/lib/assignees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,11 +103,11 @@ async function fetchClientMonthRange<T extends { month?: string }>(
   clientId: string,
   startMonth: string,
   endMonth: string,
-  agencyId: string,
+  agencyId: AgencyId,
 ): Promise<(T & { id: string })[]> {
   try {
     const snap = await getDocs(query(
-      collection(db, agencyCollectionPath(agencyId as any, collectionName)),
+      collection(db, getCollectionPath(agencyId, collectionName)!),
       where('clientId', '==', clientId),
       where('month', '>=', startMonth),
       where('month', '<=', endMonth),
@@ -115,7 +115,7 @@ async function fetchClientMonthRange<T extends { month?: string }>(
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) } as T & { id: string }));
   } catch {
     const snap = await getDocs(query(
-      collection(db, agencyCollectionPath(agencyId as any, collectionName)),
+      collection(db, getCollectionPath(agencyId, collectionName)!),
       where('clientId', '==', clientId),
     ));
     return snap.docs
@@ -155,7 +155,7 @@ export default function WbrEditPage() {
 
   const [isActionDialogOpen, setIsActionDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionItem | null>(null);
-  const actionsPath = activeAgency ? agencyCollectionPath(activeAgency, 'actionItems') : null;
+  const actionsPath = getCollectionPath(activeAgency, 'actionItems');
   const actionsConstraints = useMemo(() => [where('clientId', '==', actualClientId), limit(50)], [actualClientId]);
   const { data: clientActions } = useCollection<ActionItem>(actionsPath, actionsConstraints);
 
@@ -224,7 +224,7 @@ export default function WbrEditPage() {
           cData = clientSnap.docs[0].data() as Client;
         } else {
           const kpiRefSnap = await getDocs(query(
-            collection(firestore, agencyCollectionPath(activeAgency, 'kpis')),
+            collection(firestore, getCollectionPath(activeAgency, 'kpis')!),
             where('clientId', '==', actualClientId),
             limit(1)
           ));
@@ -247,7 +247,7 @@ export default function WbrEditPage() {
           existingEntry = { id: wbrDirect.id, ...wbrDirect.data() } as WbrEntry;
         } else {
           const byDate = await getDocs(query(
-            collection(firestore, wbrCollectionPath),
+            collection(firestore, wbrCollectionPath!),
             where('clientId', '==', actualClientId),
             where('wbrDate', '==', wbrDate),
             limit(1)
@@ -333,7 +333,7 @@ export default function WbrEditPage() {
           const chunks: string[][] = [];
           for (let i = 0; i < kpiIds.length; i += 30) chunks.push(kpiIds.slice(i, i + 30));
           const weeklyParts = await Promise.all(chunks.map((chunk) =>
-            getDocs(query(collection(firestore, agencyCollectionPath(activeAgency, 'kpiWeeklyData')), where('kpiDataId', 'in', chunk)))
+            getDocs(query(collection(firestore, getCollectionPath(activeAgency, 'kpiWeeklyData')!), where('kpiDataId', 'in', chunk)))
           ));
           if (cancelled) return;
           const weeklyKpiList: KpiWeeklyData[] = [];
@@ -385,7 +385,8 @@ export default function WbrEditPage() {
   const onSubmit = async (values: WbrFormValues) => {
     setIsSaving(true);
     try {
-      await saveWbrEntry(firestore, { ...values, clientId: actualClientId, wbrDate });
+      if (!activeAgency) throw new Error('Your account does not have an active agency.');
+      await saveWbrEntry(firestore, { ...values, clientId: actualClientId, wbrDate }, activeAgency);
       toast({ title: "Review session synchronized" });
       router.push('/dashboard/wbr');
     } catch (e: any) {
@@ -1016,7 +1017,7 @@ export default function WbrEditPage() {
                           );
                         })()}</TableCell>
                         <TableCell className="max-w-[200px] truncate text-[10px] font-medium opacity-60">{action.comment || action.description}</TableCell>
-                        <TableCell className="px-4"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-none"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-none glass p-2 min-w-[140px]"><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest gap-2" onSelect={openDialogFromMenu(() => { setSelectedAction(action); setIsActionDialogOpen(true); })}>Update Protocol</DropdownMenuItem><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest text-destructive gap-2 focus:bg-destructive/10 focus:text-destructive" onClick={() => deleteActionItem(firestore, action.id)}>Purge Task</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                        <TableCell className="px-4"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-none"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-none glass p-2 min-w-[140px]"><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest gap-2" onSelect={openDialogFromMenu(() => { setSelectedAction(action); setIsActionDialogOpen(true); })}>Update Protocol</DropdownMenuItem><DropdownMenuItem className="rounded-lg text-[9px] font-black uppercase tracking-widest text-destructive gap-2 focus:bg-destructive/10 focus:text-destructive" onClick={() => activeAgency && deleteActionItem(firestore, action.id, activeAgency)}>Purge Task</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

@@ -31,7 +31,7 @@ import {
 
 import { useFirestore, useUser, useDoc } from '@/firebase';
 import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, Client, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -69,12 +69,12 @@ export default function ClientDeepDivePage() {
       setIsLoading(true);
       try {
         // Discovery Logic: Find client context
-        const clientRefQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'clients')), where('uniqueId', '==', clientId));
+        const clientRefQ = query(collection(firestore, getCollectionPath(activeAgency, 'clients')!), where('uniqueId', '==', clientId));
         const clientSnap = await getDocs(clientRefQ);
         if (!clientSnap.empty) {
           setClientInfo(clientSnap.docs[0].data() as Client);
         } else {
-          const kpiRefQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpis')), where('clientId', '==', clientId), limit(1));
+          const kpiRefQ = query(collection(firestore, getCollectionPath(activeAgency, 'kpis')!), where('clientId', '==', clientId), limit(1));
           const kpiRefSnap = await getDocs(kpiRefQ);
           if (!kpiRefSnap.empty) {
             const d = kpiRefSnap.docs[0].data();
@@ -83,7 +83,7 @@ export default function ClientDeepDivePage() {
         }
 
         // Fetch Data Sets
-        const kpiQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpis')), where('clientId', '==', clientId));
+        const kpiQ = query(collection(firestore, getCollectionPath(activeAgency, 'kpis')!), where('clientId', '==', clientId));
         const kpiSnap = await getDocs(kpiQ);
         const kpiList = kpiSnap.docs.map(d => ({ id: d.id, ...d.data() } as KpiData));
         setKpis(kpiList);
@@ -93,7 +93,7 @@ export default function ClientDeepDivePage() {
           const kpiIds = kpiList.map(k => k.id);
           for (let i = 0; i < kpiIds.length; i += 30) {
             const chunk = kpiIds.slice(i, i + 30);
-            const wq = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpiWeeklyData')), where('kpiDataId', 'in', chunk));
+            const wq = query(collection(firestore, getCollectionPath(activeAgency, 'kpiWeeklyData')!), where('kpiDataId', 'in', chunk));
             const wSnap = await getDocs(wq);
             wSnap.forEach(d => weeklyKpiList.push({ id: d.id, ...d.data() } as KpiWeeklyData));
           }

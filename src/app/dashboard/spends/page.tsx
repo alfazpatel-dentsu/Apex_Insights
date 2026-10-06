@@ -227,14 +227,16 @@ function SpendsContent() {
   }, [weeklySpends, searchQuery, dateRange]);
 
   const handleSaveMonthly = async (values: z.infer<typeof monthlySpendSchema>) => {
-    await saveMonthlySpend(firestore, values, editingMonthly?.id || values.uploadRecordId);
+    if (!activeAgency) throw new Error('Your account does not have an active agency.');
+    await saveMonthlySpend(firestore, values, editingMonthly?.id || values.uploadRecordId, activeAgency);
     toast({ title: editingMonthly ? 'Record updated' : 'Record saved' });
     setIsMonthlyDialogOpen(false);
     setEditingMonthly(null);
   };
 
   const handleSaveWeekly = async (values: z.infer<typeof weeklySpendSchema>) => {
-    await saveWeeklySpend(firestore, values, editingWeekly?.id || values.uploadRecordId);
+    if (!activeAgency) throw new Error('Your account does not have an active agency.');
+    await saveWeeklySpend(firestore, values, editingWeekly?.id || values.uploadRecordId, activeAgency);
     toast({ title: editingWeekly ? 'Record updated' : 'Record saved' });
     setIsWeeklyDialogOpen(false);
     setEditingWeekly(null);
@@ -243,6 +245,10 @@ function SpendsContent() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      if (!activeAgency) {
+        toast({ variant: 'destructive', title: 'Upload failed', description: 'Your account does not have an active agency.' });
+        return;
+      }
       setIsUploading(true);
       setUploadProgress(0);
       Papa.parse(file, {
@@ -253,9 +259,9 @@ function SpendsContent() {
           try {
             let processedCount = 0;
             if (activeTab === 'monthly') {
-              processedCount = await bulkSaveMonthlySpends(firestore, results.data, setUploadProgress);
+              processedCount = await bulkSaveMonthlySpends(firestore, results.data, setUploadProgress, activeAgency);
             } else {
-              processedCount = await bulkSaveWeeklySpends(firestore, results.data, setUploadProgress);
+              processedCount = await bulkSaveWeeklySpends(firestore, results.data, setUploadProgress, activeAgency);
             }
             toast({ title: "Upload Successful", description: `${processedCount} records saved to Aztec database.` });
           } catch (error: any) {
@@ -594,8 +600,9 @@ function SpendsContent() {
             <AlertDialogCancel className="rounded-none h-12 px-6 font-bold">Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive hover:bg-destructive/90 rounded-none h-12 px-8 font-black" onClick={async () => {
               if (deletingId) {
-                if (activeTab === 'monthly') await deleteMonthlySpend(firestore, deletingId);
-                else await deleteWeeklySpend(firestore, deletingId);
+                if (!activeAgency) throw new Error('Your account does not have an active agency.');
+                if (activeTab === 'monthly') await deleteMonthlySpend(firestore, deletingId, activeAgency);
+                else await deleteWeeklySpend(firestore, deletingId, activeAgency);
                 toast({ title: 'Record deleted' });
                 setDeletingId(null);
               }
