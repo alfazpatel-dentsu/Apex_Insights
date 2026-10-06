@@ -26,8 +26,9 @@ import {
 import { format, parse, subMonths, subWeeks, isValid } from 'date-fns';
 import { where } from 'firebase/firestore';
 
-import { useCollection } from '@/firebase';
-import { MonthlySpend, WeeklySpend } from '@/lib/types';
+import { useCollection, useUser, useDoc } from '@/firebase';
+import { MonthlySpend, WeeklySpend, UserProfile } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { canonicalizeChannel } from '@/lib/normalize';
 import {
   aggregateBrandSpendBreakdown,
@@ -282,6 +283,12 @@ const renderVarianceRow = (growth: number, varianceAmount: number | undefined, l
 };
 
 export function SpendsAnalytics() {
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
+  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
+  const weeklyPath = activeAgency ? agencyCollectionPath(activeAgency, 'weeklySpends') : null;
+
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [availableYears, setAvailableYears] = useState<string[]>([]);
@@ -307,7 +314,7 @@ export function SpendsAnalytics() {
       setPeriodB('');
     }
   }, [compareGrain]);
-  
+
   useEffect(() => {
     setMounted(true);
     const cy = new Date().getFullYear();
@@ -324,8 +331,8 @@ export function SpendsAnalytics() {
     ];
   }, [selectedYear]);
 
-  const { data: rawMonthlyData, loading: monthlyLoading } = useCollection<MonthlySpend>('monthlySpends', queryConstraints);
-  const { data: rawWeeklyData, loading: weeklyLoading } = useCollection<WeeklySpend>('weeklySpends', queryConstraints);
+  const { data: rawMonthlyData, loading: monthlyLoading } = useCollection<MonthlySpend>(monthlyPath, queryConstraints);
+  const { data: rawWeeklyData, loading: weeklyLoading } = useCollection<WeeklySpend>(weeklyPath, queryConstraints);
 
   useEffect(() => {
     if (rawMonthlyData && rawMonthlyData.length > 0) {

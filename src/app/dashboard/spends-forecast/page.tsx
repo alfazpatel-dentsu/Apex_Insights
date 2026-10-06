@@ -14,8 +14,9 @@ import {
 } from 'recharts';
 import { Download, Loader2, Info } from 'lucide-react';
 
-import { useCollection } from '@/firebase';
-import { MonthlySpend } from '@/lib/types';
+import { useCollection, useUser, useDoc } from '@/firebase';
+import { MonthlySpend, UserProfile } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import {
   buildSpendForecast,
   formatMonthLabel,
@@ -101,6 +102,11 @@ function downloadCsv(filename: string, rows: Record<string, string | number>[]) 
 }
 
 export default function SpendsForecastPage() {
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
+  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
+
   const [mounted, setMounted] = useState(false);
   const [dimension, setDimension] = useState<DimensionFilter>('overall');
   const [dimensionValue, setDimensionValue] = useState<string>('all');
@@ -110,7 +116,7 @@ export default function SpendsForecastPage() {
     setMounted(true);
   }, []);
 
-  const { data: rawMonthlyData, loading } = useCollection<MonthlySpend>('monthlySpends');
+  const { data: rawMonthlyData, loading } = useCollection<MonthlySpend>(monthlyPath);
 
   const filterOptions = useMemo(() => {
     if (!rawMonthlyData) return { industries: [], types: [], teams: [] };

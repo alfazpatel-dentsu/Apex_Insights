@@ -38,8 +38,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { useCollection, useFirestore } from '@/firebase';
-import { Lead, LeadStatus } from '@/lib/types';
+import { useCollection, useFirestore, useUser, useDoc } from '@/firebase';
+import { Lead, LeadStatus, UserProfile } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { saveLead, deleteLead, bulkSaveLeads } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { PageHeader } from '@/components/page-header';
@@ -129,7 +130,12 @@ function SalesTrackerContent() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { data: leads, loading } = useCollection<Lead>('leads');
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
+  const leadsPath = activeAgency ? agencyCollectionPath(activeAgency, 'leads') : null;
+
+  const { data: leads, loading } = useCollection<Lead>(leadsPath);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [search, setSearch] = useState('');
