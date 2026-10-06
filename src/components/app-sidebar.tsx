@@ -59,8 +59,10 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
     if (isPreview && !profile) return nav;
     if (!profile) return [];
     if (profile.role === 'Admin') return nav;
-    
-    const userPermissions = profile.permissions || [];
+
+    // For users without explicit permissions (e.g., iProspect users), show all pages
+    // Data filtering happens at the Firestore level via security rules
+    const userPermissions = profile.permissions || nav.map(item => item.permission);
     return nav.filter(item => userPermissions.includes(item.permission));
   }, [profile, isPreview]);
 

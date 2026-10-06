@@ -32,18 +32,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       }
 
       if (pathname.startsWith('/dashboard')) {
-        // Legacy dashboard routes read root-level Sokrati collections. Never
-        // let an iProspect-only user enter them while tenant-scoped pages are
-        // being rolled out; otherwise the page issues denied reads and can
-        // display stale client state from a prior account.
-        if (hasAgencyAccess(userProfile, 'iprospect') && !hasAgencyAccess(userProfile, 'sokrati')) {
-          router.replace('/iprospect');
-          return;
-        }
-
         const isAdmin = userProfile.role === 'Admin';
+        const hasExplicitPermissions = Array.isArray(userProfile.permissions) && userProfile.permissions.length > 0;
         const permissions = Array.isArray(userProfile.permissions) ? userProfile.permissions : [];
-        
+
         // CRITICAL: Order matters here to prevent prefix matching overlaps
         // e.g. /dashboard/spends-dashboard should not be caught by /dashboard/spends
         const routeMapping = [
@@ -61,7 +53,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         const match = routeMapping.find(m => pathname.startsWith(m.path));
         const requiredPermission = match?.key;
 
-        if (requiredPermission && !isAdmin && !permissions.includes(requiredPermission)) {
+        // Allow access if: admin, has explicit permissions and includes required, or no explicit permissions (default access)
+        if (requiredPermission && !isAdmin && hasExplicitPermissions && !permissions.includes(requiredPermission)) {
           // Find first allowed page, fallback to snapshot if none (though sidebar handles this visually)
           const firstAllowed = routeMapping.find(m => permissions.includes(m.key))?.path || '/dashboard/business-snapshot';
           router.push(firstAllowed);

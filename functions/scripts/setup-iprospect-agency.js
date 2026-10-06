@@ -110,6 +110,7 @@ async function createTestUsers() {
 
       // Create or update Firestore user profile with iProspect membership
       const userProfileRef = db.doc(`users/${userRecord.uid}`);
+      const defaultPermissions = ['snapshot', 'sales', 'tracker', 'spends', 'dashboard', 'forecast', 'wbr', 'actions'];
       await userProfileRef.set({
         uid: userRecord.uid,
         email: user.email,
@@ -117,6 +118,7 @@ async function createTestUsers() {
         role: user.role,
         status: 'Active', // Required for Firestore security rules isApproved() check
         createdAt: Timestamp.now(),
+        permissions: user.role === 'Admin' ? undefined : defaultPermissions,
         memberships: {
           'iprospect': {
             agencyId: 'iprospect',
