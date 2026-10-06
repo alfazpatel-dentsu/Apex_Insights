@@ -27,7 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry, UserProfile } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection, useUser, useDoc } from '@/firebase';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { assigneesFromItem, assignedToLabel, type ActionAssignee } from '@/lib/assignees';
 import { AssigneePicker } from '@/components/assignee-picker';
 import { buildAssigneeOptions } from '@/lib/assignee-options';
@@ -112,8 +112,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const activeAgency = getActiveAgency(userProfile);
-  const clientsPath = activeAgency ? agencyCollectionPath(activeAgency, 'clients') : null;
-  const kpisPath = activeAgency ? agencyCollectionPath(activeAgency, 'kpis') : null;
+  const clientsPath = getCollectionPath(activeAgency, 'clients');
+  const kpisPath = getCollectionPath(activeAgency, 'kpis');
 
   const [isSaving, setIsSaving] = useState(false);
   const [localHistory, setLocalHistory] = useState<ActionCommentEntry[]>([]);

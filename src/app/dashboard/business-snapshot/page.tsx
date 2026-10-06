@@ -30,7 +30,7 @@ import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
 import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, type ClientPath } from '@/lib/kpi-rag';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import {
   aggregateBrandSpendBreakdown,
@@ -261,11 +261,10 @@ export default function BusinessSnapshotPage() {
     setMonthlyWindow([where('month', '>=', ytdCompareStart)]);
   }, []);
 
-  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
-  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
+  const monthlyPath = getCollectionPath(activeAgency, 'monthlySpends');
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>(monthlyPath, monthlyWindow);
 
-  const weeklyPath = activeAgency ? (activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends')) : null;
+  const weeklyPath = getCollectionPath(activeAgency, 'weeklySpends');
   const { data: weeklySpends } = useCollection<WeeklySpend>(weeklyPath, statsWindow);
 
   const channelSpendPulse = useMemo(() => {

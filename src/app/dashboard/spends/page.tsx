@@ -53,7 +53,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCollection, useFirestore, useUser, useDoc } from '@/firebase';
 import { MonthlySpend, WeeklySpend, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { 
   saveMonthlySpend, 
   saveWeeklySpend, 
@@ -144,8 +144,7 @@ function SpendsContent() {
     ];
   }, [dateRange, shouldFetch]);
 
-  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
-  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
+  const monthlyPath = getCollectionPath(activeAgency, 'monthlySpends');
   const { data: monthlySpends, loading: monthlyLoading } = useCollection<MonthlySpend>(monthlyPath, monthlyConstraints);
   const [weeklySpends, setWeeklySpends] = useState<WeeklySpend[] | null>(null);
   const [weeklyLoading, setWeeklyLoading] = useState(false);
@@ -162,7 +161,7 @@ function SpendsContent() {
       try {
         const startStr = format(dateRange.from!, 'yyyy-MM');
         const endStr = format(dateRange.to!, 'yyyy-MM');
-        const weeklyCollectionPath = activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends');
+        const weeklyCollectionPath = getCollectionPath(activeAgency, 'weeklySpends')!;
 
         const q = query(
           collection(firestore, weeklyCollectionPath),

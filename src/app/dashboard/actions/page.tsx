@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useCollection, useFirestore, useUser, useDoc } from '@/firebase';
 import { ActionItem, ActionStatus, ActionPriority, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { deleteActionItem, saveActionItem } from '@/lib/firestore-actions';
 import { canonicalizeActionStatus, resolveActionStatus } from '@/lib/normalize';
 import { displayAssigned } from '@/lib/assignees';
@@ -138,7 +138,7 @@ export default function ActionItemsPage() {
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const activeAgency = getActiveAgency(userProfile);
-  const actionsPath = activeAgency ? agencyCollectionPath(activeAgency, 'actionItems') : null;
+  const actionsPath = getCollectionPath(activeAgency, 'actionItems');
 
   const { data: actions, loading } = useCollection<ActionItem>(actionsPath);
 
