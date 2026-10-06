@@ -105,7 +105,9 @@ function WbrPageContent() {
     ];
   }, [currentWbrDate]);
 
-  const { data: wbrEntries, loading: wbrLoading } = useCollection<WbrEntry>(activeAgency ? agencyCollectionPath(activeAgency, 'wbrEntries') : null, wbrConstraints);
+  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
+  const wbrPath = activeAgency ? (activeAgency === 'sokrati' ? 'wbrEntries' : agencyCollectionPath(activeAgency, 'wbrEntries')) : null;
+  const { data: wbrEntries, loading: wbrLoading } = useCollection<WbrEntry>(wbrPath, wbrConstraints);
 
   const allClients = useMemo(() => {
     const uniqueList: Client[] = [];
