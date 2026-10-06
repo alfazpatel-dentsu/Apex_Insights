@@ -38,6 +38,10 @@ export function hasAgencyAccess(profile: UserProfile | null | undefined, agencyI
 
   // Transitional compatibility for existing approved Sokrati profiles. Remove
   // after every legacy profile has been backfilled with memberships.sokrati.
+  // Only apply backward compat if user has NO memberships (legacy profiles).
+  const hasAnyMembership = profile?.memberships && Object.keys(profile.memberships).length > 0;
+  if (hasAnyMembership) return false;
+
   return agencyId === 'sokrati' && Boolean(profile?.status && profile.status !== 'Pending');
 }
 
