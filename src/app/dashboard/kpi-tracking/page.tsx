@@ -139,17 +139,22 @@ function KpiTrackingContent() {
     ];
   }, [dateRange, shouldFetch]);
 
-  const { data: kpiData, loading: kpiLoading } = useCollection<KpiData>('kpis', kpiConstraints);
+  const kpiPath = activeAgency ? agencyCollectionPath(activeAgency, 'kpis') : null;
+  const clientsPath = activeAgency ? agencyCollectionPath(activeAgency, 'clients') : null;
+  const kpiDefsPath = activeAgency ? agencyCollectionPath(activeAgency, 'kpiDefinitions') : null;
+  const channelsPath = activeAgency ? agencyCollectionPath(activeAgency, 'channels') : null;
+
+  const { data: kpiData, loading: kpiLoading } = useCollection<KpiData>(kpiPath && shouldFetch ? kpiPath : null, kpiConstraints);
   const [weeklyData, setWeeklyData] = useState<KpiWeeklyData[]>([]);
   const [weeklyLoading, setWeeklyLoading] = useState(false);
-  
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedKpiId, setSelectedKpiId] = useState<string | undefined>(undefined);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' }>({ key: 'clientName', direction: 'ascending' });
 
-  const { data: clients } = useCollection<Client>('clients');
-  const { data: kpiDefinitions } = useCollection<Kpi>('kpiDefinitions');
-  const { data: channels } = useCollection<Channel>('channels');
+  const { data: clients } = useCollection<Client>(clientsPath);
+  const { data: kpiDefinitions } = useCollection<Kpi>(kpiDefsPath);
+  const { data: channels } = useCollection<Channel>(channelsPath);
   
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);

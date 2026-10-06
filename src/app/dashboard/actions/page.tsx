@@ -41,8 +41,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useCollection, useFirestore } from '@/firebase';
-import { ActionItem, ActionStatus, ActionPriority } from '@/lib/types';
+import { useCollection, useFirestore, useUser, useDoc } from '@/firebase';
+import { ActionItem, ActionStatus, ActionPriority, UserProfile } from '@/lib/types';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { deleteActionItem, saveActionItem } from '@/lib/firestore-actions';
 import { canonicalizeActionStatus, resolveActionStatus } from '@/lib/normalize';
 import { displayAssigned } from '@/lib/assignees';
@@ -134,7 +135,12 @@ function dueTone(dueDate?: string, status?: ActionStatus) {
 export default function ActionItemsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { data: actions, loading } = useCollection<ActionItem>('actionItems');
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
+  const actionsPath = activeAgency ? agencyCollectionPath(activeAgency, 'actionItems') : null;
+
+  const { data: actions, loading } = useCollection<ActionItem>(actionsPath);
 
   const [search, setSearch] = useState('');
   const [sectionFilter, setSectionFilter] = useState<string>('all');

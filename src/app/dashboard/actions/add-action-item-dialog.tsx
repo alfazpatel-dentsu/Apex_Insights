@@ -26,7 +26,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry, UserProfile } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useFirestore, useCollection } from '@/firebase';
+import { useFirestore, useCollection, useUser, useDoc } from '@/firebase';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { assigneesFromItem, assignedToLabel, type ActionAssignee } from '@/lib/assignees';
 import { AssigneePicker } from '@/components/assignee-picker';
 import { buildAssigneeOptions } from '@/lib/assignee-options';
@@ -108,13 +109,19 @@ function resolveCommentHistory(action?: ActionItem | null): ActionCommentEntry[]
 export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName, action }: AddActionItemDialogProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { user } = useUser();
+  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const activeAgency = getActiveAgency(userProfile);
+  const clientsPath = activeAgency ? agencyCollectionPath(activeAgency, 'clients') : null;
+  const kpisPath = activeAgency ? agencyCollectionPath(activeAgency, 'kpis') : null;
+
   const [isSaving, setIsSaving] = useState(false);
   const [localHistory, setLocalHistory] = useState<ActionCommentEntry[]>([]);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [isDeletingComment, setIsDeletingComment] = useState(false);
-  
-  const { data: explicitClients } = useCollection<Client>('clients');
-  const { data: kpiRecords } = useCollection<KpiData>('kpis');
+
+  const { data: explicitClients } = useCollection<Client>(clientsPath);
+  const { data: kpiRecords } = useCollection<KpiData>(kpisPath);
   const { data: registryUsers, loading: usersLoading } = useCollection<UserProfile>('users');
 
   const assigneeOptions = useMemo(
