@@ -28,19 +28,29 @@ async function fixProfiles() {
 
       // Update Firestore profile - keep status for Firestore isApproved() check, but keep ONLY iprospect membership
       const userProfileRef = db.doc(`users/${userRecord.uid}`);
-      await userProfileRef.update({
+      const isAdmin = email.includes('admin');
+      const defaultPermissions = ['snapshot', 'sales', 'tracker', 'spends', 'dashboard', 'forecast', 'wbr', 'actions'];
+
+      const updateData = {
         status: 'Active', // Required for Firestore security rules isApproved() check
         memberships: {
           'iprospect': {
             agencyId: 'iprospect',
-            role: email.includes('admin') ? 'Admin' : 'User',
+            role: isAdmin ? 'Admin' : 'User',
             joinedAt: Timestamp.now(),
             permissions: ['read', 'write'],
             status: 'active',
           },
         },
         activeAgency: 'iprospect',
-      });
+      };
+
+      // Add default permissions for non-admin users
+      if (!isAdmin) {
+        updateData.permissions = defaultPermissions;
+      }
+
+      await userProfileRef.update(updateData);
 
       console.log(`✓ Updated profile: removed status field, set iprospect-only membership\n`);
     } catch (error) {
