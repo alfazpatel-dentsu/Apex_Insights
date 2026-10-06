@@ -100,11 +100,13 @@ export default function ClientDeepDivePage() {
           setWeeklyKpis(weeklyKpiList);
         }
 
-        const mSpendsQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'monthlySpends')), where('clientId', '==', clientId));
+        const mCollectionPath = activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends');
+        const mSpendsQ = query(collection(firestore, mCollectionPath), where('clientId', '==', clientId));
         const mSnap = await getDocs(mSpendsQ);
         setMonthlySpends(mSnap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlySpend)));
 
-        const wSpendsQ = query(collection(firestore, agencyCollectionPath(activeAgency, 'weeklySpends')), where('clientId', '==', clientId));
+        const wCollectionPath = activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends');
+        const wSpendsQ = query(collection(firestore, wCollectionPath), where('clientId', '==', clientId));
         const wSnap = await getDocs(wSpendsQ);
         setWeeklySpends(wSnap.docs.map(d => ({ id: d.id, ...d.data() } as WeeklySpend)));
 
