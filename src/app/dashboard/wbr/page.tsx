@@ -25,6 +25,7 @@ import Link from 'next/link';
 import { useCollection, useUser, useDoc } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData } from '@/lib/types';
 import { isPrimaryKpiType, meetsTarget, parseKpiDirection } from '@/lib/kpi-rag';
+import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
 import { PageHeader } from '@/components/page-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -60,7 +61,8 @@ function WbrPageContent() {
   const searchParams = useSearchParams();
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
-  
+  const activeAgency = getActiveAgency(userProfile);
+
   const [mounted, setMounted] = useState(false);
   const [currentWbrDate, setCurrentWbrDate] = useState<Date | null>(null);
   const [selectedCluster, setSelectedCluster] = useState<string>('all');
@@ -86,15 +88,15 @@ function WbrPageContent() {
     setCurrentWbrDate(addDays(monday, 1));
   }, [searchParams]);
 
-  const { data: explicitClients, loading: clientsLoading } = useCollection<Client>('clients');
-  
+  const { data: explicitClients, loading: clientsLoading } = useCollection<Client>(activeAgency ? agencyCollectionPath(activeAgency, 'clients') : null);
+
   // OPTIMIZATION RITUAL: Only fetch recent KPIs for discovery to prevent loading thousands of records
   const kpiDiscoveryConstraints = useMemo(() => [
     where('month', '>=', format(subMonths(currentWbrDate || new Date(), 2), 'yyyy-MM')),
     where('month', '<=', format(currentWbrDate || new Date(), 'yyyy-MM')),
   ], [currentWbrDate]);
-  const { data: kpiRecords } = useCollection<KpiData>('kpis', kpiDiscoveryConstraints);
-  
+  const { data: kpiRecords } = useCollection<KpiData>(activeAgency ? agencyCollectionPath(activeAgency, 'kpis') : null, kpiDiscoveryConstraints);
+
   const wbrConstraints = useMemo(() => {
     if (!currentWbrDate) return [null];
     return [
@@ -103,7 +105,7 @@ function WbrPageContent() {
     ];
   }, [currentWbrDate]);
 
-  const { data: wbrEntries, loading: wbrLoading } = useCollection<WbrEntry>('wbrEntries', wbrConstraints);
+  const { data: wbrEntries, loading: wbrLoading } = useCollection<WbrEntry>(activeAgency ? agencyCollectionPath(activeAgency, 'wbrEntries') : null, wbrConstraints);
 
   const allClients = useMemo(() => {
     const uniqueList: Client[] = [];

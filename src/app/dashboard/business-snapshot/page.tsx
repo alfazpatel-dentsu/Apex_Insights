@@ -511,7 +511,7 @@ export default function BusinessSnapshotPage() {
     };
   }, [monthlySpends, weeklySpends, mounted]);
 
-  const { data: snapshotDoc } = useDoc<BusinessSnapshot>(stats ? `businessSnapshots/${stats.month}` : null);
+  const { data: snapshotDoc } = useDoc<BusinessSnapshot>(stats && activeAgency ? `${agencyCollectionPath(activeAgency, 'businessSnapshots')}/${stats.month}` : null);
 
   useEffect(() => {
     if (!mounted || !firestore || !stats?.month) return;
