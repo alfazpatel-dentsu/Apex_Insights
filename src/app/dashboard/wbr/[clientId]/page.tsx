@@ -212,9 +212,11 @@ export default function WbrEditPage() {
       setIsLoading(true);
       try {
         const wbrId = wbrEntryId(actualClientId, wbrDate);
+        const clientCollectionPath = activeAgency === 'sokrati' ? 'clients' : agencyCollectionPath(activeAgency, 'clients');
+        const wbrCollectionPath = activeAgency === 'sokrati' ? 'wbrEntries' : agencyCollectionPath(activeAgency, 'wbrEntries');
         const [clientSnap, wbrDirect] = await Promise.all([
-          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency, 'clients')), where('uniqueId', '==', actualClientId), limit(1))),
-          getDoc(doc(firestore, agencyCollectionPath(activeAgency, 'wbrEntries'), wbrId)),
+          getDocs(query(collection(firestore, clientCollectionPath), where('uniqueId', '==', actualClientId), limit(1))),
+          getDoc(doc(firestore, wbrCollectionPath, wbrId)),
         ]);
 
         let cData: Partial<Client> | null = null;
@@ -245,7 +247,7 @@ export default function WbrEditPage() {
           existingEntry = { id: wbrDirect.id, ...wbrDirect.data() } as WbrEntry;
         } else {
           const byDate = await getDocs(query(
-            collection(firestore, agencyCollectionPath(activeAgency, 'wbrEntries')),
+            collection(firestore, wbrCollectionPath),
             where('clientId', '==', actualClientId),
             where('wbrDate', '==', wbrDate),
             limit(1)
