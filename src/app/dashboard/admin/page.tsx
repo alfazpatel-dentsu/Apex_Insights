@@ -49,6 +49,8 @@ export default function AdminPage() {
   const { user: authUser, loading: authLoading } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(authUser ? `users/${authUser.uid}` : null);
 
+  const isAdmin = !profileLoading && Boolean(authUser?.email && PLATFORM_ADMIN_EMAILS.includes(authUser.email.toLowerCase() as typeof PLATFORM_ADMIN_EMAILS[number]));
+
   // Only fetch users if user is admin (prevent Firestore permission errors for non-admins)
   const { data: users, loading: usersLoading } = useCollection<UserProfile>(isAdmin ? 'users' : null);
 
@@ -65,8 +67,7 @@ export default function AdminPage() {
   const [maintenanceAction, setMaintenanceAction] = useState<{ id: string, label: string } | null>(null);
   const [isMaintenanceProcessing, setIsMaintenanceProcessing] = useState(false);
   const [isSheetsBackfilling, setIsSheetsBackfilling] = useState(false);
-  
-  const isAdmin = !profileLoading && Boolean(authUser?.email && PLATFORM_ADMIN_EMAILS.includes(authUser.email.toLowerCase() as typeof PLATFORM_ADMIN_EMAILS[number]));
+
   const TARGET_EMAIL = 'alfaz.patel@dentsu.com';
 
   const handlePurge = async () => {
