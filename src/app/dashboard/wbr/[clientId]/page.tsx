@@ -47,7 +47,7 @@ import { query, collection, where, getDocs, getDoc, doc, limit, type Firestore }
 
 import { useFirestore, useUser, useDoc, useCollection } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, RagStatus, ActionItem } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { displayAssigned } from '@/lib/assignees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -212,11 +212,11 @@ export default function WbrEditPage() {
       setIsLoading(true);
       try {
         const wbrId = wbrEntryId(actualClientId, wbrDate);
-        const clientCollectionPath = activeAgency === 'sokrati' ? 'clients' : agencyCollectionPath(activeAgency, 'clients');
-        const wbrCollectionPath = activeAgency === 'sokrati' ? 'wbrEntries' : agencyCollectionPath(activeAgency, 'wbrEntries');
+        const clientCollectionPath = getCollectionPath(activeAgency, 'clients');
+        const wbrCollectionPath = getCollectionPath(activeAgency, 'wbrEntries');
         const [clientSnap, wbrDirect] = await Promise.all([
-          getDocs(query(collection(firestore, clientCollectionPath), where('uniqueId', '==', actualClientId), limit(1))),
-          getDoc(doc(firestore, wbrCollectionPath, wbrId)),
+          getDocs(query(collection(firestore, clientCollectionPath!), where('uniqueId', '==', actualClientId), limit(1))),
+          getDoc(doc(firestore, wbrCollectionPath!, wbrId)),
         ]);
 
         let cData: Partial<Client> | null = null;

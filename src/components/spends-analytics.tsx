@@ -28,7 +28,7 @@ import { where } from 'firebase/firestore';
 
 import { useCollection, useUser, useDoc } from '@/firebase';
 import { MonthlySpend, WeeklySpend, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { canonicalizeChannel } from '@/lib/normalize';
 import {
   aggregateBrandSpendBreakdown,
@@ -286,9 +286,8 @@ export function SpendsAnalytics() {
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const activeAgency = getActiveAgency(userProfile);
-  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
-  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
-  const weeklyPath = activeAgency ? (activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends')) : null;
+  const monthlyPath = getCollectionPath(activeAgency, 'monthlySpends');
+  const weeklyPath = getCollectionPath(activeAgency, 'weeklySpends');
 
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());

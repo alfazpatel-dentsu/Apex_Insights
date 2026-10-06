@@ -31,7 +31,7 @@ import {
 
 import { useFirestore, useUser, useDoc } from '@/firebase';
 import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, Client, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -100,13 +100,13 @@ export default function ClientDeepDivePage() {
           setWeeklyKpis(weeklyKpiList);
         }
 
-        const mCollectionPath = activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends');
-        const mSpendsQ = query(collection(firestore, mCollectionPath), where('clientId', '==', clientId));
+        const mCollectionPath = getCollectionPath(activeAgency, 'monthlySpends');
+        const mSpendsQ = query(collection(firestore, mCollectionPath!), where('clientId', '==', clientId));
         const mSnap = await getDocs(mSpendsQ);
         setMonthlySpends(mSnap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlySpend)));
 
-        const wCollectionPath = activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends');
-        const wSpendsQ = query(collection(firestore, wCollectionPath), where('clientId', '==', clientId));
+        const wCollectionPath = getCollectionPath(activeAgency, 'weeklySpends');
+        const wSpendsQ = query(collection(firestore, wCollectionPath!), where('clientId', '==', clientId));
         const wSnap = await getDocs(wSpendsQ);
         setWeeklySpends(wSnap.docs.map(d => ({ id: d.id, ...d.data() } as WeeklySpend)));
 

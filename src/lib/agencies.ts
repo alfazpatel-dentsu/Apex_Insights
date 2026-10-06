@@ -32,6 +32,12 @@ export function agencyCollectionPath(agencyId: AgencyId, collectionName: string)
   return `agencies/${agencyId}/${collectionName}`;
 }
 
+// Backward compatibility: Sokrati uses root collections, others use agency-scoped paths
+export function getCollectionPath(agencyId: AgencyId | null | undefined, collectionName: string): string | null {
+  if (!agencyId) return null;
+  return agencyId === 'sokrati' ? collectionName : agencyCollectionPath(agencyId, collectionName);
+}
+
 export function hasAgencyAccess(profile: UserProfile | null | undefined, agencyId: AgencyId): boolean {
   const membership = profile?.memberships?.[agencyId];
   if (membership) return membership.status === 'active';

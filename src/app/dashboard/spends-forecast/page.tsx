@@ -16,7 +16,7 @@ import { Download, Loader2, Info } from 'lucide-react';
 
 import { useCollection, useUser, useDoc } from '@/firebase';
 import { MonthlySpend, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import {
   buildSpendForecast,
   formatMonthLabel,
@@ -105,8 +105,7 @@ export default function SpendsForecastPage() {
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const activeAgency = getActiveAgency(userProfile);
-  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
-  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
+  const monthlyPath = getCollectionPath(activeAgency, 'monthlySpends');
 
   const [mounted, setMounted] = useState(false);
   const [dimension, setDimension] = useState<DimensionFilter>('overall');

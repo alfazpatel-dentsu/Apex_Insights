@@ -31,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { KpiData, KpiWeeklyData, Client, Kpi, Channel, RagStatus, UserProfile } from '@/lib/types';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { canonicalizeChannel } from '@/lib/normalize';
 import { kpiSeriesKey } from '@/lib/kpi-record-key';
 import {
@@ -139,10 +139,10 @@ function KpiTrackingContent() {
     ];
   }, [dateRange, shouldFetch]);
 
-  const kpiPath = activeAgency ? agencyCollectionPath(activeAgency, 'kpis') : null;
-  const clientsPath = activeAgency ? agencyCollectionPath(activeAgency, 'clients') : null;
-  const kpiDefsPath = activeAgency ? agencyCollectionPath(activeAgency, 'kpiDefinitions') : null;
-  const channelsPath = activeAgency ? agencyCollectionPath(activeAgency, 'channels') : null;
+  const kpiPath = getCollectionPath(activeAgency, 'kpis');
+  const clientsPath = getCollectionPath(activeAgency, 'clients');
+  const kpiDefsPath = getCollectionPath(activeAgency, 'kpiDefinitions');
+  const channelsPath = getCollectionPath(activeAgency, 'channels');
 
   const { data: kpiData, loading: kpiLoading } = useCollection<KpiData>(kpiPath && shouldFetch ? kpiPath : null, kpiConstraints);
   const [weeklyData, setWeeklyData] = useState<KpiWeeklyData[]>([]);
@@ -207,7 +207,8 @@ function KpiTrackingContent() {
         const kpiIds = kpiData.map(k => k.id);
         for (let i = 0; i < kpiIds.length; i += 30) {
           const chunk = kpiIds.slice(i, i + 30);
-          const q = query(collection(firestore, agencyCollectionPath(activeAgency, 'kpiWeeklyData')), where('kpiDataId', 'in', chunk));
+          const weeklyPath = getCollectionPath(activeAgency, 'kpiWeeklyData');
+          const q = query(collection(firestore, weeklyPath!), where('kpiDataId', 'in', chunk));
           const snap = await getDocs(q);
           snap.forEach(doc => { allWeekly.push({ id: doc.id, ...doc.data() } as KpiWeeklyData); });
         }

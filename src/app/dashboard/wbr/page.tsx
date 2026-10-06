@@ -25,7 +25,7 @@ import Link from 'next/link';
 import { useCollection, useUser, useDoc } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData } from '@/lib/types';
 import { isPrimaryKpiType, meetsTarget, parseKpiDirection } from '@/lib/kpi-rag';
-import { getActiveAgency, agencyCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { PageHeader } from '@/components/page-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -105,8 +105,7 @@ function WbrPageContent() {
     ];
   }, [currentWbrDate]);
 
-  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
-  const wbrPath = activeAgency ? (activeAgency === 'sokrati' ? 'wbrEntries' : agencyCollectionPath(activeAgency, 'wbrEntries')) : null;
+  const wbrPath = getCollectionPath(activeAgency, 'wbrEntries');
   const { data: wbrEntries, loading: wbrLoading } = useCollection<WbrEntry>(wbrPath, wbrConstraints);
 
   const allClients = useMemo(() => {
