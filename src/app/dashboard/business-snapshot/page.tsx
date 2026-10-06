@@ -261,10 +261,11 @@ export default function BusinessSnapshotPage() {
     setMonthlyWindow([where('month', '>=', ytdCompareStart)]);
   }, []);
 
-  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
+  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
+  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>(monthlyPath, monthlyWindow);
 
-  const weeklyPath = activeAgency ? agencyCollectionPath(activeAgency, 'weeklySpends') : null;
+  const weeklyPath = activeAgency ? (activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends')) : null;
   const { data: weeklySpends } = useCollection<WeeklySpend>(weeklyPath, statsWindow);
 
   const channelSpendPulse = useMemo(() => {

@@ -286,8 +286,9 @@ export function SpendsAnalytics() {
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const activeAgency = getActiveAgency(userProfile);
-  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
-  const weeklyPath = activeAgency ? agencyCollectionPath(activeAgency, 'weeklySpends') : null;
+  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
+  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
+  const weeklyPath = activeAgency ? (activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends')) : null;
 
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());

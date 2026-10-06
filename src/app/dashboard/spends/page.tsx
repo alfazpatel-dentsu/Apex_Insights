@@ -144,7 +144,8 @@ function SpendsContent() {
     ];
   }, [dateRange, shouldFetch]);
 
-  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
+  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
+  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
   const { data: monthlySpends, loading: monthlyLoading } = useCollection<MonthlySpend>(monthlyPath, monthlyConstraints);
   const [weeklySpends, setWeeklySpends] = useState<WeeklySpend[] | null>(null);
   const [weeklyLoading, setWeeklyLoading] = useState(false);
@@ -161,9 +162,10 @@ function SpendsContent() {
       try {
         const startStr = format(dateRange.from!, 'yyyy-MM');
         const endStr = format(dateRange.to!, 'yyyy-MM');
+        const weeklyCollectionPath = activeAgency === 'sokrati' ? 'weeklySpends' : agencyCollectionPath(activeAgency, 'weeklySpends');
 
         const q = query(
-          collection(firestore, agencyCollectionPath(activeAgency, 'weeklySpends')),
+          collection(firestore, weeklyCollectionPath),
           where('month', '>=', startStr),
           where('month', '<=', endStr)
         );

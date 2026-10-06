@@ -105,7 +105,8 @@ export default function SpendsForecastPage() {
   const { user } = useUser();
   const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const activeAgency = getActiveAgency(userProfile);
-  const monthlyPath = activeAgency ? agencyCollectionPath(activeAgency, 'monthlySpends') : null;
+  // Backward compatibility: Sokrati users read from root collections, others from agency-scoped
+  const monthlyPath = activeAgency ? (activeAgency === 'sokrati' ? 'monthlySpends' : agencyCollectionPath(activeAgency, 'monthlySpends')) : null;
 
   const [mounted, setMounted] = useState(false);
   const [dimension, setDimension] = useState<DimensionFilter>('overall');
