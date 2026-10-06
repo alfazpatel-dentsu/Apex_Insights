@@ -122,7 +122,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
 
   const { data: explicitClients } = useCollection<Client>(clientsPath);
   const { data: kpiRecords } = useCollection<KpiData>(kpisPath);
-  const { data: registryUsers, loading: usersLoading } = useCollection<UserProfile>('users');
+  // Note: users collection is not scoped by agency; try to load if activeAgency exists
+  const { data: registryUsers, loading: usersLoading } = useCollection<UserProfile>(activeAgency ? 'users' : null);
 
   const assigneeOptions = useMemo(
     () => buildAssigneeOptions(registryUsers),

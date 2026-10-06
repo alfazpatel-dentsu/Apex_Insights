@@ -49,7 +49,8 @@ export default function AdminPage() {
   const { user: authUser, loading: authLoading } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(authUser ? `users/${authUser.uid}` : null);
 
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>('users');
+  // Only fetch users if user is admin (prevent Firestore permission errors for non-admins)
+  const { data: users, loading: usersLoading } = useCollection<UserProfile>(isAdmin ? 'users' : null);
 
   const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false);
   const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
