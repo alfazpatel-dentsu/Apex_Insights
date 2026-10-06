@@ -41,7 +41,7 @@ export function AppHeader() {
     [user]
   );
   const { data: rawNotifications } = useCollection<TeamNotification>(
-    "notifications",
+    user ? "notifications" : null,
     notificationConstraints
   );
   const [mounted, setMounted] = useState(false);
@@ -102,8 +102,9 @@ export function AppHeader() {
     }
     try {
       await updateDoc(doc(firestore, "notifications", item.id), { read: true });
-    } catch {
-      // ignore
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not mark notification as read.");
+      return;
     }
     if (item.href) router.push(item.href);
   };

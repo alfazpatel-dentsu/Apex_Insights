@@ -158,7 +158,7 @@ export default function ActionItemsPage() {
 
   // Persist Overdue when completion/due date has passed (non-completed items).
   useEffect(() => {
-    if (!actions?.length) return;
+    if (!actions?.length || !activeAgency) return;
 
     const stale = actions.filter((item) => {
       const effective = resolveActionStatus(item.status, item.dueDate);
@@ -173,14 +173,14 @@ export default function ActionItemsPage() {
     (async () => {
       for (const item of stale) {
         try {
-          await saveActionItem(firestore, { ...item, status: 'Overdue' }, item.id);
+          await saveActionItem(firestore, { ...item, status: 'Overdue' }, item.id, activeAgency);
         } catch (error) {
           overdueSyncRef.current.delete(item.id);
           console.error('Failed to auto-mark overdue', item.id, error);
         }
       }
     })();
-  }, [actions, firestore]);
+  }, [actions, firestore, activeAgency]);
 
   const filteredActions = useMemo(() => {
     if (!actions) return [];
@@ -231,6 +231,10 @@ export default function ActionItemsPage() {
   };
 
   const moveItem = async (itemId: string, nextStatus: ActionStatus) => {
+    if (!activeAgency) {
+      toast({ variant: 'destructive', title: 'Could not update action', description: 'Your account does not have an active agency.' });
+      return;
+    }
     const item = (actions || []).find((a) => a.id === itemId);
     if (!item) return;
 
@@ -261,7 +265,7 @@ export default function ActionItemsPage() {
 
     setOptimisticStatus((prev) => ({ ...prev, [itemId]: statusToSave }));
     try {
-      await saveActionItem(firestore, { ...item, status: statusToSave }, item.id);
+      await saveActionItem(firestore, { ...item, status: statusToSave }, item.id, activeAgency);
       overdueSyncRef.current.delete(itemId);
       toast({
         title: 'Status updated',
@@ -478,8 +482,8 @@ export default function ActionItemsPage() {
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90 rounded-none h-12 px-8 font-black uppercase text-[10px] tracking-widest"
               onClick={async () => {
-                if (deletingId) {
-                  await deleteActionItem(firestore, deletingId);
+                if (deletingId && activeAgency) {
+                  await deleteActionItem(firestore, deletingId, activeAgency);
                   toast({ title: 'Task deleted' });
                   setDeletingId(null);
                 }

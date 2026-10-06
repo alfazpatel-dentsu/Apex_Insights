@@ -535,8 +535,14 @@ export default function AdminPage() {
           <AlertDialogFooter className="pt-10 gap-4">
             <AlertDialogCancel className="rounded-none border-ink h-12 px-8 font-black uppercase tracking-widest text-[10px]">CANCEL</AlertDialogCancel>
             <AlertDialogAction className="rounded-none bg-destructive hover:bg-ink h-12 px-10 font-black uppercase tracking-widest text-[10px]" onClick={async () => { 
-              if (userToDelete) await deleteUser(firestore, userToDelete.id); 
-              setUserToDelete(null); 
+              if (!userToDelete) return;
+              try {
+                await deleteUser(firestore, userToDelete.id);
+                toast({ title: 'User deleted' });
+                setUserToDelete(null);
+              } catch (error: any) {
+                toast({ variant: 'destructive', title: 'Delete failed', description: error.message });
+              }
             }}>
               CONFIRM DELETE
             </AlertDialogAction>

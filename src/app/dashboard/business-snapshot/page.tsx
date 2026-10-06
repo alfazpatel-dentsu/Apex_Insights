@@ -27,10 +27,10 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
-import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus } from '@/lib/types';
+import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus, AgencyId } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, type ClientPath } from '@/lib/kpi-rag';
-import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
 import {
   aggregateBrandSpendBreakdown,
@@ -186,7 +186,7 @@ async function fetchAllKpisForMonth(db: Firestore, month: string, agencyId: stri
       ...(cursor ? [startAfter(cursor)] : []),
       limit(KPI_PAGE_SIZE),
     ];
-    const snap = await getDocs(query(collection(db, agencyCollectionPath(agencyId as any, 'kpis')), ...constraints));
+    const snap = await getDocs(query(collection(db, getCollectionPath(agencyId as AgencyId, 'kpis')!), ...constraints));
     if (snap.empty) break;
     for (const d of snap.docs) {
       results.push({ id: d.id, ...(d.data() as object) } as KpiData);
@@ -204,10 +204,10 @@ async function fetchAllKpisForMonth(db: Firestore, month: string, agencyId: stri
  */
 async function resolveHealthKpiMonth(db: Firestore, spendsMonth: string, agencyId: string): Promise<string> {
   const calendarMonth = format(new Date(), 'yyyy-MM');
-  const calSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId as any, 'kpis')), where('month', '==', calendarMonth), limit(1)));
+  const calSnap = await getDocs(query(collection(db, getCollectionPath(agencyId as AgencyId, 'kpis')!), where('month', '==', calendarMonth), limit(1)));
   if (!calSnap.empty) return calendarMonth;
 
-  const latestSnap = await getDocs(query(collection(db, agencyCollectionPath(agencyId as any, 'kpis')), orderBy('month', 'desc'), limit(1)));
+  const latestSnap = await getDocs(query(collection(db, getCollectionPath(agencyId as AgencyId, 'kpis')!), orderBy('month', 'desc'), limit(1)));
   const latestMonth = latestSnap.docs[0]?.data()?.month as string | undefined;
   if (latestMonth && /^\d{4}-\d{2}$/.test(latestMonth)) return latestMonth;
 
@@ -299,7 +299,7 @@ export default function BusinessSnapshotPage() {
   }, [weeklySpends, excludeMomentumLargeClients]);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !activeAgency) return;
 
     const fetchIntelligence = async () => {
       try {
@@ -311,12 +311,12 @@ export default function BusinessSnapshotPage() {
         };
 
         const [wbrSnap, actionsSnap, leadsSnap, clientSnap, kpiRefSnap] = await Promise.all([
-          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency!, 'wbrEntries')), orderBy('wbrDate', 'desc'), limit(15))),
-          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency!, 'actionItems')), orderBy('updatedAt', 'desc'), limit(100))),
-          getDocs(query(collection(firestore, agencyCollectionPath(activeAgency!, 'leads')), limit(100))),
-          getDocs(collection(firestore, agencyCollectionPath(activeAgency!, 'clients'))),
+          getDocs(query(collection(firestore, getCollectionPath(activeAgency!, 'wbrEntries')!), orderBy('wbrDate', 'desc'), limit(15))),
+          getDocs(query(collection(firestore, getCollectionPath(activeAgency, 'actionItems')!), orderBy('updatedAt', 'desc'), limit(100))),
+          getDocs(query(collection(firestore, getCollectionPath(activeAgency!, 'leads')!), limit(100))),
+          getDocs(collection(firestore, getCollectionPath(activeAgency!, 'clients')!)),
           getDocs(query(
-            collection(firestore, agencyCollectionPath(activeAgency!, 'kpis')),
+            collection(firestore, getCollectionPath(activeAgency!, 'kpis')!),
             where('month', '>=', format(subMonths(new Date(), 3), 'yyyy-MM')),
             limit(500)
           )),
@@ -347,14 +347,14 @@ export default function BusinessSnapshotPage() {
         const unresolvedIds = wbrClientIds.filter(cid => looksLikeClientId(nameLookup[cid], cid)).slice(0, 15);
         await Promise.all(unresolvedIds.map(async (cid) => {
           const byUniqueId = await getDocs(
-            query(collection(firestore, agencyCollectionPath(activeAgency!, 'clients')), where('uniqueId', '==', cid), limit(1))
+            query(collection(firestore, getCollectionPath(activeAgency!, 'clients')!), where('uniqueId', '==', cid), limit(1))
           );
           if (!byUniqueId.empty) {
             rememberName(cid, (byUniqueId.docs[0].data() as Client).name);
             if (!looksLikeClientId(nameLookup[cid], cid)) return;
           }
           const byKpi = await getDocs(
-            query(collection(firestore, agencyCollectionPath(activeAgency!, 'kpis')), where('clientId', '==', cid), limit(1))
+            query(collection(firestore, getCollectionPath(activeAgency!, 'kpis')!), where('clientId', '==', cid), limit(1))
           );
           if (!byKpi.empty) {
             rememberName(cid, (byKpi.docs[0].data() as KpiData).clientName);
@@ -427,7 +427,7 @@ export default function BusinessSnapshotPage() {
     };
 
     fetchIntelligence();
-  }, [mounted, firestore]);
+  }, [mounted, firestore, activeAgency]);
 
   const stats = useMemo(() => {
     if (!monthlySpends || !mounted) return null;
@@ -511,10 +511,10 @@ export default function BusinessSnapshotPage() {
     };
   }, [monthlySpends, weeklySpends, mounted]);
 
-  const { data: snapshotDoc } = useDoc<BusinessSnapshot>(stats && activeAgency ? `${agencyCollectionPath(activeAgency, 'businessSnapshots')}/${stats.month}` : null);
+  const { data: snapshotDoc } = useDoc<BusinessSnapshot>(stats && activeAgency ? `${getCollectionPath(activeAgency, 'businessSnapshots')}/${stats.month}` : null);
 
   useEffect(() => {
-    if (!mounted || !firestore || !stats?.month) return;
+    if (!mounted || !firestore || !stats?.month || !activeAgency) return;
 
     const loadClientHealth = async () => {
       setClientHealthLoading(true);
@@ -530,7 +530,7 @@ export default function BusinessSnapshotPage() {
         let cycleDate = snapshotDoc?.stats?.wbrCycleDate || '';
         if (!cycleDate) {
           const recentWbr = await getDocs(
-            query(collection(firestore, agencyCollectionPath(activeAgency!, 'wbrEntries')), orderBy('wbrDate', 'desc'), limit(50))
+            query(collection(firestore, getCollectionPath(activeAgency!, 'wbrEntries')!), orderBy('wbrDate', 'desc'), limit(50))
           );
           const dates = Array.from(new Set(recentWbr.docs.map((d) => d.data().wbrDate).filter(Boolean))).sort().reverse();
           cycleDate = dates[0] || '';
@@ -542,10 +542,10 @@ export default function BusinessSnapshotPage() {
 
         const [kpiRows, clientSnap, wbrSnap] = await Promise.all([
           fetchAllKpisForMonth(firestore, kpiMonth, activeAgency!),
-          getDocs(collection(firestore, agencyCollectionPath(activeAgency!, 'clients'))),
+          getDocs(collection(firestore, getCollectionPath(activeAgency!, 'clients')!)),
           cycleDate
             ? getDocs(
-                query(collection(firestore, agencyCollectionPath(activeAgency!, 'wbrEntries')), where('wbrDate', '==', cycleDate), limit(500))
+                query(collection(firestore, getCollectionPath(activeAgency!, 'wbrEntries')!), where('wbrDate', '==', cycleDate), limit(500))
               )
             : Promise.resolve(null),
         ]);
@@ -664,7 +664,7 @@ export default function BusinessSnapshotPage() {
     };
 
     loadClientHealth();
-  }, [mounted, firestore, stats?.month, snapshotDoc?.stats?.wbrCycleDate]);
+  }, [mounted, firestore, activeAgency, stats?.month, snapshotDoc?.stats?.wbrCycleDate]);
 
   const clientHealthSummary = useMemo(() => {
     const summary = {

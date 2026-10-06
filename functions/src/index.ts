@@ -1,4 +1,5 @@
 import {initializeApp} from "firebase-admin/app";
+import {getAuth} from "firebase-admin/auth";
 import {getFirestore} from "firebase-admin/firestore";
 import * as functions from "firebase-functions/v1";
 import {beforeUserCreated, beforeUserSignedIn} from "firebase-functions/v2/identity";
@@ -86,6 +87,86 @@ export const manageUserAgencyAccess = functions
       changedAt: new Date().toISOString(),
     });
     return {uid, agency, status, permissions};
+  });
+
+/** Create an Auth account and its approved Sokrati profile from a trusted admin. */
+export const createInvitedUser = functions
+  .region("us-central1")
+  .https.onCall(async (data, context) => {
+    requirePlatformAdmin(context);
+    const email = typeof data?.email === "string" ? data.email.trim().toLowerCase() : "";
+    const displayName = typeof data?.displayName === "string" ? data.displayName.trim() : "";
+    const role = typeof data?.role === "string" ? data.role.trim() : "";
+    const allowedRoles = new Set(["Admin", "Cluster Lead", "EM/CSM", "Client Partner"]);
+    if (!/^[^@]+@(dentsu|iprospect)\.com$/.test(email) || !displayName || !allowedRoles.has(role)) {
+      throw new functions.https.HttpsError("invalid-argument", "A valid work email, name, and role are required.");
+    }
+    if (!Array.isArray(data?.permissions) ||
+        data.permissions.some((permission: unknown) =>
+          typeof permission !== "string" || !PAGE_PERMISSIONS.has(permission))) {
+      throw new functions.https.HttpsError("invalid-argument", "The requested page permissions are invalid.");
+    }
+    const permissions = [...new Set(data.permissions as string[])];
+    if (permissions.length === 0) {
+      throw new functions.https.HttpsError("invalid-argument", "At least one page permission is required.");
+    }
+
+    const auth = getAuth();
+    const createdUser = await auth.createUser({email, displayName});
+    const profile = {
+      uid: createdUser.uid,
+      email,
+      displayName,
+      photoURL: "",
+      role,
+      status: "Invite sent",
+      permissions,
+      memberships: {
+        sokrati: {status: "active", role, permissions},
+      },
+      groupPermissions: [],
+    };
+    try {
+      await getFirestore().doc(`users/${createdUser.uid}`).create(profile);
+    } catch (error) {
+      try {
+        await getFirestore().doc(`users/${createdUser.uid}`).delete();
+      } catch (cleanupError) {
+        logger.error("Failed to roll back invited user profile", {
+          uid: createdUser.uid,
+          cleanupError,
+        });
+      }
+      try {
+        await auth.deleteUser(createdUser.uid);
+      } catch (cleanupError) {
+        logger.error("Failed to roll back invited Auth account", {
+          uid: createdUser.uid,
+          cleanupError,
+        });
+      }
+      throw error;
+    }
+    return {uid: createdUser.uid, email, displayName, role, status: profile.status, permissions};
+  });
+
+/** Delete an app profile and its Firebase Auth account from a trusted admin. */
+export const deleteInvitedUser = functions
+  .region("us-central1")
+  .https.onCall(async (data, context) => {
+    requirePlatformAdmin(context);
+    const uid = typeof data?.uid === "string" ? data.uid.trim() : "";
+    if (!uid) {
+      throw new functions.https.HttpsError("invalid-argument", "A valid user is required.");
+    }
+
+    await getFirestore().doc(`users/${uid}`).delete();
+    try {
+      await getAuth().deleteUser(uid);
+    } catch (error) {
+      if ((error as {code?: string})?.code !== "auth/user-not-found") throw error;
+    }
+    return {uid};
   });
 
 /**

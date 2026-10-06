@@ -1,6 +1,5 @@
 'use client';
 import { collection, doc, Firestore, getDocs, query, where, writeBatch, setDoc, updateDoc, deleteDoc, orderBy, limit, getDoc, serverTimestamp } from 'firebase/firestore';
-import { initializeApp, deleteApp } from 'firebase/app';
 import {
   getAuth,
   createUserWithEmailAndPassword,
@@ -14,8 +13,8 @@ import {
   Auth,
   User,
 } from 'firebase/auth';
-import { firebaseConfig } from '@/firebase/config';
-import { isAllowedWorkEmail, type AgencyId, agencyCollectionPath, DEFAULT_AGENCY } from './agencies';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { isAllowedWorkEmail, type AgencyId, getCollectionPath, DEFAULT_AGENCY } from './agencies';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem, ActionCommentEntry } from './types';
@@ -24,15 +23,16 @@ import { generateBusinessSnapshot } from '@/ai/flows/business-snapshot-flow';
 import { canonicalizeChannel } from './normalize';
 import { parseKpiDirection } from './kpi-rag';
 
-// Helper to create agency-scoped collection references
+// Sokrati still uses root collections during migration; iProspect uses agency-scoped paths.
 const tenantCollection = (db: Firestore, agencyId: AgencyId, collectionName: string) => {
-  return collection(db, agencyCollectionPath(agencyId, collectionName));
+  const path = getCollectionPath(agencyId, collectionName);
+  if (!path) throw new Error(`No ${collectionName} collection is configured for agency "${agencyId}".`);
+  return collection(db, path);
 };
 
-// Helper to create agency-scoped document references
 const tenantDoc = (db: Firestore, agencyId: AgencyId, collectionName: string, docId?: string) => {
-  const path = agencyCollectionPath(agencyId, collectionName);
-  return docId ? doc(db, path, docId) : doc(collection(db, path));
+  const collectionRef = tenantCollection(db, agencyId, collectionName);
+  return docId ? doc(collectionRef, docId) : doc(collectionRef);
 };
 
 const sanitizeNumber = (val: any): number => {
@@ -129,7 +129,7 @@ function omitUndefined<T>(value: T): T {
 }
 
 export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, id?: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
-    const ref = id ? tenantDoc(db, agencyId, 'actionItems', id) : tenantDoc(db, agencyId, 'actionItems');
+    const ref = tenantDoc(db, agencyId, 'actionItems', id);
     const payload = omitUndefined({
         ...data,
         id: ref.id,
@@ -224,10 +224,11 @@ export const deleteActionComment = async (
 };
 
 export const deleteActionItem = async (db: Firestore, id: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
+    const ref = tenantDoc(db, agencyId, 'actionItems', id);
     try {
-        await deleteDoc(tenantDoc(db, agencyId, 'actionItems', id));
+        await deleteDoc(ref);
     } catch (e) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/actionItems/${id}`, operation: 'delete' }));
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'delete' }));
         throw e;
     }
 };
@@ -381,9 +382,12 @@ export const saveKpiData = async (db: Firestore, kpiData: Omit<KpiData, 'id'>, w
 
 export const updateWeeklyComment = async (db: Firestore, id: string, comment: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
     const ref = tenantDoc(db, agencyId, 'kpiWeeklyData', id);
-    updateDoc(ref, { comment }).catch(e => { 
-      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'update', requestResourceData: { comment } })); 
-    });
+    try {
+      await updateDoc(ref, { comment });
+    } catch (e) {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'update', requestResourceData: { comment } }));
+      throw e;
+    }
 };
 
 export const clearAllKpiData = async (db: Firestore, agencyId: AgencyId = DEFAULT_AGENCY) => {
@@ -404,9 +408,11 @@ export const clearAllKpiData = async (db: Firestore, agencyId: AgencyId = DEFAUL
 export const saveUserRoleAndPermissions = (db: Firestore, userId: string, role: string, permissions: string[], status?: string) => {
     const updateData: any = { role, permissions };
     if (status) updateData.status = status;
-    
-    updateDoc(doc(db, 'users', userId), updateData).catch(e => { 
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/users/${userId}`, operation: 'update', requestResourceData: updateData })); 
+
+    const ref = doc(db, 'users', userId);
+    return updateDoc(ref, updateData).catch(e => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'update', requestResourceData: updateData }));
+        throw e;
     });
 };
 
@@ -415,32 +421,14 @@ export const createUser = async (db: Firestore, userData: any) => {
     if (!isAllowedWorkEmail(email)) {
         throw new Error('Only @dentsu.com and @iprospect.com email addresses can be invited.');
     }
-    const tempAppName = `temp-user-${Date.now()}`;
-    const tempApp = initializeApp(firebaseConfig, tempAppName);
-    const tempAuth = getAuth(tempApp);
-    try {
-        const userCredential = await createUserWithEmailAndPassword(tempAuth, email, Math.random().toString(36).slice(-12));
-        const userProfile = { 
-            uid: userCredential.user.uid, 
-            email,
-            displayName: userData.displayName, 
-            photoURL: '', 
-            role: userData.role, 
-            status: 'Invite sent', 
-            permissions: userData.permissions || ['snapshot', 'tracker', 'wbr', 'actions'],
-            memberships: {
-              sokrati: {
-                status: 'active',
-                role: userData.role,
-                permissions: userData.permissions || ['snapshot', 'tracker', 'wbr', 'actions'],
-              },
-            },
-            groupPermissions: [],
-        };
-        await setDoc(doc(db, 'users', userCredential.user.uid), userProfile);
-        // Invite email is sent from aztec_alerts@dentsu.com by Cloud Function onUserEmailAutomations.
-        return userProfile;
-    } catch (authError: any) { throw authError; } finally { await deleteApp(tempApp); }
+    const createInvite = httpsCallable(getFunctions(db.app, 'us-central1'), 'createInvitedUser');
+    const result = await createInvite({
+        email,
+        displayName: userData.displayName,
+        role: userData.role,
+        permissions: userData.permissions,
+    });
+    return result.data;
 };
 
 export const registerUser = async (db: Firestore, auth: Auth, userData: { email: string; displayName: string; password: string; requestedAgency: AgencyId }) => {
@@ -512,9 +500,7 @@ export const changeUserPassword = async (user: User, currentPassword: string, ne
 };
 
 export const deleteUser = async (db: Firestore, userId: string) => {
-    deleteDoc(doc(db, 'users', userId)).catch(e => { 
-      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/users/${userId}`, operation: 'delete' })); 
-    });
+    await httpsCallable(getFunctions(db.app, 'us-central1'), 'deleteInvitedUser')({ uid: userId });
 };
 
 export const purgeOtherUsers = async (db: Firestore, keepEmail: string) => {
@@ -838,7 +824,7 @@ export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProg
  */
 export const saveWbrEntry = async (db: Firestore, entry: Partial<WbrEntry> & { clientId: string; wbrDate: string }, agencyId: AgencyId = DEFAULT_AGENCY) => {
   const wbrId = `wbr_${entry.clientId}_${entry.wbrDate}`.replace(/[^a-zA-Z0-9]/g, '_');
-  const docRef = doc(db, 'wbrEntries', wbrId);
+  const docRef = tenantDoc(db, agencyId, 'wbrEntries', wbrId);
   const payload = {
     ...entry,
     updatedAt: new Date().toISOString(),
@@ -914,7 +900,8 @@ export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string
   const yearStart = format(startOfYear(monthDate), 'yyyy-MM');
 
   // DISCOVERY RITUAL: Find the two most recent available WBR cycles globally
-  const allCyclesSnap = await getDocs(query(collection(db, 'wbrEntries'), orderBy('wbrDate', 'desc'), limit(50)));
+  const wbrCollection = tenantCollection(db, agencyId, 'wbrEntries');
+  const allCyclesSnap = await getDocs(query(wbrCollection, orderBy('wbrDate', 'desc'), limit(50)));
   const uniqueDates = Array.from(new Set(allCyclesSnap.docs.map(d => d.data().wbrDate))).sort().reverse();
   
   let currentWbrDateStr = uniqueDates[0] || "";
@@ -935,8 +922,8 @@ export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string
     getDocs(query(tenantCollection(db, agencyId, 'monthlySpends'), where('month', '>=', yearStart), where('month', '<=', month), limit(500))),
     getDocs(query(tenantCollection(db, agencyId, 'weeklySpends'), where('month', '==', month), limit(300))),
     getDocs(query(tenantCollection(db, agencyId, 'kpiWeeklyData'), where('month', '==', month), limit(500))),
-    currentWbrDateStr ? getDocs(query(collection(db, 'wbrEntries'), where('wbrDate', '==', currentWbrDateStr), limit(200))) : Promise.resolve({ docs: [] } as any),
-    prevWbrDateStr ? getDocs(query(collection(db, 'wbrEntries'), where('wbrDate', '==', prevWbrDateStr), limit(200))) : Promise.resolve({ docs: [] } as any)
+    currentWbrDateStr ? getDocs(query(wbrCollection, where('wbrDate', '==', currentWbrDateStr), limit(200))) : Promise.resolve({ docs: [] } as any),
+    prevWbrDateStr ? getDocs(query(wbrCollection, where('wbrDate', '==', prevWbrDateStr), limit(200))) : Promise.resolve({ docs: [] } as any)
   ]);
 
   const kpis = kpisSnap.docs.map(d => ({ id: d.id, ...d.data() } as KpiData));
@@ -1098,8 +1085,9 @@ export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string
     }
   };
 
-  await setDoc(doc(db, 'businessSnapshots', month), snapshot).catch(e => {
-    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `/businessSnapshots/${month}`, operation: 'write' }));
+  const snapshotRef = tenantDoc(db, agencyId, 'businessSnapshots', month);
+  await setDoc(snapshotRef, snapshot).catch(e => {
+    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: snapshotRef.path, operation: 'write' }));
     throw e;
   });
   return snapshot;

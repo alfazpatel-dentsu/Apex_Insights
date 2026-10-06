@@ -141,7 +141,7 @@ export function AssigneePicker({
       <Input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder={loading ? 'Loading people…' : 'Search registered users…'}
+        placeholder={loading ? 'Loading your profile…' : 'Search your profile or add someone below…'}
         className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold"
       />
 
@@ -168,7 +168,7 @@ export function AssigneePicker({
           </ul>
         </ScrollArea>
         <p className="px-3 py-2 text-[10px] font-mono text-secondary border-t border-ink/10">
-          {options.length} registered {options.length === 1 ? 'user' : 'users'} · click to add
+          {options.length} available profile {options.length === 1 ? 'option' : 'options'} · click to add
         </p>
       </div>
 
@@ -191,7 +191,7 @@ export function AssigneePicker({
         </Button>
       </div>
       <p className="text-[10px] text-secondary leading-relaxed">
-        The list is registered app users only (invite sent or signed in). For anyone outside the app, add a name here and an email when you have it.
+        Select yourself from your profile, or add any other assignee by name and email.
       </p>
     </div>
   );

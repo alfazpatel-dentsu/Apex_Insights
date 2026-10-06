@@ -25,7 +25,7 @@ import Link from 'next/link';
 import { useCollection, useUser, useDoc } from '@/firebase';
 import { Client, WbrEntry, UserProfile, KpiData } from '@/lib/types';
 import { isPrimaryKpiType, meetsTarget, parseKpiDirection } from '@/lib/kpi-rag';
-import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
+import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { PageHeader } from '@/components/page-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -88,14 +88,14 @@ function WbrPageContent() {
     setCurrentWbrDate(addDays(monday, 1));
   }, [searchParams]);
 
-  const { data: explicitClients, loading: clientsLoading } = useCollection<Client>(activeAgency ? agencyCollectionPath(activeAgency, 'clients') : null);
+  const { data: explicitClients, loading: clientsLoading } = useCollection<Client>(getCollectionPath(activeAgency, 'clients'));
 
   // OPTIMIZATION RITUAL: Only fetch recent KPIs for discovery to prevent loading thousands of records
   const kpiDiscoveryConstraints = useMemo(() => [
     where('month', '>=', format(subMonths(currentWbrDate || new Date(), 2), 'yyyy-MM')),
     where('month', '<=', format(currentWbrDate || new Date(), 'yyyy-MM')),
   ], [currentWbrDate]);
-  const { data: kpiRecords } = useCollection<KpiData>(activeAgency ? agencyCollectionPath(activeAgency, 'kpis') : null, kpiDiscoveryConstraints);
+  const { data: kpiRecords } = useCollection<KpiData>(getCollectionPath(activeAgency, 'kpis'), kpiDiscoveryConstraints);
 
   const wbrConstraints = useMemo(() => {
     if (!currentWbrDate) return [null];
