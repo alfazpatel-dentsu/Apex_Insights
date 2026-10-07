@@ -116,10 +116,17 @@ service cloud.firestore {
     match /mailJobs/{id} {
       allow create: if request.resource.data.type == 'reset' &&
           request.resource.data.email is string && request.resource.data.status == 'queued'
-        || (isPlatformAdmin() && request.resource.data.type in ['test', 'invite', 'reset', 'mom'] &&
+        || (isPlatformAdmin() && request.resource.data.type in ['test', 'invite', 'reset', 'mom', 'otp'] &&
           request.resource.data.status == 'queued');
       allow read: if isPlatformAdmin();
       allow update, delete: if false;
+    }
+    match /pendingOtps/{id} {
+      allow create: if isSignedIn() && request.resource.data.email == request.auth.token.email;
+      allow read: if isSignedIn() && resource.data.email == request.auth.token.email;
+      allow update: if isSignedIn() && resource.data.email == request.auth.token.email &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attempts', 'verified']);
+      allow delete: if false;
     }
     match /notifications/{id} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
