@@ -44,8 +44,9 @@ export function OtpInput({ value, onChange, disabled = false, error, autoFocus =
         {[0, 1, 2, 3, 4, 5].map((index) => (
           <div
             key={index}
+            onClick={() => !disabled && inputRef.current?.focus()}
             className={cn(
-              'w-12 h-12 flex items-center justify-center border-2 rounded-lg font-bold text-xl',
+              'w-12 h-12 flex items-center justify-center border-2 rounded-lg font-bold text-xl cursor-text',
               value[index]
                 ? 'border-primary bg-primary/5'
                 : 'border-neutral-300 bg-white',
