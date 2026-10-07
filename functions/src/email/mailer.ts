@@ -20,7 +20,7 @@ export interface SendAlertOptions {
   dedupeKey: string;
   meta?: Record<string, unknown>;
   /** In-app / Teams type. Omit to skip in-app + Teams (e.g. password reset). */
-  notificationType?: EmailAutomationKey | "test" | "mom";
+  notificationType?: EmailAutomationKey | "test" | "mom" | "otp";
   notificationHref?: string;
   /** Never post password-reset links to Teams. */
   notifyTeams?: boolean;
