@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 interface OtpInputProps {
@@ -40,7 +39,7 @@ export function OtpInput({ value, onChange, disabled = false, error, autoFocus =
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-center gap-2">
+      <div className="flex justify-center gap-2 relative">
         {[0, 1, 2, 3, 4, 5].map((index) => (
           <div
             key={index}
@@ -57,20 +56,20 @@ export function OtpInput({ value, onChange, disabled = false, error, autoFocus =
             {value[index] || ''}
           </div>
         ))}
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          disabled={disabled}
+          maxLength={6}
+          className="absolute inset-0 opacity-0 cursor-text"
+          aria-label="One-time password"
+        />
       </div>
-      <input
-        ref={inputRef}
-        type="text"
-        inputMode="numeric"
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        disabled={disabled}
-        maxLength={6}
-        className="sr-only"
-        aria-label="One-time password"
-      />
       {error && (
         <p className="text-sm text-destructive text-center font-medium">{error}</p>
       )}
