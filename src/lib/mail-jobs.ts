@@ -9,7 +9,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 
-export type MailJobType = 'test' | 'reset' | 'invite' | 'mom';
+export type MailJobType = 'test' | 'reset' | 'invite' | 'mom' | 'otp';
 
 export type MailJobPayload = {
   type: MailJobType;

@@ -28,6 +28,8 @@ export interface UserProfile {
     groupPermissions?: string[];
     /** Agency selected during self-registration; administrators approve it. */
     requestedAgency?: AgencyId;
+    /** ISO timestamp of last OTP verification (for monthly re-verification) */
+    lastOtpVerifiedAt?: string;
 }
 
 export type ActionSection = "CLIENT ENGAGEMENT" | "SALES" | "OPERATIONS" | "AZTEC" | "HR" | "MANAGEMENT";

@@ -3,14 +3,17 @@
 import { useUser, useDoc } from '@/firebase';
 import { UserProfile } from '@/lib/types';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { hasAgencyAccess } from '@/lib/agencies';
+import { needsOtpReVerification } from '@/lib/otp-service';
+import { OtpVerificationModal } from './otp-verification-modal';
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const router = useRouter();
   const pathname = usePathname();
+  const [showOtpModal, setShowOtpModal] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -29,6 +32,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       if (userProfile.status !== 'Pending' && pathname === '/awaiting-approval') {
         router.push('/dashboard');
         return;
+      }
+
+      // Check if user needs OTP re-verification when accessing dashboard
+      if (pathname.startsWith('/dashboard') && needsOtpReVerification(userProfile.lastOtpVerifiedAt)) {
+        setShowOtpModal(true);
+      } else {
+        setShowOtpModal(false);
       }
 
       if (pathname.startsWith('/dashboard')) {
@@ -70,10 +80,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         </div>
     );
   }
-  
+
   if (!user || !userProfile) {
       return null;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <OtpVerificationModal
+        isOpen={showOtpModal}
+        onVerified={() => setShowOtpModal(false)}
+      />
+      {!showOtpModal && children}
+    </>
+  );
 }
