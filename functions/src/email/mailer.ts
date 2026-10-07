@@ -155,7 +155,7 @@ async function resolveUserIdsByEmail(emails: string[]): Promise<Map<string, stri
 
 export async function writeInAppNotifications(params: {
   emails: string[];
-  type: EmailAutomationKey | "test" | "mom";
+  type: EmailAutomationKey | "test" | "mom" | "otp";
   title: string;
   body: string;
   href?: string;
