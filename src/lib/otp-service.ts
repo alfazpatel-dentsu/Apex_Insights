@@ -1,4 +1,4 @@
-import { Firestore, collection, doc, setDoc, getDoc, deleteDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { Firestore, collection, doc, setDoc, updateDoc, getDoc, deleteDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
 
 export interface OtpRecord {
   id: string;
@@ -95,8 +95,7 @@ export async function verifyOtp(
     const newAttempts = otpRecord.attempts + 1;
     const remaining = otpRecord.maxAttempts - newAttempts;
 
-    await setDoc(doc(firestore, OTP_COLLECTION, otpRecord.id), {
-      ...otpRecord,
+    await updateDoc(doc(firestore, OTP_COLLECTION, otpRecord.id), {
       attempts: newAttempts,
     });
 
@@ -107,8 +106,7 @@ export async function verifyOtp(
     };
   }
 
-  await setDoc(doc(firestore, OTP_COLLECTION, otpRecord.id), {
-    ...otpRecord,
+  await updateDoc(doc(firestore, OTP_COLLECTION, otpRecord.id), {
     verified: true,
   });
 
