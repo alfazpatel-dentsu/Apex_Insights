@@ -37,8 +37,10 @@ export default function LoginPage() {
     setIsLoggingIn(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const next = new URLSearchParams(window.location.search).get('next');
+
+      // Check if user needs OTP re-verification
       router.push(next?.startsWith('/') ? next : '/dashboard');
     } catch (error: any) {
       setError('Invalid credentials or unauthorized account.');
