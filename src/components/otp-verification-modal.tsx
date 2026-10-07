@@ -106,10 +106,17 @@ export function OtpVerificationModal({ isOpen, onVerified }: OtpVerificationModa
         <form onSubmit={handleVerifyOtp} className="space-y-6 pt-6">
           {!otpSent ? (
             <div className="space-y-4">
-              <p className="text-sm text-secondary">
-                Last verified {new Date(userProfile?.lastOtpVerifiedAt || '').toLocaleDateString()} ago.
-                For your security, we ask you to re-verify periodically.
-              </p>
+              {userProfile?.lastOtpVerifiedAt && (
+                <p className="text-sm text-secondary">
+                  Last verified {new Date(userProfile.lastOtpVerifiedAt).toLocaleDateString()} ago.
+                  For your security, we ask you to re-verify periodically.
+                </p>
+              )}
+              {error && (
+                <div className="bg-destructive/5 border-l-2 border-destructive p-3 rounded">
+                  <p className="text-sm text-destructive font-medium">{error}</p>
+                </div>
+              )}
               <Button
                 type="button"
                 className="w-full h-12 font-bold uppercase tracking-[0.15em] text-xs"

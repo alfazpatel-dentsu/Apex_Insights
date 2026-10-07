@@ -556,6 +556,38 @@ export const onMailJobCreated = functions
         return;
       }
 
+      if (type === "otp") {
+        if (!email || !email.includes("@")) {
+          await jobRef.set({status: "failed", error: "bad-email"}, {merge: true});
+          return;
+        }
+        const subject = String(data.subject || "Verify your email").trim();
+        const html = String(data.html || "");
+        const text = String(data.text || "Use the code in this email to verify your identity.");
+        if (!html) {
+          await jobRef.set({status: "failed", error: "missing-html"}, {merge: true});
+          return;
+        }
+        const result = await sendAlertEmail({
+          to: email,
+          content: {subject, html, text},
+          settings,
+          dedupeKey: `otp_${email}_${Math.floor(Date.now() / 600000)}`,
+          meta: {type: "otp"},
+          notificationType: "otp",
+          notificationHref: "/dashboard",
+          notifyTeams: false,
+        });
+        await jobRef.set(
+          {
+            status: result.sent ? "sent" : result.skipped || "skipped",
+            from: settings.fromEmail,
+          },
+          {merge: true}
+        );
+        return;
+      }
+
       if (type !== "reset" && type !== "invite") {
         await jobRef.set({status: "ignored", error: "unknown-type"}, {merge: true});
         return;
