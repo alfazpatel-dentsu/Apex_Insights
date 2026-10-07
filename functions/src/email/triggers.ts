@@ -572,7 +572,7 @@ export const onMailJobCreated = functions
           to: email,
           content: {subject, html, text},
           settings,
-          dedupeKey: `otp_${email}_${Math.floor(Date.now() / 600000)}`,
+          dedupeKey: `otp_${id}`,
           meta: {type: "otp"},
           notificationType: "otp",
           notificationHref: "/dashboard",

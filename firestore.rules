@@ -114,8 +114,8 @@ service cloud.firestore {
     }
     match /mailLog/{id} { allow read: if isPlatformAdmin(); allow write: if false; }
     match /mailJobs/{id} {
-      allow create: if request.resource.data.type == 'reset' &&
-          request.resource.data.email is string && request.resource.data.status == 'queued'
+      allow create: if (request.resource.data.type in ['reset', 'otp'] &&
+          request.resource.data.email is string && request.resource.data.status == 'queued')
         || (isPlatformAdmin() && request.resource.data.type in ['test', 'invite', 'reset', 'mom', 'otp'] &&
           request.resource.data.status == 'queued');
       allow read: if isPlatformAdmin();
