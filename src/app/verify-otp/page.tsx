@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFirestore, useUser } from '@/firebase';
 import { verifyOtp } from '@/lib/otp-service';
@@ -9,7 +9,7 @@ import { SokratiLogo } from '@/components/sokrati-logo';
 import { Button } from '@/components/ui/button';
 import { doc, updateDoc } from 'firebase/firestore';
 
-export default function VerifyOtpPage() {
+function VerifyOtpPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const firestore = useFirestore();
@@ -177,5 +177,13 @@ export default function VerifyOtpPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VerifyOtpPage() {
+  return (
+    <Suspense fallback={null}>
+      <VerifyOtpPageContent />
+    </Suspense>
   );
 }
