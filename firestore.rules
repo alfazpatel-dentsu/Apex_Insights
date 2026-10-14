@@ -83,7 +83,9 @@ service cloud.firestore {
         || isPlatformAdmin();
       allow update, delete: if isPlatformAdmin();
       allow update: if isApproved() && request.auth.uid == userId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'lastOtpVerifiedAt'
+        ]);
     }
 
     // All new business data must live below an agency. This is the security

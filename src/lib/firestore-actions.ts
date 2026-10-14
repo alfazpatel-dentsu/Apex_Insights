@@ -500,7 +500,13 @@ export const changeUserPassword = async (user: User, currentPassword: string, ne
 };
 
 export const deleteUser = async (db: Firestore, userId: string) => {
-    await httpsCallable(getFunctions(db.app, 'us-central1'), 'deleteInvitedUser')({ uid: userId });
+    const ref = doc(db, 'users', userId);
+    try {
+      await deleteDoc(ref);
+    } catch (error) {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'delete' }));
+      throw error;
+    }
 };
 
 export const purgeOtherUsers = async (db: Firestore, keepEmail: string) => {
