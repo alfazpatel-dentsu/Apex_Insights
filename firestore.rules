@@ -86,6 +86,9 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'photoURL', 'lastOtpVerifiedAt'
         ]);
+      allow update: if isSignedIn() && request.auth.uid == userId &&
+        resource.data.status == 'Pending' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastOtpVerifiedAt']);
     }
 
     // All new business data must live below an agency. This is the security

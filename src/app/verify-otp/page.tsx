@@ -60,9 +60,7 @@ export default function VerifyOtpPage() {
     try {
       const result = await verifyOtp(firestore, email, otp);
       if (result.success) {
-        // Registration OTPs are verified while the profile is still Pending,
-        // so Firestore correctly prevents profile updates at that stage.
-        if (user && returnTo !== '/awaiting-approval') {
+        if (user) {
           await updateDoc(doc(firestore, 'users', user.uid), {
             lastOtpVerifiedAt: new Date().toISOString(),
           });
