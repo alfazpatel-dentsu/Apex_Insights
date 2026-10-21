@@ -78,3 +78,17 @@ export function getActiveAgency(profile: UserProfile | null | undefined): Agency
   // Fallback: no active agency.
   return null;
 }
+
+export function getEffectivePagePermissions(profile: UserProfile | null | undefined): string[] {
+  if (!profile) return [];
+  if (profile.role === 'Admin') return [...PAGE_PERMISSIONS];
+
+  const hasMemberships = Boolean(profile.memberships && Object.keys(profile.memberships).length > 0);
+  if (hasMemberships) {
+    const activeAgency = getActiveAgency(profile);
+    return activeAgency ? [...(profile.memberships?.[activeAgency]?.permissions || [])] : [];
+  }
+
+  // Preserve the legacy sidebar behavior for profiles without explicit permissions.
+  return profile.permissions?.length ? profile.permissions : [...PAGE_PERMISSIONS];
+}

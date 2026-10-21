@@ -30,6 +30,8 @@ export interface UserProfile {
     requestedAgency?: AgencyId;
     /** ISO timestamp of last OTP verification (for monthly re-verification) */
     lastOtpVerifiedAt?: string;
+    /** Set when the first-run guided tour begins, preventing repeat auto-launches. */
+    hasSeenGuidedTour?: boolean;
 }
 
 export type ActionSection = "CLIENT ENGAGEMENT" | "SALES" | "OPERATIONS" | "AZTEC" | "HR" | "MANAGEMENT";

@@ -4,36 +4,18 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import {
-  ChartLineUp,
-  Target,
-  Coins,
-  PresentationChart,
-  ClipboardText,
-  ShieldCheck,
   CaretDoubleLeft,
   CaretDoubleRight,
   SignOut,
-  Briefcase,
-  ListChecks,
-  ChartLine
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useUser, useDoc, useAuth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { toast } from "sonner";
 import { UserProfile } from "@/lib/types";
-
-const nav = [
-  { href: "/dashboard/business-snapshot", label: "Snapshot", icon: ChartLineUp, testId: "sidebar-nav-dashboard", permission: "snapshot" },
-  { href: "/dashboard/sales-tracker", label: "Sales Tracker", icon: Briefcase, testId: "sidebar-nav-sales", permission: "sales" },
-  { href: "/dashboard/kpi-tracking", label: "KPI Tracker", icon: Target, testId: "sidebar-nav-kpis", permission: "tracker" },
-  { href: "/dashboard/spends", label: "Spends Update", icon: Coins, testId: "sidebar-nav-spends", permission: "spends" },
-  { href: "/dashboard/spends-dashboard", label: "Spends Dashboard", icon: PresentationChart, testId: "sidebar-nav-spends-dashboard", permission: "dashboard" },
-  { href: "/dashboard/spends-forecast", label: "Spends Forecast", icon: ChartLine, testId: "sidebar-nav-spends-forecast", permission: "forecast" },
-  { href: "/dashboard/wbr", label: "Weekly Review", icon: ClipboardText, testId: "sidebar-nav-wbr", permission: "wbr" },
-  { href: "/dashboard/actions", label: "Action Items", icon: ListChecks, testId: "sidebar-nav-actions", permission: "actions" },
-  { href: "/dashboard/admin", label: "Administration", icon: ShieldCheck, testId: "sidebar-nav-admin", permission: "admin" },
-];
+import { getEffectivePagePermissions } from "@/lib/agencies";
+import { DASHBOARD_NAV_ITEMS } from "@/lib/dashboard-navigation";
+import { GuidedTourLauncher } from "@/components/guided-tour-dialog";
 
 type AppSidebarProps = {
   mobile?: boolean;
@@ -56,14 +38,10 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
   const isPreview = pathname?.startsWith('/preview');
 
   const filteredNav = useMemo(() => {
-    if (isPreview && !profile) return nav;
+    if (isPreview && !profile) return DASHBOARD_NAV_ITEMS;
     if (!profile) return [];
-    if (profile.role === 'Admin') return nav;
-
-    // For users without explicit permissions (e.g., iProspect users), show all pages
-    // Data filtering happens at the Firestore level via security rules
-    const userPermissions = profile.permissions || nav.map(item => item.permission);
-    return nav.filter(item => userPermissions.includes(item.permission));
+    const userPermissions = getEffectivePagePermissions(profile);
+    return DASHBOARD_NAV_ITEMS.filter(item => userPermissions.includes(item.permission));
   }, [profile, isPreview]);
 
   const handleSignOut = async () => {
@@ -168,6 +146,12 @@ export function AppSidebar({ mobile = false, onNavigate }: AppSidebarProps) {
           </div>
         )}
       </div>
+
+      {!isCollapsed && (
+        <div className="border-t border-ink px-2 py-2">
+          <GuidedTourLauncher />
+        </div>
+      )}
 
       {!mobile && (
         <div className="border-t border-ink p-3" data-testid="sidebar-collapse-container">
