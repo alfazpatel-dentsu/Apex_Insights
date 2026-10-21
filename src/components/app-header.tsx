@@ -1,12 +1,15 @@
 'use client';
 
-import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut, UserCircle } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut, UserCircle, BookOpen } from "@phosphor-icons/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { CommandPalette } from "@/components/command-palette";
 import { ProfileManagementDialog } from "@/components/profile-management-dialog";
 import { useUser, useDoc, useAuth, useCollection, useFirestore } from "@/firebase";
 import { UserProfile } from "@/lib/types";
+import { getEffectivePagePermissions } from "@/lib/agencies";
+import { DASHBOARD_NAV_ITEMS } from "@/lib/dashboard-navigation";
+import { GuidedTourDialog, GUIDED_TOUR_REPLAY_EVENT } from "@/components/guided-tour-dialog";
 import { TeamNotification } from "@/lib/email-automations";
 import { format, getWeek } from "date-fns";
 import { useChrome } from "@/components/client-layout";
@@ -31,11 +34,15 @@ import {
 export function AppHeader() {
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [guidedTourOpen, setGuidedTourOpen] = useState(false);
+  const [tourStarting, setTourStarting] = useState(false);
   const [now, setNow] = useState<string | null>(null);
   const [snapshotLabel, setSnapshotLabel] = useState<string | null>(null);
+  const autoStartedForUser = useRef<string | null>(null);
+  const pathname = usePathname();
   const { user } = useUser();
   const firestore = useFirestore();
-  const { data: userProfile } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   const notificationConstraints = useMemo(
     () => (user ? [where("userId", "==", user.uid)] : [null]),
     [user]
@@ -49,6 +56,60 @@ export function AppHeader() {
   const isMobile = useIsMobile();
   const auth = useAuth();
   const router = useRouter();
+  const tourPages = useMemo(() => {
+    const permissions = getEffectivePagePermissions(userProfile);
+    return DASHBOARD_NAV_ITEMS.filter((item) => permissions.includes(item.permission));
+  }, [userProfile]);
+
+  const startGuidedTour = useCallback(async () => {
+    if (!user || !userProfile || tourStarting || tourPages.length === 0) return;
+    setTourStarting(true);
+    try {
+      if (!userProfile.hasSeenGuidedTour) {
+        await updateDoc(doc(firestore, "users", user.uid), { hasSeenGuidedTour: true });
+      }
+      setGuidedTourOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save your guided tour preference.");
+    } finally {
+      setTourStarting(false);
+    }
+  }, [firestore, tourPages, tourStarting, user, userProfile]);
+
+  useEffect(() => {
+    const replayTour = () => {
+      if (user) autoStartedForUser.current = user.uid;
+      void startGuidedTour();
+    };
+    window.addEventListener(GUIDED_TOUR_REPLAY_EVENT, replayTour);
+    return () => window.removeEventListener(GUIDED_TOUR_REPLAY_EVENT, replayTour);
+  }, [startGuidedTour, user]);
+
+  useEffect(() => {
+    if (
+      profileLoading ||
+      !user ||
+      !userProfile ||
+      userProfile.status === 'Pending' ||
+      !pathname?.startsWith('/dashboard') ||
+      autoStartedForUser.current === user.uid
+    ) {
+      return;
+    }
+
+    if (userProfile.hasSeenGuidedTour) {
+      autoStartedForUser.current = user.uid;
+      return;
+    }
+
+    const currentPage = DASHBOARD_NAV_ITEMS.find(
+      (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
+    );
+    if (currentPage && tourPages.some((item) => item.permission === currentPage.permission)) {
+      autoStartedForUser.current = user.uid;
+      void startGuidedTour();
+    }
+  }, [pathname, profileLoading, startGuidedTour, tourPages, user, userProfile]);
 
   useEffect(() => {
     setMounted(true);
@@ -251,6 +312,20 @@ export function AppHeader() {
               <UserCircle size={14} />
               Profile management
             </DropdownMenuItem>
+            {tourPages.length > 0 && userProfile?.status !== 'Pending' && (
+              <DropdownMenuItem
+                className="cursor-pointer gap-2"
+                data-testid="topbar-guided-tour-btn"
+                disabled={tourStarting}
+                onClick={() => {
+                  if (user) autoStartedForUser.current = user.uid;
+                  void startGuidedTour();
+                }}
+              >
+                <BookOpen size={14} />
+                Replay guided tour
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="cursor-pointer gap-2 text-destructive focus:text-destructive"
               onClick={handleSignOut}
@@ -264,6 +339,7 @@ export function AppHeader() {
 
       <CommandPalette open={open} onOpenChange={setOpen} />
       <ProfileManagementDialog isOpen={profileOpen} onOpenChange={setProfileOpen} />
+      <GuidedTourDialog open={guidedTourOpen} onOpenChange={setGuidedTourOpen} pages={tourPages} />
     </>
   );
 }

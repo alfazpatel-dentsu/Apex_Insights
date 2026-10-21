@@ -4,7 +4,8 @@ import { useUser, useDoc } from '@/firebase';
 import { UserProfile } from '@/lib/types';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { hasAgencyAccess } from '@/lib/agencies';
+import { getEffectivePagePermissions } from '@/lib/agencies';
+import { DASHBOARD_NAV_ITEMS } from '@/lib/dashboard-navigation';
 import { needsOtpReVerification } from '@/lib/otp-service';
 import { OtpVerificationModal } from './otp-verification-modal';
 
@@ -42,32 +43,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       }
 
       if (pathname.startsWith('/dashboard')) {
-        const isAdmin = userProfile.role === 'Admin';
-        const hasExplicitPermissions = Array.isArray(userProfile.permissions) && userProfile.permissions.length > 0;
-        const permissions = Array.isArray(userProfile.permissions) ? userProfile.permissions : [];
+        const match = [...DASHBOARD_NAV_ITEMS]
+          .sort((a, b) => b.href.length - a.href.length)
+          .find(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
+        const permissions = getEffectivePagePermissions(userProfile);
 
-        // CRITICAL: Order matters here to prevent prefix matching overlaps
-        // e.g. /dashboard/spends-dashboard should not be caught by /dashboard/spends
-        const routeMapping = [
-          { path: '/dashboard/spends-dashboard', key: 'dashboard' },
-          { path: '/dashboard/spends-forecast', key: 'forecast' },
-          { path: '/dashboard/spends', key: 'spends' },
-          { path: '/dashboard/business-snapshot', key: 'snapshot' },
-          { path: '/dashboard/sales-tracker', key: 'sales' },
-          { path: '/dashboard/wbr', key: 'wbr' },
-          { path: '/dashboard/kpi-tracking', key: 'tracker' },
-          { path: '/dashboard/actions', key: 'actions' },
-          { path: '/dashboard/admin', key: 'admin' },
-        ];
-
-        const match = routeMapping.find(m => pathname.startsWith(m.path));
-        const requiredPermission = match?.key;
-
-        // Allow access if: admin, has explicit permissions and includes required, or no explicit permissions (default access)
-        if (requiredPermission && !isAdmin && hasExplicitPermissions && !permissions.includes(requiredPermission)) {
-          // Find first allowed page, fallback to snapshot if none (though sidebar handles this visually)
-          const firstAllowed = routeMapping.find(m => permissions.includes(m.key))?.path || '/dashboard/business-snapshot';
-          router.push(firstAllowed);
+        if (match && !permissions.includes(match.permission)) {
+          const firstAllowed = DASHBOARD_NAV_ITEMS.find(item => permissions.includes(item.permission))?.href;
+          router.replace(firstAllowed || '/');
         }
       }
     }

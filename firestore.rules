@@ -84,7 +84,7 @@ service cloud.firestore {
       allow update, delete: if isPlatformAdmin();
       allow update: if isApproved() && request.auth.uid == userId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'photoURL', 'lastOtpVerifiedAt'
+          'displayName', 'photoURL', 'lastOtpVerifiedAt', 'hasSeenGuidedTour'
         ]);
       allow update: if isSignedIn() && request.auth.uid == userId &&
         resource.data.status == 'Pending' &&
