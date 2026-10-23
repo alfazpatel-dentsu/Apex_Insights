@@ -34,11 +34,12 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 const INITIAL_PRODUCT_UPDATE_KEY = 'recent-product-updates-2026-10';
-const INITIAL_PRODUCT_UPDATE_TITLE = 'Three recent improvements';
+const INITIAL_PRODUCT_UPDATE_TITLE = "What's New!";
 const INITIAL_PRODUCT_UPDATE_BODY = [
-  'OTP-based user authentication: Sign in with a one-time email code for added account verification.',
-  'Guided Tour: Explore key areas and workflows in the Control Center with an interactive walkthrough.',
-  'Dark Mode Support: Switch between light and dark themes from the dashboard header; your choice is remembered.',
+  '🔐 SIGN IN WITH CONFIDENCE\nA safer, simpler sign-in is here. Get a one-time code by email for an extra layer of account protection—no password to remember.',
+  '🧭 FIND YOUR WAY FASTER\nNew to the Control Center, or need a refresher? Take the interactive guided tour to discover key dashboards and workflows without hunting around.',
+  '🌙 MAKE IT YOUR SPACE\nSwitch to Dark Mode from the dashboard header for a more comfortable view, day or night. Your preference is remembered for next time.',
+  'Three thoughtful upgrades, designed to make your workday smoother. Sign in and take a look.',
 ].join('\n\n');
 
 function mergeSettings(remote?: EmailAutomationSettings | null): EmailAutomationSettings {
@@ -332,7 +333,7 @@ export function NotificationsPanel() {
               value={announcementTitle}
               maxLength={120}
               onChange={(event) => setAnnouncementTitle(event.target.value)}
-              placeholder="What’s new in the Control Center?"
+              placeholder="What's New!"
               className="rounded-none"
             />
           </div>
@@ -345,9 +346,12 @@ export function NotificationsPanel() {
               value={announcementBody}
               maxLength={4000}
               onChange={(event) => setAnnouncementBody(event.target.value)}
-              placeholder="Describe the new functionality."
+              placeholder="✨ Share what's new and why users will love it."
               className="min-h-36 rounded-none"
             />
+            <p className="text-[10px] text-secondary">
+              Make each update easy to scan: start a short paragraph with an emoji icon, then explain the user benefit.
+            </p>
             <p className="text-right text-[10px] font-mono text-secondary">
               {announcementBody.length}/4000
             </p>
