@@ -243,8 +243,8 @@ export function ActionPulseView({
       </div>
 
       {/* Due runway */}
-      <section className="bg-white border border-ink overflow-hidden">
-        <div className="px-6 md:px-8 py-6 border-b border-ink/10 flex flex-wrap items-end justify-between gap-4 bg-[linear-gradient(135deg,hsl(var(--cream))_0%,#fff_55%)]">
+      <section className="bg-surface border border-ink overflow-hidden">
+        <div className="px-6 md:px-8 py-6 border-b border-ink/10 flex flex-wrap items-end justify-between gap-4 bg-[linear-gradient(135deg,hsl(var(--cream))_0%,hsl(var(--surface))_55%)]">
           <div className="space-y-1">
             <p className="terminal-overline flex items-center gap-2">
               <CalendarBlank className="h-3.5 w-3.5" weight="bold" />
@@ -276,7 +276,7 @@ export function ActionPulseView({
                   <div
                     key={day.toISOString()}
                     className={cn(
-                      'bg-white px-1.5 py-2 text-center border-b border-ink/10',
+                      'bg-surface px-1.5 py-2 text-center border-b border-ink/10',
                       isNow && 'bg-brand text-white',
                       past && !isNow && 'bg-destructive/[0.04]'
                     )}
@@ -340,7 +340,7 @@ export function ActionPulseView({
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-px bg-ink border border-ink">
         {/* Focus queue */}
-        <section className="xl:col-span-7 bg-white">
+        <section className="xl:col-span-7 bg-surface">
           <div className="px-6 md:px-8 py-6 border-b border-ink/10 flex items-start justify-between gap-4">
             <div className="space-y-1">
               <p className="terminal-overline flex items-center gap-2">
@@ -418,7 +418,7 @@ export function ActionPulseView({
         </section>
 
         {/* Owner load + sections */}
-        <section className="xl:col-span-5 bg-white flex flex-col">
+        <section className="xl:col-span-5 bg-surface flex flex-col">
           <div className="px-6 md:px-8 py-6 border-b border-ink/10 space-y-1">
             <p className="terminal-overline flex items-center gap-2">
               <UsersThree className="h-3.5 w-3.5" weight="bold" />
@@ -499,7 +499,7 @@ function PulseStat({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'bg-white p-5 md:p-6 space-y-2 min-h-[110px] text-left w-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+        'bg-surface p-5 md:p-6 space-y-2 min-h-[110px] text-left w-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
         'hover:bg-cream/80',
         active && 'bg-cream ring-2 ring-inset ring-brand'
       )}

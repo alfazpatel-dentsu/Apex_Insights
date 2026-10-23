@@ -279,7 +279,7 @@ export default function AdminPage() {
 
         <TabsContent value="registry" className="mt-0 space-y-8">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-px bg-ink border border-ink overflow-hidden">
-        <div className="lg:col-span-2 bg-white flex flex-col border-r border-ink">
+        <div className="lg:col-span-2 bg-surface flex flex-col border-r border-ink">
           <div className="p-8 flex items-center justify-between border-b border-ink">
             <div>
               <h2 className="text-xl font-bold uppercase tracking-tighter">Registry</h2>
@@ -300,9 +300,9 @@ export default function AdminPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-none bg-foreground/[0.02] hover:bg-transparent">
-                <TableHead className="pl-8 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Identity</TableHead>
-                <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Agency & Modules</TableHead>
-                <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 text-center">Activation</TableHead>
+                <TableHead className="pl-8 py-4 text-[10px] font-black uppercase tracking-widest text-secondary">Identity</TableHead>
+                <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest text-secondary">Agency & Modules</TableHead>
+                <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest text-secondary text-center">Activation</TableHead>
                 <TableHead className="sr-only">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -381,7 +381,7 @@ export default function AdminPage() {
                        ) : isPending ? (
                          <div className="text-[9px] font-mono font-bold text-destructive uppercase tracking-widest">LOCKED</div>
                        ) : (
-                         <div className="text-[9px] font-mono font-bold text-success/40 uppercase tracking-widest">VERIFIED</div>
+                         <div className="text-[9px] font-mono font-bold text-success uppercase tracking-widest">VERIFIED</div>
                        )}
                     </TableCell>
                     <TableCell className="text-right pr-8">
@@ -391,7 +391,7 @@ export default function AdminPage() {
                             {isCurrentResending ? <CircleNotch className="h-4 w-4 animate-spin" /> : <DotsThree className="h-5 w-5" />}
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="rounded-none border-ink bg-white p-1 min-w-[160px]">
+                        <DropdownMenuContent align="end" className="rounded-none border-ink bg-popover p-1 min-w-[160px]">
                           <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-secondary px-3 py-2">Actions</DropdownMenuLabel>
                           {user.status === 'Invite sent' && (
                               <DropdownMenuItem className="rounded-none text-xs font-black uppercase flex items-center gap-2 px-3 py-2 cursor-pointer focus:bg-cream" onClick={() => handleResendInvite(user)}>
@@ -525,7 +525,7 @@ export default function AdminPage() {
       />
 
       <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
-        <AlertDialogContent className="rounded-none border-ink bg-white p-10">
+        <AlertDialogContent className="rounded-none border-ink bg-surface p-10">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-3xl font-black uppercase tracking-tighter">Delete User Account?</AlertDialogTitle>
             <AlertDialogDescription className="text-sm font-medium text-secondary/80 mt-4 leading-relaxed">
@@ -551,7 +551,7 @@ export default function AdminPage() {
       </AlertDialog>
 
       <AlertDialog open={isPurgeAlertOpen} onOpenChange={setIsPurgeAlertOpen}>
-        <AlertDialogContent className="rounded-none border-ink bg-white p-10">
+        <AlertDialogContent className="rounded-none border-ink bg-surface p-10">
           <AlertDialogHeader>
             <div className="flex items-center gap-4 text-destructive mb-4">
               <Warning weight="fill" size={48} />
@@ -575,7 +575,7 @@ export default function AdminPage() {
       </AlertDialog>
 
       <AlertDialog open={isMaintenanceAlertOpen} onOpenChange={setIsMaintenanceAlertOpen}>
-        <AlertDialogContent className="rounded-none border-ink bg-white p-10">
+        <AlertDialogContent className="rounded-none border-ink bg-surface p-10">
           <AlertDialogHeader>
             <div className="flex items-center gap-4 text-brand mb-4">
               <Database weight="fill" size={48} />

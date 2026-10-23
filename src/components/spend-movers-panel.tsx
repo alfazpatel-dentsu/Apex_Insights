@@ -81,7 +81,7 @@ function SpendProgressLabel({
       fontSize={8}
       fontWeight={700}
       fontFamily="var(--font-mono), IBM Plex Mono, monospace"
-      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+      style={{ paintOrder: 'stroke', stroke: 'hsl(var(--surface))', strokeWidth: 3 }}
     >
       {label}
     </text>

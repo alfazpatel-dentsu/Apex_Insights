@@ -123,10 +123,20 @@ export interface TeamNotification {
   id: string;
   userId: string;
   email?: string;
-  type: EmailAutomationKey | 'test' | 'mom';
+  type: EmailAutomationKey | 'test' | 'mom' | 'announcement';
   title: string;
   body: string;
   href?: string;
   read: boolean;
   createdAt?: { seconds: number; nanoseconds: number } | string;
+}
+
+export interface ProductAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  href: string;
+  key?: string;
+  createdAt?: { seconds: number; nanoseconds: number } | string;
+  createdBy?: string;
 }

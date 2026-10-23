@@ -9,11 +9,12 @@ import {
   UsersThree,
   Eye,
 } from '@phosphor-icons/react';
-import { doc, setDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCollection, useDoc, useFirestore, useUser } from '@/firebase';
 import {
@@ -24,12 +25,22 @@ import {
   EMAIL_AUTOMATIONS_DOC,
   EmailAutomationKey,
   EmailAutomationSettings,
+  ProductAnnouncement,
 } from '@/lib/email-automations';
 import { sampleEmailFor } from '@/lib/email-previews';
 import { enqueueMailJob } from '@/lib/mail-jobs';
 import { UserProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+
+const INITIAL_PRODUCT_UPDATE_KEY = 'recent-product-updates-2026-10';
+const INITIAL_PRODUCT_UPDATE_TITLE = "What's New!";
+const INITIAL_PRODUCT_UPDATE_BODY = [
+  '🔐 SIGN IN WITH CONFIDENCE\nA safer, simpler sign-in is here. Get a one-time code by email for an extra layer of account protection—no password to remember.',
+  '🧭 FIND YOUR WAY FASTER\nNew to the Control Center, or need a refresher? Take the interactive guided tour to discover key dashboards and workflows without hunting around.',
+  '🌙 MAKE IT YOUR SPACE\nSwitch to Dark Mode from the dashboard header for a more comfortable view, day or night. Your preference is remembered for next time.',
+  'Three thoughtful upgrades, designed to make your workday smoother. Sign in and take a look.',
+].join('\n\n');
 
 function mergeSettings(remote?: EmailAutomationSettings | null): EmailAutomationSettings {
   const defaultCcEmails = Array.isArray(remote?.defaultCcEmails)
@@ -58,7 +69,9 @@ export function NotificationsPanel() {
   const { data: remoteSettings, loading: settingsLoading } = useDoc<EmailAutomationSettings>(
     EMAIL_AUTOMATIONS_DOC
   );
-  const { data: users } = useCollection<UserProfile>('users');
+  const { data: users, loading: usersLoading } = useCollection<UserProfile>('users');
+  const { data: announcements, loading: announcementsLoading } =
+    useCollection<ProductAnnouncement>('productAnnouncements');
 
   const [draft, setDraft] = useState<EmailAutomationSettings>(DEFAULT_EMAIL_AUTOMATIONS);
   const [saving, setSaving] = useState(false);
@@ -66,6 +79,10 @@ export function NotificationsPanel() {
   const [hydrated, setHydrated] = useState(false);
   const [previewKey, setPreviewKey] = useState<EmailAutomationKey>('taskAssigned');
   const [guestCc, setGuestCc] = useState('');
+  const [announcementTitle, setAnnouncementTitle] = useState(INITIAL_PRODUCT_UPDATE_TITLE);
+  const [announcementBody, setAnnouncementBody] = useState(INITIAL_PRODUCT_UPDATE_BODY);
+  const [announcementHref, setAnnouncementHref] = useState('/dashboard');
+  const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
 
   useEffect(() => {
     if (settingsLoading) return;
@@ -84,6 +101,78 @@ export function NotificationsPanel() {
         ),
     [users]
   );
+  const activeUserCount = new Set(
+    registeredUsers
+      .filter(
+        (registeredUser) =>
+          ['Active', 'Invite sent', 'User Registered'].includes(String(registeredUser.status)) &&
+          /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(registeredUser.email)
+      )
+      .map((registeredUser) => registeredUser.email.trim().toLowerCase())
+  ).size;
+  const hasInitialAnnouncement = (announcements || []).some(
+    (announcement) => announcement.key === INITIAL_PRODUCT_UPDATE_KEY
+  );
+
+  const handlePublishAnnouncement = async () => {
+    if (!user) return;
+    const title = announcementTitle.trim();
+    const body = announcementBody.trim();
+    const href = announcementHref.trim();
+    if (!title || title.length > 120 || !body || body.length > 4000) {
+      toast({
+        variant: 'destructive',
+        title: 'Announcement needs attention',
+        description: 'Add a title (up to 120 characters) and message (up to 4,000 characters).',
+      });
+      return;
+    }
+    if (!href.startsWith('/') || href.startsWith('//')) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid destination',
+        description: 'Use an in-app path such as /dashboard.',
+      });
+      return;
+    }
+    const isInitialAnnouncement =
+      title === INITIAL_PRODUCT_UPDATE_TITLE && body === INITIAL_PRODUCT_UPDATE_BODY;
+    if (isInitialAnnouncement && hasInitialAnnouncement) {
+      toast({
+        variant: 'destructive',
+        title: 'Already published',
+        description: 'These recent improvements have already been announced.',
+      });
+      return;
+    }
+
+    setPublishingAnnouncement(true);
+    try {
+      await addDoc(collection(firestore, 'productAnnouncements'), {
+        title,
+        body,
+        href,
+        ...(isInitialAnnouncement ? { key: INITIAL_PRODUCT_UPDATE_KEY } : {}),
+        createdBy: user.uid,
+        createdAt: serverTimestamp(),
+      });
+      setAnnouncementTitle('');
+      setAnnouncementBody('');
+      setAnnouncementHref('/dashboard');
+      toast({
+        title: 'Announcement published',
+        description: `Queued for ${activeUserCount} approved users by email and in-app notification.`,
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Announcement failed',
+        description: error instanceof Error ? error.message : 'Could not publish this announcement.',
+      });
+    } finally {
+      setPublishingAnnouncement(false);
+    }
+  };
 
   const dirty = useMemo(() => {
     if (!hydrated) return false;
@@ -215,6 +304,114 @@ export function NotificationsPanel() {
 
   return (
     <div className="space-y-6">
+      <section className="border border-ink bg-surface">
+        <div className="border-b border-ink px-6 py-4 flex items-center gap-2">
+          <PaperPlaneTilt className="h-5 w-5 text-brand" />
+          <div>
+            <h2 className="font-headline text-lg font-black uppercase tracking-tighter">
+              Product announcements
+            </h2>
+            <p className="text-[11px] text-secondary">
+              {usersLoading
+                ? 'Loading active user audience…'
+                : `Publish to ${activeUserCount} approved users by individual email and the header notification bell.`}
+            </p>
+          </div>
+        </div>
+        <div className="p-6 space-y-4">
+          {!announcementsLoading && hasInitialAnnouncement && (
+            <p className="border border-success/30 bg-success/5 p-3 text-xs font-bold text-success">
+              The recent improvements digest has already been published.
+            </p>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="announcement-title" className="text-[10px] font-black uppercase tracking-widest text-secondary">
+              Title
+            </Label>
+            <Input
+              id="announcement-title"
+              value={announcementTitle}
+              maxLength={120}
+              onChange={(event) => setAnnouncementTitle(event.target.value)}
+              placeholder="What's New!"
+              className="rounded-none"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="announcement-body" className="text-[10px] font-black uppercase tracking-widest text-secondary">
+              Update
+            </Label>
+            <Textarea
+              id="announcement-body"
+              value={announcementBody}
+              maxLength={4000}
+              onChange={(event) => setAnnouncementBody(event.target.value)}
+              placeholder="✨ Share what's new and why users will love it."
+              className="min-h-36 rounded-none"
+            />
+            <p className="text-[10px] text-secondary">
+              Make each update easy to scan: start a short paragraph with an emoji icon, then explain the user benefit.
+            </p>
+            <p className="text-right text-[10px] font-mono text-secondary">
+              {announcementBody.length}/4000
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="announcement-href" className="text-[10px] font-black uppercase tracking-widest text-secondary">
+                In-app destination
+              </Label>
+              <Input
+                id="announcement-href"
+                value={announcementHref}
+                onChange={(event) => setAnnouncementHref(event.target.value)}
+                placeholder="/dashboard"
+                className="rounded-none"
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={handlePublishAnnouncement}
+              disabled={
+                publishingAnnouncement ||
+                usersLoading ||
+                announcementsLoading ||
+                !announcementTitle.trim() ||
+                !announcementBody.trim()
+              }
+              className="h-10 rounded-none gap-2 font-black uppercase tracking-widest text-[10px]"
+            >
+              {publishingAnnouncement ? <CircleNotch className="h-4 w-4 animate-spin" /> : <PaperPlaneTilt className="h-4 w-4" />}
+              {publishingAnnouncement ? 'Publishing…' : 'Publish to all users'}
+            </Button>
+          </div>
+          {(announcements || []).length > 0 && (
+            <div className="border-t border-ink/10 pt-4 space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-secondary">Published updates</p>
+              <ul className="space-y-2">
+                {[...(announcements || [])]
+                  .sort((a, b) => {
+                    const timestamp = (value: ProductAnnouncement['createdAt']) =>
+                      typeof value === 'string' ? Date.parse(value) : (value?.seconds || 0) * 1000;
+                    return timestamp(b.createdAt) - timestamp(a.createdAt);
+                  })
+                  .slice(0, 5)
+                  .map((announcement) => (
+                    <li key={announcement.id} className="border-l-2 border-brand pl-3">
+                      <p className="text-xs font-bold">{announcement.title}</p>
+                      <p className="text-[10px] font-mono text-secondary">
+                        {announcement.createdAt && typeof announcement.createdAt !== 'string'
+                          ? new Date(announcement.createdAt.seconds * 1000).toLocaleDateString()
+                          : 'Recently published'}
+                      </p>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </section>
+
       <div className="flex flex-wrap items-center justify-end gap-3">
         <Button
           variant="outline"
@@ -236,7 +433,7 @@ export function NotificationsPanel() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="border border-ink bg-white">
+        <section className="border border-ink bg-surface">
           <div className="border-b border-ink px-6 py-4 flex items-center gap-2">
             <EnvelopeSimple className="h-5 w-5 text-brand" weight="fill" />
             <h2 className="font-headline text-lg font-black uppercase tracking-tighter">
@@ -310,7 +507,7 @@ export function NotificationsPanel() {
             </dl>
           </div>
 
-          <div className="border border-ink bg-white p-6 space-y-4">
+          <div className="border border-ink bg-surface p-6 space-y-4">
             <div className="flex items-center gap-2">
               <UsersThree className="h-5 w-5 text-brand" weight="fill" />
               <h3 className="text-sm font-black uppercase tracking-widest">Default CC</h3>
@@ -361,7 +558,7 @@ export function NotificationsPanel() {
             </div>
           </div>
 
-          <div className="border border-ink bg-white p-6 space-y-4">
+          <div className="border border-ink bg-surface p-6 space-y-4">
             <h3 className="text-sm font-black uppercase tracking-widest">Microsoft Teams</h3>
             <p className="text-[11px] text-secondary leading-relaxed">
               Optional incoming webhook. Operational alerts (not password-reset links) can post to the channel.
@@ -385,7 +582,7 @@ export function NotificationsPanel() {
         </aside>
       </div>
 
-      <section className="border border-ink bg-white">
+      <section className="border border-ink bg-surface">
         <div className="border-b border-ink px-6 py-4 flex items-center gap-2">
           <Eye className="h-5 w-5 text-brand" />
           <h2 className="font-headline text-lg font-black uppercase tracking-tighter">

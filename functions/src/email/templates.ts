@@ -374,3 +374,42 @@ export function testAlertEmail(params: {appBaseUrl: string; fromEmail: string}):
   );
   return {subject, text, html};
 }
+
+export function productAnnouncementEmail(params: {
+  title: string;
+  body: string;
+  href: string;
+  appBaseUrl: string;
+}): EmailContent {
+  const title = params.title.trim();
+  const body = params.body.trim();
+  const href = params.href.startsWith("/") && !params.href.startsWith("//")
+    ? params.href
+    : "/dashboard";
+  const subject = `[AZTEC] New in Control Center: ${title}`;
+  const text = [
+    title,
+    "",
+    body,
+    "",
+    `Open: ${params.appBaseUrl.replace(/\/$/, "")}${href}`,
+    "",
+    "— AZTEC Alerts",
+  ].join("\n");
+  const paragraphs = body
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<p>${escapeHtml(line)}</p>`)
+    .join("");
+
+  return {
+    subject,
+    text,
+    html: layout(
+      title,
+      paragraphs,
+      `${params.appBaseUrl.replace(/\/$/, "")}${href}`
+    ),
+  };
+}
