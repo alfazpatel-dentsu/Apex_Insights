@@ -16,6 +16,7 @@ import { format, getWeek } from "date-fns";
 import { useChrome } from "@/components/client-layout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { signOut } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import { toast } from "sonner";
 import { doc, updateDoc, where, writeBatch } from "firebase/firestore";
 import {
@@ -187,7 +188,11 @@ export function AppHeader() {
       }
       toast.success(`Cleared ${notificationIds.length} notification${notificationIds.length === 1 ? "" : "s"}.`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not clear notifications.");
+      if (error instanceof FirebaseError && error.code === "permission-denied") {
+        toast.error("Could not clear notifications. Deploy the updated Firestore rules to allow users to delete their own notifications.");
+      } else {
+        toast.error(error instanceof Error ? error.message : "Could not clear notifications.");
+      }
     } finally {
       setClearingNotifications(false);
     }
