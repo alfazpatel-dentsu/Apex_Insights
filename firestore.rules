@@ -155,7 +155,8 @@ service cloud.firestore {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-      allow create, delete: if false;
+      allow create: if false;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
     match /accessAuditLog/{id} {
       allow read: if isPlatformAdmin();

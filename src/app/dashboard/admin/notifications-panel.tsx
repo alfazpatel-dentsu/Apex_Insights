@@ -429,7 +429,7 @@ export function NotificationsPanel() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="border border-ink bg-white">
+        <section className="border border-ink bg-surface">
           <div className="border-b border-ink px-6 py-4 flex items-center gap-2">
             <EnvelopeSimple className="h-5 w-5 text-brand" weight="fill" />
             <h2 className="font-headline text-lg font-black uppercase tracking-tighter">
@@ -503,7 +503,7 @@ export function NotificationsPanel() {
             </dl>
           </div>
 
-          <div className="border border-ink bg-white p-6 space-y-4">
+          <div className="border border-ink bg-surface p-6 space-y-4">
             <div className="flex items-center gap-2">
               <UsersThree className="h-5 w-5 text-brand" weight="fill" />
               <h3 className="text-sm font-black uppercase tracking-widest">Default CC</h3>
@@ -554,7 +554,7 @@ export function NotificationsPanel() {
             </div>
           </div>
 
-          <div className="border border-ink bg-white p-6 space-y-4">
+          <div className="border border-ink bg-surface p-6 space-y-4">
             <h3 className="text-sm font-black uppercase tracking-widest">Microsoft Teams</h3>
             <p className="text-[11px] text-secondary leading-relaxed">
               Optional incoming webhook. Operational alerts (not password-reset links) can post to the channel.
@@ -578,7 +578,7 @@ export function NotificationsPanel() {
         </aside>
       </div>
 
-      <section className="border border-ink bg-white">
+      <section className="border border-ink bg-surface">
         <div className="border-b border-ink px-6 py-4 flex items-center gap-2">
           <Eye className="h-5 w-5 text-brand" />
           <h2 className="font-headline text-lg font-black uppercase tracking-tighter">

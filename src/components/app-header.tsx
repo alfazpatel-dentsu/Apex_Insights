@@ -1,6 +1,6 @@
 'use client';
 
-import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut, UserCircle, BookOpen } from "@phosphor-icons/react";
+import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut, UserCircle, BookOpen, Trash } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CommandPalette } from "@/components/command-palette";
@@ -17,7 +17,7 @@ import { useChrome } from "@/components/client-layout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { signOut } from "firebase/auth";
 import { toast } from "sonner";
-import { doc, updateDoc, where } from "firebase/firestore";
+import { doc, updateDoc, where, writeBatch } from "firebase/firestore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,10 +48,11 @@ export function AppHeader() {
     () => (user ? [where("userId", "==", user.uid)] : [null]),
     [user]
   );
-  const { data: rawNotifications } = useCollection<TeamNotification>(
+  const { data: rawNotifications, loading: notificationsLoading } = useCollection<TeamNotification>(
     user ? "notifications" : null,
     notificationConstraints
   );
+  const [clearingNotifications, setClearingNotifications] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { setMobileNavOpen } = useChrome();
   const isMobile = useIsMobile();
@@ -171,6 +172,27 @@ export function AppHeader() {
     if (item.href) router.push(item.href);
   };
 
+  const clearNotifications = async () => {
+    if (!user || !rawNotifications?.length || clearingNotifications) return;
+
+    const notificationIds = rawNotifications.map((item) => item.id);
+    setClearingNotifications(true);
+    try {
+      for (let offset = 0; offset < notificationIds.length; offset += 500) {
+        const batch = writeBatch(firestore);
+        notificationIds.slice(offset, offset + 500).forEach((id) => {
+          batch.delete(doc(firestore, "notifications", id));
+        });
+        await batch.commit();
+      }
+      toast.success(`Cleared ${notificationIds.length} notification${notificationIds.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not clear notifications.");
+    } finally {
+      setClearingNotifications(false);
+    }
+  };
+
   const initials = userProfile 
     ? (userProfile.displayName || userProfile.email).substring(0, 2).toUpperCase() 
     : "AP";
@@ -247,11 +269,23 @@ export function AppHeader() {
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-80 rounded-none border-ink p-0">
-            <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-hairline flex items-center justify-between gap-3">
               <p className="text-[11px] font-bold uppercase tracking-widest text-ink">Notifications</p>
-              {unreadCount > 0 && (
-                <span className="text-[10px] font-mono text-brand">{unreadCount} new</span>
-              )}
+              <div className="flex items-center gap-3">
+                {unreadCount > 0 && (
+                  <span className="text-[10px] font-mono text-brand whitespace-nowrap">{unreadCount} new</span>
+                )}
+                <button
+                  type="button"
+                  onClick={clearNotifications}
+                  disabled={notificationsLoading || !rawNotifications?.length || clearingNotifications}
+                  aria-label="Clear all notifications"
+                  className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-secondary hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash size={12} />
+                  {clearingNotifications ? "Clearing…" : "Clear all"}
+                </button>
+              </div>
             </div>
             {notifications.length === 0 ? (
               <div className="px-4 py-8 text-center">
