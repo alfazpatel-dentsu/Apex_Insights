@@ -151,7 +151,7 @@ const SpendPointLabel = (props: {
       fontSize={9}
       fontWeight={700}
       fontFamily="var(--font-mono), IBM Plex Mono, monospace"
-      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+      style={{ paintOrder: 'stroke', stroke: 'hsl(var(--surface))', strokeWidth: 3 }}
     >
       <tspan x={cx} dy="0">{label}</tspan>
       {deltaLabel ? (
@@ -205,7 +205,7 @@ const SpendBarLabel = (props: {
       fontSize={9}
       fontWeight={700}
       fontFamily="var(--font-mono), IBM Plex Mono, monospace"
-      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+      style={{ paintOrder: 'stroke', stroke: 'hsl(var(--surface))', strokeWidth: 3 }}
     >
       <tspan x={cx} dy="0">{label}</tspan>
       {deltaLabel ? (

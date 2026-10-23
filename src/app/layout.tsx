@@ -45,7 +45,7 @@ export default function RootLayout({
         )}
         suppressHydrationWarning
       >
-        <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light">
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
             <FirebaseClientProvider>
               <TooltipProvider>
                 <ClientLayout>{children}</ClientLayout>

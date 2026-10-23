@@ -8,6 +8,7 @@
 | `backfillActionItemsSheet` | Callable — Admin-only full Sheet rebuild |
 | `onActionItemEmailAutomations` | Emails + in-app alerts for **action overdue** / **action assigned** |
 | `onUserEmailAutomations` | Emails for **access requested** / **access granted** / **user invited** |
+| `onProductAnnouncementCreated` | Admin-published product update → one private email and in-app notification per approved user |
 | `sweepOverdueActionItemEmails` | Daily overdue sweep (03:30 UTC ≈ 09:00 IST) |
 | `sendTestAlertEmail` | Callable — Admin test email from the shared mailbox |
 | `requestPasswordResetEmail` | Callable — branded **forgot password** (public) and **resend invite** (Admin) |
@@ -74,6 +75,13 @@ Optional Microsoft Teams channel posts use a workflow/incoming webhook URL saved
 Default CC addresses are stored on `settings/emailAutomations.defaultCcEmails` and applied to automations that have `ccEnabled[key] === true`. Quiet action statuses **Completed**, **On-Hold**, and **Observation** skip due/overdue mail.
 
 MoM send is an admin-only Weekly Review action (`mailJobs` type `mom`), not a scheduled automation.
+
+Product updates are published from **Administration → Notifications → Product announcements**.
+Publishing creates a permanent, read-only announcement and queues one email per approved user
+(never a shared To/CC list); the same update appears in each user's header notification bell.
+The initial form is prefilled with the OTP authentication, Guided Tour, and Dark Mode updates.
+Future release notes can be published from the same form. The `onProductAnnouncementCreated`
+and `onMailJobCreated` functions must be deployed for email delivery and per-user bell notifications.
 
 Toggles live in Firestore `settings/emailAutomations` (UI: **Administration → Notifications**). Mail audit log: `mailLog/{dedupeKey}`.
 

@@ -1,5 +1,5 @@
 import {getAuth} from "firebase-admin/auth";
-import {getFirestore} from "firebase-admin/firestore";
+import {FieldValue, getFirestore} from "firebase-admin/firestore";
 import * as functions from "firebase-functions/v1";
 import {logger} from "firebase-functions";
 import {ActionItemDoc} from "../action-item-row";
@@ -26,6 +26,7 @@ import {
   taskDueSoonEmail,
   taskOverdueEmail,
   testAlertEmail,
+  productAnnouncementEmail,
   userInvitedEmail,
 } from "./templates";
 
@@ -471,6 +472,100 @@ export const sweepOverdueActionItemEmails = functions
   });
 
 /**
+ * Fan out a published product update to active users. Deterministic delivery
+ * document IDs keep retries from duplicating notifications or email jobs.
+ */
+export const onProductAnnouncementCreated = functions
+  .region("us-central1")
+  .runWith({
+    timeoutSeconds: 540,
+    memory: "1GB",
+  })
+  .firestore.document("productAnnouncements/{id}")
+  .onCreate(async (snap, context) => {
+    const announcement = snap.data() || {};
+    const title = String(announcement.title || "").trim();
+    const body = String(announcement.body || "").trim();
+    const href = String(announcement.href || "/dashboard");
+    if (!title || !body || !href.startsWith("/") || href.startsWith("//")) {
+      throw new Error(`Invalid product announcement: ${context.params.id}`);
+    }
+
+    const db = getFirestore();
+    const usersSnap = await db.collection("users").get();
+    const recipients = new Map<string, {uid: string; email: string}>();
+    for (const userDoc of usersSnap.docs) {
+      const user = userDoc.data();
+      const status = String(user.status || "");
+      const email = String(user.email || "").trim().toLowerCase();
+      if (
+        (status === "User Registered" || status === "Active" || status === "Invite sent") &&
+        /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) &&
+        !recipients.has(email)
+      ) {
+        recipients.set(email, {uid: userDoc.id, email});
+      }
+    }
+
+    const audience = [...recipients.values()];
+    let notificationCount = 0;
+    let mailJobCount = 0;
+
+    for (let offset = 0; offset < audience.length; offset += 200) {
+      const chunk = audience.slice(offset, offset + 200);
+      const notificationRefs = chunk.map(({uid}) =>
+        db.collection("notifications").doc(`product_${snap.id}_${uid}`)
+      );
+      const mailJobRefs = chunk.map(({uid}) =>
+        db.collection("mailJobs").doc(`announcement_${snap.id}_${uid}`)
+      );
+      const existingNotifications = await db.getAll(...notificationRefs);
+      const existingMailJobs = await db.getAll(...mailJobRefs);
+      const batch = db.batch();
+
+      chunk.forEach((recipient, index) => {
+        if (!existingNotifications[index].exists) {
+          batch.create(notificationRefs[index], {
+            userId: recipient.uid,
+            email: recipient.email,
+            type: "announcement",
+            title,
+            body,
+            href,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          notificationCount += 1;
+        }
+
+        if (!existingMailJobs[index].exists) {
+          batch.create(mailJobRefs[index], {
+            type: "announcement",
+            status: "queued",
+            email: recipient.email,
+            title,
+            body,
+            href,
+            announcementId: snap.id,
+            userId: recipient.uid,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          mailJobCount += 1;
+        }
+      });
+
+      await batch.commit();
+    }
+
+    logger.info("Product announcement published", {
+      id: snap.id,
+      audience: audience.length,
+      notificationCount,
+      mailJobCount,
+    });
+  });
+
+/**
  * HTTPS callables need functions.admin to set invoker IAM (Editors cannot).
  * Test / forgot-password / resend-invite are queued as Firestore mailJobs instead.
  */
@@ -576,6 +671,40 @@ export const onMailJobCreated = functions
           meta: {type: "otp"},
           notificationType: "otp",
           notificationHref: "/dashboard",
+          notifyTeams: false,
+        });
+        await jobRef.set(
+          {
+            status: result.sent ? "sent" : result.skipped || "skipped",
+            from: settings.fromEmail,
+          },
+          {merge: true}
+        );
+        return;
+      }
+
+      if (type === "announcement") {
+        const title = String(data.title || "").trim();
+        const body = String(data.body || "").trim();
+        const href = String(data.href || "/dashboard");
+        const announcementId = String(data.announcementId || "");
+        const userId = String(data.userId || "");
+        if (!email || !email.includes("@") || !title || !body || !announcementId || !userId) {
+          await jobRef.set({status: "failed", error: "invalid-announcement-job"}, {merge: true});
+          return;
+        }
+        const content = productAnnouncementEmail({
+          title,
+          body,
+          href,
+          appBaseUrl: settings.appBaseUrl,
+        });
+        const result = await sendAlertEmail({
+          to: email,
+          content,
+          settings,
+          dedupeKey: `announcement_${announcementId}_${userId}`,
+          meta: {type: "announcement", announcementId, userId},
           notifyTeams: false,
         });
         await jobRef.set(

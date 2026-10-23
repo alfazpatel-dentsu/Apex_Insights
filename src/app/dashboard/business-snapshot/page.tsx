@@ -119,7 +119,7 @@ const MomentumSpendLabel = (props: {
       fontSize={9}
       fontWeight={700}
       fontFamily="var(--font-mono), IBM Plex Mono, monospace"
-      style={{ paintOrder: 'stroke', stroke: '#fff', strokeWidth: 3 }}
+      style={{ paintOrder: 'stroke', stroke: 'hsl(var(--surface))', strokeWidth: 3 }}
     >
       {label}
     </text>
@@ -127,12 +127,12 @@ const MomentumSpendLabel = (props: {
 };
 
 const CHART_PALETTE = [
-  '#002FA7', // Brand Blue
-  '#D92218', // Red
-  '#00A675', // Green
-  '#F59E0B', // Amber
-  '#EC4899', // Pink
-  '#8B5CF6', // Purple
+  'hsl(var(--chart-1))',
+  'hsl(var(--chart-2))',
+  'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))',
+  'hsl(var(--chart-5))',
+  'hsl(var(--chart-6))',
 ];
 
 /** Mirror Action Items Kanban columns on Snapshot Accountability Pulse. */
@@ -739,7 +739,7 @@ export default function BusinessSnapshotPage() {
       </div>
 
       {!stats ? (
-        <div className="p-12 md:p-16 border border-dashed border-ink flex flex-col items-center justify-center text-center space-y-6 bg-white">
+        <div className="p-12 md:p-16 border border-dashed border-ink flex flex-col items-center justify-center text-center space-y-6 bg-surface">
           <ChartBar className="h-12 w-12 text-secondary/20" />
           <h3 className="text-xl font-bold uppercase tracking-tighter">No intelligence record found</h3>
         </div>
@@ -747,7 +747,7 @@ export default function BusinessSnapshotPage() {
         <div ref={snapshotRef} id="snapshot-content" className="space-y-16">
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-            <div className="lg:col-span-2 bg-white border border-ink p-10 space-y-8">
+            <div className="lg:col-span-2 bg-surface border border-ink p-10 space-y-8">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <span className="text-[9px] font-black uppercase tracking-[0.3em] text-secondary">WEEKLY SPENDS PULSE</span>
@@ -777,18 +777,24 @@ export default function BusinessSnapshotPage() {
               <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={momentumData} margin={{ top: 24, right: 20, left: 4, bottom: 18 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.05} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--ink) / 0.12)" />
                     <XAxis
                       dataKey="week"
                       fontSize={10}
                       fontWeight="black"
                       axisLine={false}
                       tickLine={false}
+                      tick={{ fill: 'hsl(var(--secondary))' }}
                       interval="preserveStartEnd"
                       minTickGap={8}
                     />
-                    <YAxis fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 10000000).toFixed(1)}Cr`} />
-                    <RechartsTooltip contentStyle={{ borderRadius: '0', border: '1px solid #000', boxShadow: '12px 12px 0px rgba(0,0,0,0.1)' }} formatter={(v: number) => [formatCurrency(v), 'Spend']} />
+                    <YAxis fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} tick={{ fill: 'hsl(var(--secondary))' }} tickFormatter={(v) => `${(v / 10000000).toFixed(1)}Cr`} />
+                    <RechartsTooltip
+                      contentStyle={{ borderRadius: 0, border: '1px solid hsl(var(--hairline))', backgroundColor: 'hsl(var(--surface))', color: 'hsl(var(--ink))', boxShadow: '0 8px 24px hsl(var(--ink) / 0.18)' }}
+                      itemStyle={{ color: 'hsl(var(--ink))' }}
+                      labelStyle={{ color: 'hsl(var(--secondary))' }}
+                      formatter={(v: number) => [formatCurrency(v), 'Spend']}
+                    />
                     <Line type="monotone" dataKey="spend" stroke="hsl(var(--destructive))" strokeWidth={4} dot={{ r: 5, fill: 'hsl(var(--destructive))', strokeWidth: 0 }}>
                       <LabelList dataKey="spend" content={<MomentumSpendLabel />} />
                     </Line>
@@ -797,7 +803,7 @@ export default function BusinessSnapshotPage() {
               </div>
             </div>
 
-            <div className="bg-white border border-ink flex flex-col h-[560px]">
+            <div className="bg-surface border border-ink flex flex-col h-[560px]">
               <div className="p-8 border-b border-ink flex items-center justify-between">
                 <div>
                   <span className="text-[9px] font-black uppercase tracking-[0.3em] text-secondary">THIS WEEK · SNAPSHOTS</span>
@@ -823,7 +829,7 @@ export default function BusinessSnapshotPage() {
           {/* TACTICAL ANALYSIS GRID */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-ink border border-ink ">
               {/* Card 1: Channel Performance (Horizontal Bar Chart) */}
-              <div className="bg-white p-10 flex flex-col space-y-8 min-h-[500px]">
+              <div className="bg-surface p-10 flex flex-col space-y-8 min-h-[500px]">
                   <div className="space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">CHANNEL PERFORMANCE</p>
                       <h3 className="text-2xl font-black tracking-tighter uppercase">Depletion Pulse</h3>
@@ -841,7 +847,7 @@ export default function BusinessSnapshotPage() {
                           layout="vertical"
                           margin={{ left: 8, right: 56 }}
                         >
-                           <CartesianGrid strokeDasharray="3 3" horizontal={false} strokeOpacity={0.05} />
+                           <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--ink) / 0.12)" />
                            <XAxis type="number" hide />
                            <YAxis 
                              dataKey="name" 
@@ -852,10 +858,13 @@ export default function BusinessSnapshotPage() {
                              tickLine={false}
                              width={120}
                              interval={0}
+                             tick={{ fill: 'hsl(var(--secondary))' }}
                            />
                            <RechartsTooltip 
-                             cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                             contentStyle={{ borderRadius: '0', border: '1px solid #000' }}
+                             cursor={{ fill: 'hsl(var(--foreground) / 0.04)' }}
+                             contentStyle={{ borderRadius: 0, border: '1px solid hsl(var(--hairline))', backgroundColor: 'hsl(var(--surface))', color: 'hsl(var(--ink))' }}
+                             itemStyle={{ color: 'hsl(var(--ink))' }}
+                             labelStyle={{ color: 'hsl(var(--secondary))' }}
                              formatter={(v: number) => [formatCurrency(v), 'Spend']}
                            />
                            <Bar dataKey="value" radius={[0, 0, 0, 0]} barSize={24}>
@@ -879,7 +888,7 @@ export default function BusinessSnapshotPage() {
               </div>
 
               {/* Card 2: Conversion Funnel (Sales Pipeline) */}
-              <div className="bg-white p-10 flex flex-col space-y-8 min-h-[500px]">
+              <div className="bg-surface p-10 flex flex-col space-y-8 min-h-[500px]">
                   <Link
                     href="/dashboard/sales-tracker"
                     className="flex items-start justify-between gap-4 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset -m-2 p-2"
@@ -916,7 +925,7 @@ export default function BusinessSnapshotPage() {
               <Link
                 href="/dashboard/actions"
                 aria-label="Open Action Items Kanban Board"
-                className="bg-white p-10 flex flex-col space-y-8 min-h-[500px] group cursor-pointer transition-colors hover:bg-cream/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+                className="bg-surface p-10 flex flex-col space-y-8 min-h-[500px] group cursor-pointer transition-colors hover:bg-cream/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
               >
                   <div className="flex items-start justify-between gap-4">
                       <div className="space-y-1">
@@ -996,7 +1005,7 @@ export default function BusinessSnapshotPage() {
           </div>
 
           {/* Portfolio client health — Primary KPI path + weekly WBR RAGs */}
-          <div className="bg-white border border-ink space-y-0 overflow-hidden">
+          <div className="bg-surface border border-ink space-y-0 overflow-hidden">
             <div className="bg-cream px-8 py-8 md:px-10 border-b border-ink flex flex-wrap items-end justify-between gap-6">
               <div className="space-y-2 min-w-0">
                 <p className="terminal-overline">Portfolio Intelligence</p>
@@ -1013,7 +1022,7 @@ export default function BusinessSnapshotPage() {
                   </div>
                 )}
                 {healthCycleDate && (
-                  <div className="flex items-center gap-2 text-[9px] font-black text-secondary uppercase tracking-widest bg-white px-3 py-1.5 border border-ink/10">
+                  <div className="flex items-center gap-2 text-[9px] font-black text-secondary uppercase tracking-widest bg-surface px-3 py-1.5 border border-ink/10">
                     <Calendar className="h-3.5 w-3.5" />
                     WBR Cycle:{' '}
                     {(() => {
@@ -1027,7 +1036,7 @@ export default function BusinessSnapshotPage() {
                   </div>
                 )}
                 {healthKpiMonth && (
-                  <div className="text-[9px] font-black text-secondary uppercase tracking-widest bg-white px-3 py-1.5 border border-ink/10">
+                  <div className="text-[9px] font-black text-secondary uppercase tracking-widest bg-surface px-3 py-1.5 border border-ink/10">
                     KPI Month: {format(parse(healthKpiMonth, 'yyyy-MM', new Date()), 'MMM yyyy').toUpperCase()}
                   </div>
                 )}
@@ -1099,7 +1108,7 @@ function PathSummaryTile({
   return (
     <Link
       href={href}
-      className="bg-white p-8 space-y-3 group transition-colors hover:bg-cream/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
+      className="bg-surface p-8 space-y-3 group transition-colors hover:bg-cream/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">{label}</p>
@@ -1144,7 +1153,7 @@ function RagSummaryStrip({
   const total = Math.max(green + amber + red, 1);
   const join = baseHref.includes('?') ? '&' : '?';
   return (
-    <div className="bg-white p-6 md:p-8 space-y-4">
+    <div className="bg-surface p-6 md:p-8 space-y-4">
       <Link
         href={baseHref}
         className="flex items-center justify-between gap-3 group focus-visible:outline-none"
@@ -1194,7 +1203,7 @@ function SnapshotWidget({
   const amountPrefix = varianceAmount != null && varianceAmount > 0 ? '+' : '';
 
   return (
-    <div className="bg-white p-5 md:p-6 xl:p-8 flex flex-col h-full min-w-0 overflow-hidden">
+    <div className="bg-surface p-5 md:p-6 xl:p-8 flex flex-col h-full min-w-0 overflow-hidden">
       <div className="space-y-3 mb-6 min-w-0">
         <p className="text-[10px] font-black uppercase tracking-widest text-brand leading-snug break-words">
           {title}

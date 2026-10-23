@@ -345,7 +345,7 @@ export default function ActionItemsPage() {
         }
       >
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 border border-ink/15 bg-white p-0.5">
+          <div className="flex h-10 border border-ink/15 bg-surface p-0.5">
             <button
               type="button"
               onClick={() => setViewMode('pulse')}
@@ -600,7 +600,7 @@ function ActionCard({
   return (
     <div
       className={cn(
-        'bg-white border border-ink/15 p-4 space-y-3 text-left whitespace-normal',
+        'bg-surface border border-ink/15 p-4 space-y-3 text-left whitespace-normal',
         overlay && 'shadow-xl border-brand/40 rotate-1 scale-[1.02]',
         item.status === 'Overdue' && 'border-destructive/30'
       )}

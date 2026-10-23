@@ -4,6 +4,7 @@ import { MagnifyingGlass, Bell, Command as CommandIcon, ChartBar, List, SignOut,
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CommandPalette } from "@/components/command-palette";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { ProfileManagementDialog } from "@/components/profile-management-dialog";
 import { useUser, useDoc, useAuth, useCollection, useFirestore } from "@/firebase";
 import { UserProfile } from "@/lib/types";
@@ -229,6 +230,8 @@ export function AppHeader() {
           <ChartBar size={14} />
           <span className="uppercase tracking-widest">Week · {mounted ? snapshotLabel : "--"}</span>
         </div>
+
+        <ThemeToggle />
 
         <Popover>
           <PopoverTrigger asChild>

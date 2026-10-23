@@ -202,6 +202,7 @@ export {
   onUserEmailAutomations,
   sweepOverdueActionItemEmails,
   onMailJobCreated,
+  onProductAnnouncementCreated,
 } from "./email/triggers";
 
 const sheetsSpreadsheetId = defineString("SHEETS_SPREADSHEET_ID", {
