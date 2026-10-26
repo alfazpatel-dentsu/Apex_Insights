@@ -1,5 +1,5 @@
 'use client';
-import { collection, doc, Firestore, getDocs, query, where, writeBatch, setDoc, updateDoc, deleteDoc, orderBy, limit, getDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, Firestore, getDocs, query, where, writeBatch, setDoc, updateDoc, deleteDoc, orderBy, limit, getDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
 import {
   getAuth,
   createUserWithEmailAndPassword,
@@ -130,11 +130,14 @@ function omitUndefined<T>(value: T): T {
 
 export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, id?: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
     const ref = tenantDoc(db, agencyId, 'actionItems', id);
+    const user = getAuth().currentUser;
+    if (!user) throw new Error('Sign in to save an action item.');
     const payload = omitUndefined({
         ...data,
         id: ref.id,
         updatedAt: new Date().toISOString(),
         createdAt: data.createdAt || new Date().toISOString(),
+        updatedBy: user.uid,
         ...(data.assignees
           ? {
               assignees: data.assignees.map((a) => ({
@@ -146,7 +149,16 @@ export const saveActionItem = async (db: Firestore, data: Partial<ActionItem>, i
           : {}),
     });
     try {
-        await setDoc(ref, payload, { merge: true });
+        await runTransaction(db, async (transaction) => {
+            const existing = await transaction.get(ref);
+            transaction.set(
+                ref,
+                existing.exists()
+                    ? payload
+                    : {...payload, createdBy: user.uid},
+                { merge: true }
+            );
+        });
     } catch (e) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'write', requestResourceData: payload }));
         throw e;
@@ -173,7 +185,8 @@ export function normalizeActionCommentHistory(
 /** Build comment history when saving: preserve past entries and append new text. */
 export function buildActionCommentHistory(
   existing: ActionItem | null | undefined,
-  nextCommentRaw: string | undefined
+  nextCommentRaw: string | undefined,
+  author?: string
 ): { comment: string; commentHistory: ActionCommentEntry[] } {
   const nextComment = (nextCommentRaw || '').trim();
   const prevComment = (existing?.comment || '').trim();
@@ -187,6 +200,7 @@ export function buildActionCommentHistory(
         id: `c-${Date.now()}`,
         text: nextComment,
         createdAt: new Date().toISOString(),
+        ...(author ? {author} : {}),
       });
     }
   }
@@ -225,7 +239,10 @@ export const deleteActionComment = async (
 
 export const deleteActionItem = async (db: Firestore, id: string, agencyId: AgencyId = DEFAULT_AGENCY) => {
     const ref = tenantDoc(db, agencyId, 'actionItems', id);
+    const user = getAuth().currentUser;
+    if (!user) throw new Error('Sign in to delete an action item.');
     try {
+        await updateDoc(ref, {updatedBy: user.uid});
         await deleteDoc(ref);
     } catch (e) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ref.path, operation: 'delete' }));

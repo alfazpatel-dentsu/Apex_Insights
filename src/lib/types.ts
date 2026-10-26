@@ -52,6 +52,26 @@ export interface ActionCommentEntry {
     author?: string;
 }
 
+export interface ActionItemActivityChange {
+    label: string;
+    before: unknown;
+    after: unknown;
+}
+
+export interface ActionItemActivity {
+    id: string;
+    agencyId: AgencyId;
+    actionItemId: string;
+    taskName: string;
+    type: 'created' | 'updated' | 'status_changed' | 'assignees_changed' | 'comment_added' | 'comment_deleted' | 'deleted';
+    actorUid: string;
+    actorName: string;
+    actorEmail?: string;
+    createdAt: { seconds: number; nanoseconds: number } | string;
+    changes?: Record<string, ActionItemActivityChange>;
+    comment?: string;
+}
+
 export interface ActionItem {
     id: string;
     taskName: string;
@@ -71,6 +91,8 @@ export interface ActionItem {
     dueDate?: string;
     createdAt: string;
     updatedAt: string;
+    createdBy?: string;
+    updatedBy?: string;
 }
 
 export interface KpiData {
