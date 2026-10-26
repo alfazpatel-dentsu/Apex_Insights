@@ -90,7 +90,7 @@ export function AssigneePicker({
               <li
                 key={key}
                 className={cn(
-                  'flex flex-col gap-1 border border-ink px-2 py-1.5 bg-white min-w-[140px] max-w-full',
+                  'flex flex-col gap-1 border border-ink px-2 py-1.5 bg-surface text-foreground min-w-[140px] max-w-full',
                   missing && 'border-warning'
                 )}
               >
@@ -145,14 +145,14 @@ export function AssigneePicker({
         className="rounded-none bg-background/50 border-none h-12 shadow-inner px-4 font-bold"
       />
 
-      <div className="border border-ink/10 bg-white">
+      <div className="border border-ink/10 bg-surface text-foreground">
         <ScrollArea className="h-64">
           <ul className="divide-y divide-ink/5">
             {matches.map((opt) => (
               <li key={`${opt.userId || ''}|${opt.name}|${opt.email}`}>
                 <button
                   type="button"
-                  className="w-full text-left px-3 py-2 hover:bg-cream"
+                  className="w-full text-left px-3 py-2 text-foreground hover:bg-cream"
                   onClick={() => addOption(opt)}
                 >
                   <div className="text-xs font-bold">{opt.name || opt.email}</div>
