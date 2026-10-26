@@ -204,6 +204,10 @@ export {
   onMailJobCreated,
   onProductAnnouncementCreated,
 } from "./email/triggers";
+export {
+  auditAgencyActionItem,
+  auditSokratiActionItem,
+} from "./action-item-activity";
 
 const sheetsSpreadsheetId = defineString("SHEETS_SPREADSHEET_ID", {
   default: "1NnLAuCjA4ZeaH116jzbVVajkYX3lytxbZVxOGocLWSs",

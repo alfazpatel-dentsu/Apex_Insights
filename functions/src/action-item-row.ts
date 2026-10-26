@@ -37,6 +37,13 @@ export interface ActionItemDoc {
   dueDate?: string;
   createdAt?: string;
   updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  commentHistory?: Array<{
+    id?: string;
+    text?: string;
+    author?: string;
+  }>;
 }
 
 const cell = (value: unknown): string => {

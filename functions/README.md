@@ -5,6 +5,7 @@
 | Function | Purpose |
 |----------|---------|
 | `mirrorActionItemToSheet` | Live upsert/delete on every `actionItems` write → Google Sheets |
+| `auditSokratiActionItem` / `auditAgencyActionItem` | Immutable, per-action-item activity history for creation, edits, assignee/status changes, comments, and deletion |
 | `backfillActionItemsSheet` | Callable — Admin-only full Sheet rebuild |
 | `onActionItemEmailAutomations` | Emails + in-app alerts for **action overdue** / **action assigned** |
 | `onUserEmailAutomations` | Emails for **access requested** / **access granted** / **user invited** |
@@ -189,6 +190,17 @@ Admin → **Backfill Action Items to Sheet**
 
 1. Create / edit / delete an action item → Sheet row updates (key = `id`)
 2. Logs: `firebase functions:log --only mirrorActionItemToSheet`
+
+### Action Item activity history
+
+Activity records are written server-side to `actionItemActivity` and shown in each
+action item's editor. The history captures the actor and time for creation,
+tracked field changes, comments, status/assignee changes, and deletion. Firestore
+rules allow agency members to read their agency's activity records but do not
+allow clients to create, edit, or delete them. Deploy the Firestore rules and
+both `auditSokratiActionItem` and `auditAgencyActionItem` functions together with
+the app changes. Activity before deployment cannot be reconstructed; existing
+items will show history from their first subsequent change.
 
 ### Verify emails
 

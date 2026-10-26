@@ -24,9 +24,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry, UserProfile } from '@/lib/types';
+import { ActionItem, ActionSection, ActionStatus, ActionPriority, Client, KpiData, ActionCommentEntry, ActionItemActivity, UserProfile } from '@/lib/types';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useFirestore, useCollection, useUser, useDoc } from '@/firebase';
+import { where } from 'firebase/firestore';
 import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { assigneesFromItem, assignedToLabel, type ActionAssignee } from '@/lib/assignees';
 import { AssigneePicker } from '@/components/assignee-picker';
@@ -38,7 +39,7 @@ import {
   normalizeActionCommentHistory,
 } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, MessageSquareText, Trash2 } from 'lucide-react';
+import { History, Loader2, MessageSquareText, Trash2 } from 'lucide-react';
 import { resolveActionStatus } from '@/lib/normalize';
 import { format, parseISO, isValid } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -86,6 +87,36 @@ function formatCommentDate(iso: string): string {
   }
 }
 
+function formatActivityDate(value: ActionItemActivity['createdAt']): string {
+  const date = typeof value === 'string' ? new Date(value) : new Date(value.seconds * 1000);
+  return Number.isNaN(date.getTime()) ? 'Unknown time' : format(date, 'dd MMM yyyy · HH:mm');
+}
+
+function formatActivityValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (Array.isArray(value)) return value.length ? value.map(String).join(', ') : '—';
+  return String(value);
+}
+
+function activitySummary(entry: ActionItemActivity): string {
+  switch (entry.type) {
+    case 'created':
+      return 'created this action item';
+    case 'deleted':
+      return 'deleted this action item';
+    case 'status_changed':
+      return `changed status from ${formatActivityValue(entry.changes?.status?.before)} to ${formatActivityValue(entry.changes?.status?.after)}`;
+    case 'assignees_changed':
+      return `changed assignees from ${formatActivityValue(entry.changes?.assignees?.before)} to ${formatActivityValue(entry.changes?.assignees?.after)}`;
+    case 'comment_added':
+      return 'added a comment';
+    case 'comment_deleted':
+      return 'deleted a comment';
+    case 'updated':
+      return `updated ${Object.values(entry.changes || {}).map((change) => change.label).join(', ')}`;
+  }
+}
+
 /** Resolve display history: stored history, or legacy single comment. */
 function resolveCommentHistory(action?: ActionItem | null): ActionCommentEntry[] {
   if (!action) return [];
@@ -114,6 +145,24 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
   const activeAgency = getActiveAgency(userProfile);
   const clientsPath = getCollectionPath(activeAgency, 'clients');
   const kpisPath = getCollectionPath(activeAgency, 'kpis');
+  const activityConstraints = useMemo(
+    () => action && activeAgency
+      ? [where('actionItemId', '==', action.id), where('agencyId', '==', activeAgency)]
+      : [null],
+    [action?.id, activeAgency]
+  );
+  const { data: activityEntries, error: activityError } = useCollection<ActionItemActivity>(
+    action && activeAgency ? 'actionItemActivity' : null,
+    activityConstraints
+  );
+  const sortedActivity = useMemo(
+    () => [...(activityEntries || [])].sort((a, b) => {
+      const getMillis = (value: ActionItemActivity['createdAt']) =>
+        typeof value === 'string' ? Date.parse(value) : value.seconds * 1000;
+      return getMillis(b.createdAt) - getMillis(a.createdAt);
+    }),
+    [activityEntries]
+  );
 
   const [isSaving, setIsSaving] = useState(false);
   const [localHistory, setLocalHistory] = useState<ActionCommentEntry[]>([]);
@@ -296,7 +345,8 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
         : action;
       const { comment, commentHistory } = buildActionCommentHistory(
         existingForHistory,
-        data.comment
+        data.comment,
+        userProfile?.displayName || user?.displayName || user?.email || 'Unknown user'
       );
 
       const assignees = (data.assignees || [])
@@ -495,9 +545,14 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                             )}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">
-                                {formatCommentDate(entry.createdAt)}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-primary font-mono">
+                                  {formatCommentDate(entry.createdAt)}
+                                </span>
+                                <span className="text-[10px] font-bold text-secondary">
+                                  {entry.author || 'Author unknown'}
+                                </span>
+                              </div>
                               <div className="flex items-center gap-2">
                                 {idx === 0 && !isConfirming && (
                                   <span className="text-[9px] font-black uppercase tracking-widest text-secondary">
@@ -557,6 +612,64 @@ export function AddActionItemDialog({ isOpen, onOpenChange, clientId, clientName
                           );
                         })}
                       </ul>
+                    </ScrollArea>
+                  )}
+                </div>
+              )}
+
+              {action && (
+                <div className="rounded-none border border-foreground/10 bg-foreground/[0.02]">
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-foreground/5">
+                    <History className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-secondary">
+                      Activity History
+                    </span>
+                    <span className="ml-auto text-[10px] font-mono font-bold text-secondary">
+                      {sortedActivity.length}
+                    </span>
+                  </div>
+                  {activityError ? (
+                    <p className="px-4 py-6 text-xs text-destructive">
+                      Could not load activity history: {activityError.message}
+                    </p>
+                  ) : sortedActivity.length === 0 ? (
+                    <p className="px-4 py-6 text-xs text-secondary italic">
+                      No activity has been recorded yet. Changes made before this history was enabled cannot be recovered.
+                    </p>
+                  ) : (
+                    <ScrollArea className="max-h-[280px]">
+                      <ol className="divide-y divide-foreground/5">
+                        {sortedActivity.map((entry) => (
+                          <li key={entry.id} className="px-4 py-3 space-y-1.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-medium">
+                                <span className="font-bold text-foreground">{entry.actorName || 'Unknown user'}</span>
+                                {' '}{activitySummary(entry)}
+                              </p>
+                              <time className="text-[10px] font-mono text-secondary">
+                                {formatActivityDate(entry.createdAt)}
+                              </time>
+                            </div>
+                            {entry.type === 'updated' && (
+                              <dl className="space-y-1 pl-3 border-l border-foreground/10">
+                                {Object.values(entry.changes || {}).map((change) => (
+                                  <div key={change.label} className="text-[11px] text-secondary">
+                                    <dt className="inline font-bold">{change.label}: </dt>
+                                    <dd className="inline break-words">
+                                      {formatActivityValue(change.before)} → {formatActivityValue(change.after)}
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            )}
+                            {(entry.type === 'comment_added' || entry.type === 'comment_deleted') && entry.comment && (
+                              <p className="pl-3 border-l border-foreground/10 text-xs text-secondary whitespace-pre-wrap break-words">
+                                {entry.comment}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
                     </ScrollArea>
                   )}
                 </div>
