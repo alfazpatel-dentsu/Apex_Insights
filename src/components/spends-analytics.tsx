@@ -363,47 +363,77 @@ export function SpendsAnalytics() {
     () => (excludeLargeClients ? weeklyData.filter((row) => !isMyntraOrOlaClient(row)) : weeklyData),
     [weeklyData, excludeLargeClients]
   );
-  const compareMonthlyData = useMemo(() => {
+  const compareMonthlyDataBase = useMemo(() => {
     const base = excludeLargeClients
       ? monthlyDataAllClients.filter((row) => !isMyntraOrOlaClient(row))
       : monthlyDataAllClients;
-    return base.filter((row) => {
-      if ((row.dataType || 'SPENDS') !== compareDataType) return false;
-      if (compareChannels.length > 0 && !compareChannels.includes(row.channelVendor)) return false;
-      if (compareTypes.length > 0 && !compareTypes.includes(row.type)) return false;
-      if (compareClients.length > 0 && !compareClients.includes(row.brandName)) return false;
-      if (compareTeams.length > 0 && !compareTeams.includes(row.team)) return false;
-      return true;
-    });
-  }, [monthlyDataAllClients, excludeLargeClients, compareDataType, compareChannels, compareTypes, compareClients, compareTeams]);
-  const compareWeeklyData = useMemo(() => {
-    if (compareDataType === 'ORGANIC REVENUE') return [];
+    return base.filter((row) => (row.dataType || 'SPENDS') === compareDataType);
+  }, [monthlyDataAllClients, excludeLargeClients, compareDataType]);
+  const compareWeeklyDataBase = useMemo(() => {
+    if (compareDataType !== 'SPENDS') return [];
     const base = excludeLargeClients
       ? weeklyDataAllClients.filter((row) => !isMyntraOrOlaClient(row))
       : weeklyDataAllClients;
-    return base.filter((row) => {
-      if (compareChannels.length > 0 && !compareChannels.includes(row.channelVendor)) return false;
-      if (compareTypes.length > 0 && !compareTypes.includes(row.type)) return false;
-      if (compareClients.length > 0 && !compareClients.includes(row.brandName)) return false;
-      if (compareTeams.length > 0 && !compareTeams.includes(row.team)) return false;
-      return true;
-    });
-  }, [weeklyDataAllClients, excludeLargeClients, compareDataType, compareChannels, compareTypes, compareClients, compareTeams]);
+    return base.filter((row) => (row.dataType || 'SPENDS') === 'SPENDS');
+  }, [weeklyDataAllClients, excludeLargeClients, compareDataType]);
 
-  // Unique Options for Filters
+  const matchesCompareFilters = (
+    row: MonthlySpend | WeeklySpend,
+    exclude?: 'client' | 'type' | 'channel' | 'team'
+  ) => (
+    (exclude === 'client' || compareClients.length === 0 || compareClients.includes(row.brandName || '')) &&
+    (exclude === 'type' || compareTypes.length === 0 || compareTypes.includes(row.type || '')) &&
+    (exclude === 'channel' || compareChannels.length === 0 || compareChannels.includes(row.channelVendor || '')) &&
+    (exclude === 'team' || compareTeams.length === 0 || compareTeams.includes(row.team || ''))
+  );
+  const compareMonthlyData = useMemo(
+    () => compareMonthlyDataBase.filter((row) => matchesCompareFilters(row)),
+    [compareMonthlyDataBase, compareClients, compareTypes, compareChannels, compareTeams]
+  );
+  const compareWeeklyData = useMemo(
+    () => compareWeeklyDataBase.filter((row) => matchesCompareFilters(row)),
+    [compareWeeklyDataBase, compareClients, compareTypes, compareChannels, compareTeams]
+  );
+
   const filterOptions = useMemo(() => {
-    if (!rawMonthlyData) return { channels: [], clients: [], teams: [], types: [] };
-    return {
-      channels: Array.from(new Set(rawMonthlyData.map(d => canonicalizeChannel(d.channelVendor)))).filter(Boolean).sort(),
-      clients: Array.from(new Set(rawMonthlyData.map(d => d.brandName))).filter(Boolean).sort(),
-      teams: Array.from(new Set(rawMonthlyData.map(d => d.team))).filter(Boolean).sort(),
-      types: Array.from(new Set(rawMonthlyData.map(d => d.type))).filter(Boolean).sort(),
+    const optionRows = compareGrain === 'week' ? compareWeeklyDataBase : compareMonthlyDataBase;
+    const getValues = (
+      dimension: 'client' | 'type' | 'channel' | 'team',
+      selected: string[]
+    ) => {
+      const values = optionRows
+        .filter((row) => matchesCompareFilters(row, dimension))
+        .map((row) => {
+          if (dimension === 'client') return row.brandName;
+          if (dimension === 'type') return row.type;
+          if (dimension === 'channel') return row.channelVendor;
+          return row.team;
+        })
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+      return Array.from(new Set([...values, ...selected])).sort((a, b) => a.localeCompare(b));
     };
-  }, [rawMonthlyData]);
+
+    return {
+      channels: getValues('channel', compareChannels),
+      clients: getValues('client', compareClients),
+      teams: getValues('team', compareTeams),
+      types: getValues('type', compareTypes),
+    };
+  }, [
+    compareGrain,
+    compareMonthlyDataBase,
+    compareWeeklyDataBase,
+    compareClients,
+    compareTypes,
+    compareChannels,
+    compareTeams,
+  ]);
 
   const stats = useMemo(() => {
     if (!monthlyData || !weeklyData || !mounted) return null;
 
+    const spendMonthlyData = monthlyData.filter((row) => (row.dataType || 'SPENDS') === 'SPENDS');
+    const spendWeeklyData = weeklyData.filter((row) => (row.dataType || 'SPENDS') === 'SPENDS');
     const currentYearStr = selectedYear;
     const prevYearStr = (parseInt(selectedYear) - 1).toString();
 
@@ -429,11 +459,11 @@ export function SpendsAnalytics() {
       };
     };
 
-    const monthsInYear = Array.from(new Set(monthlyData.filter(d => d.month.startsWith(currentYearStr)).map(d => d.month))).sort().reverse();
+    const monthsInYear = Array.from(new Set(spendMonthlyData.filter(d => d.month.startsWith(currentYearStr)).map(d => d.month))).sort().reverse();
     // Prefer latest month that actually has spend (same approach as Snapshot)
     let lastMonthKey = '';
     for (const m of monthsInYear) {
-      const monthTotal = monthlyData
+      const monthTotal = spendMonthlyData
         .filter((d) => d.month === m)
         .reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
       if (monthTotal > 0) {
@@ -455,8 +485,8 @@ export function SpendsAnalytics() {
       return m >= 1 && m <= throughMonth;
     };
     // Fair YoY: YTD through latest uploaded month vs same months last year
-    const ytdCurrRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, currentYearStr));
-    const ytdPrevRows = monthlyData.filter((d) => isSamePeriodYtd(d.month, prevYearStr));
+    const ytdCurrRows = spendMonthlyData.filter((d) => isSamePeriodYtd(d.month, currentYearStr));
+    const ytdPrevRows = spendMonthlyData.filter((d) => isSamePeriodYtd(d.month, prevYearStr));
     const yearlyCurrent = aggregateBrandSpendBreakdown(ytdCurrRows);
     const yearlyPrev = aggregateBrandSpendBreakdown(ytdPrevRows);
 
@@ -466,12 +496,12 @@ export function SpendsAnalytics() {
       ? format(parse(lastMonthKey, 'yyyy-MM', new Date()), 'MMM').toUpperCase()
       : '';
 
-    const lastMonth = aggregateBrandSpendBreakdown(monthlyData.filter(d => d.month === lastMonthKey));
-    const prevMonth = aggregateBrandSpendBreakdown(monthlyData.filter(d => d.month === prevMonthKey));
+    const lastMonth = aggregateBrandSpendBreakdown(spendMonthlyData.filter(d => d.month === lastMonthKey));
+    const prevMonth = aggregateBrandSpendBreakdown(spendMonthlyData.filter(d => d.month === prevMonthKey));
     const lastMonthSpends = Object.values(lastMonth.spendMap).reduce((a, b) => a + b, 0);
     const prevMonthSpends = Object.values(prevMonth.spendMap).reduce((a, b) => a + b, 0);
 
-    const weeksInYear = Array.from(new Set(weeklyData.filter(d => d.month?.startsWith(currentYearStr)).map(d => d.week))).sort((a, b) => {
+    const weeksInYear = Array.from(new Set(spendWeeklyData.filter(d => d.month?.startsWith(currentYearStr)).map(d => d.week))).sort((a, b) => {
       try {
         return parse(b, 'dd-MM-yyyy', new Date()).getTime() - parse(a, 'dd-MM-yyyy', new Date()).getTime();
       } catch (e) {
@@ -481,8 +511,8 @@ export function SpendsAnalytics() {
     const lastWeekKey = weeksInYear[0] || '';
     const prevWeekKey = lastWeekKey ? format(subWeeks(parse(lastWeekKey, 'dd-MM-yyyy', new Date()), 1), 'dd-MM-yyyy') : '';
 
-    const lastWeek = aggregateBrandSpendBreakdown(weeklyData.filter(d => d.week === lastWeekKey));
-    const prevWeek = aggregateBrandSpendBreakdown(weeklyData.filter(d => d.week === prevWeekKey));
+    const lastWeek = aggregateBrandSpendBreakdown(spendWeeklyData.filter(d => d.week === lastWeekKey));
+    const prevWeek = aggregateBrandSpendBreakdown(spendWeeklyData.filter(d => d.week === prevWeekKey));
     const lastWeekSpends = Object.values(lastWeek.spendMap).reduce((a, b) => a + b, 0);
     const prevWeekSpends = Object.values(prevWeek.spendMap).reduce((a, b) => a + b, 0);
 
@@ -639,6 +669,10 @@ export function SpendsAnalytics() {
 
   const handleDataTypeChange = (dataType: SpendDataType) => {
     setCompareDataType(dataType);
+    setCompareClients([]);
+    setCompareTypes([]);
+    setCompareChannels([]);
+    setCompareTeams([]);
     if (dataType === 'ORGANIC REVENUE' && compareGrain === 'week') {
       setCompareGrain('month');
     }
@@ -646,7 +680,11 @@ export function SpendsAnalytics() {
 
   const handleGrainChange = (grain: SpendCompareGrain) => {
     setCompareGrain(grain);
-    const opts = listPeriodOptions(grain, monthKeys, weekKeys);
+    const opts = listPeriodOptions(
+      grain,
+      compareMonthlyData.map((row) => row.month),
+      compareWeeklyData.map((row) => row.week)
+    );
     const latest = opts[opts.length - 1];
     if (!latest) {
       setPeriodA('');
