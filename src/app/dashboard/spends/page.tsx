@@ -61,6 +61,7 @@ import {
   deleteWeeklySpend,
   bulkSaveMonthlySpends,
   bulkSaveWeeklySpends,
+  backfillSpendDataTypes,
 } from '@/lib/firestore-actions';
 import { useToast } from '@/hooks/use-toast';
 import { PageHeader } from '@/components/page-header';
@@ -82,9 +83,11 @@ import { where, getDocs, collection, query } from 'firebase/firestore';
 import { cn, openDialogFromMenu } from '@/lib/utils';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const monthlySpendSchema = z.object({
   uploadRecordId: z.string().optional(),
+  dataType: z.enum(['SPENDS', 'ORGANIC REVENUE']).default('SPENDS'),
   clientId: z.string().min(1, 'Required'),
   brandName: z.string().min(1, 'Required'),
   industry: z.string().min(1, 'Required'),
@@ -100,6 +103,7 @@ const monthlySpendSchema = z.object({
 
 const weeklySpendSchema = z.object({
   uploadRecordId: z.string().optional(),
+  dataType: z.enum(['SPENDS', 'ORGANIC REVENUE']).default('SPENDS'),
   clientId: z.string().min(1, 'Required'),
   brandName: z.string().min(1, 'Required'),
   industry: z.string().min(1, 'Required'),
@@ -124,6 +128,9 @@ function SpendsContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isBackfillOpen, setIsBackfillOpen] = useState(false);
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState(0);
 
   const [mounted, setMounted] = useState(false);
   const [shouldFetch, setShouldFetch] = useState(false);
@@ -276,9 +283,32 @@ function SpendsContent() {
     if (event.target) event.target.value = '';
   };
 
+  const handleBackfillDataTypes = async () => {
+    if (!activeAgency) {
+      toast({ variant: 'destructive', title: 'Backfill failed', description: 'Your account does not have an active agency.' });
+      return;
+    }
+
+    setIsBackfilling(true);
+    setBackfillProgress(0);
+    try {
+      const { monthlyUpdated, weeklyUpdated } = await backfillSpendDataTypes(firestore, activeAgency, setBackfillProgress);
+      toast({
+        title: 'Data type backfill complete',
+        description: `${monthlyUpdated} monthly and ${weeklyUpdated} weekly records marked as SPENDS.`,
+      });
+      setIsBackfillOpen(false);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Backfill failed', description: error.message });
+    } finally {
+      setIsBackfilling(false);
+      setBackfillProgress(0);
+    }
+  };
+
   const downloadTemplate = () => {
-    const monthlyHeaders = "Record ID,Client ID,Brand Name,Industry,Type,Sub Entity,Channel,Credit Line,Currency,Team,Month,Actual SPENDS";
-    const weeklyHeaders = "Record ID,Client ID,Brand Name,Industry,Type,Sub Entity,Channel,Credit Line,Currency,Team,Week,SPENDS";
+    const monthlyHeaders = "Record ID,Client ID,Brand Name,Industry,Type,Sub Entity,Channel,Credit Line,Currency,Team,Data Type,Month,Actual SPENDS";
+    const weeklyHeaders = "Record ID,Client ID,Brand Name,Industry,Type,Sub Entity,Channel,Credit Line,Currency,Team,Data Type,Week,SPENDS";
     const csv = activeTab === 'monthly' ? monthlyHeaders : weeklyHeaders;
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
@@ -302,6 +332,7 @@ function SpendsContent() {
       { header: 'Credit Line', key: 'creditLine', width: 15 },
       { header: 'Currency', key: 'currency', width: 10 },
       { header: 'Team', key: 'team', width: 15 },
+      { header: 'Data Type', key: 'dataType', width: 20 },
       { header: activeTab === 'monthly' ? 'Month' : 'Week', key: 'period', width: 15 },
       { header: 'Amount (INR)', key: 'amount', width: 18 },
     ];
@@ -324,6 +355,7 @@ function SpendsContent() {
         creditLine: item.creditLine,
         currency: item.currency,
         team: item.team,
+        dataType: item.dataType || 'SPENDS',
         period: activeTab === 'monthly' ? item.month : item.week,
         amount: activeTab === 'monthly' ? item.actualSpendsInr : item.spendsInr,
       });
@@ -375,6 +407,9 @@ function SpendsContent() {
               <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={downloadTemplate}>
                 <Download className="h-4 w-4" />Download Template
               </DropdownMenuItem>
+              <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={() => setIsBackfillOpen(true)} disabled={isUploading || isBackfilling}>
+                <Database className="h-4 w-4" />Backfill Existing Data Types
+              </DropdownMenuItem>
               <DropdownMenuItem className="rounded-none flex items-center gap-2" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
                 <Upload className="h-4 w-4" />Upload CSV
               </DropdownMenuItem>
@@ -402,6 +437,15 @@ function SpendsContent() {
             <span>{uploadProgress}%</span>
           </div>
           <Progress value={uploadProgress} className="h-2 rounded-full" />
+        </div>
+      )}
+      {isBackfilling && (
+        <div className="space-y-3 glass-card p-6 mb-6">
+          <div className="flex items-center justify-between text-xs font-black uppercase tracking-widest text-primary">
+            <span className="flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" />Marking legacy records as SPENDS...</span>
+            <span>{backfillProgress}%</span>
+          </div>
+          <Progress value={backfillProgress} className="h-2 rounded-full" />
         </div>
       )}
 
@@ -448,6 +492,7 @@ function SpendsContent() {
                     <TableHead className="px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">ID & Brand</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Record ID</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Industry & Type</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Data Type</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Vendor & Month</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Team</TableHead>
                     <TableHead className="text-right text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Actual (INR)</TableHead>
@@ -456,9 +501,9 @@ function SpendsContent() {
                 </TableHeader>
                 <TableBody>
                   {monthlyLoading ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-20"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center py-20"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></TableCell></TableRow>
                   ) : filteredMonthly.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-20 text-muted-foreground italic text-sm">No monthly records found for this period.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center py-20 text-muted-foreground italic text-sm">No monthly records found for this period.</TableCell></TableRow>
                   ) : filteredMonthly.map((spend) => (
                     <TableRow key={spend.id} className="border-b border-foreground/5 hover:bg-foreground/[0.02]">
                       <TableCell className="px-6 py-4">
@@ -480,6 +525,7 @@ function SpendsContent() {
                           </div>
                         </div>
                       </TableCell>
+                      <TableCell><Badge variant="outline" className="text-[9px] font-bold">{spend.dataType || 'SPENDS'}</Badge></TableCell>
                       <TableCell>
                         <div className="text-[11px] font-black">{canonicalizeChannel(spend.channelVendor)}</div>
                         <div className="text-[9px] font-mono font-bold opacity-60">{spend.month}</div>
@@ -514,6 +560,7 @@ function SpendsContent() {
                     <TableHead className="px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">ID & Brand</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Record ID</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Industry & Type</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Data Type</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Vendor & Week</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Team</TableHead>
                     <TableHead className="text-right text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">SPENDS (INR)</TableHead>
@@ -522,9 +569,9 @@ function SpendsContent() {
                 </TableHeader>
                 <TableBody>
                   {weeklyLoading ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-20"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center py-20"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></TableCell></TableRow>
                   ) : filteredWeekly.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-20 text-muted-foreground italic text-sm">No weekly records found for this period.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center py-20 text-muted-foreground italic text-sm">No weekly records found for this period.</TableCell></TableRow>
                   ) : filteredWeekly.map((spend) => (
                     <TableRow key={spend.id} className="border-b border-foreground/5 hover:bg-foreground/[0.02]">
                       <TableCell className="px-6 py-4">
@@ -546,6 +593,7 @@ function SpendsContent() {
                           </div>
                         </div>
                       </TableCell>
+                      <TableCell><Badge variant="outline" className="text-[9px] font-bold">{spend.dataType || 'SPENDS'}</Badge></TableCell>
                       <TableCell>
                         <div className="text-[11px] font-black">{canonicalizeChannel(spend.channelVendor)}</div>
                         <Badge variant="outline" className="text-[9px] h-4 rounded-sm px-1 font-bold">{spend.week}</Badge>
@@ -610,6 +658,25 @@ function SpendsContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog open={isBackfillOpen} onOpenChange={(open) => { if (!isBackfilling) setIsBackfillOpen(open); }}>
+        <AlertDialogContent className="rounded-none glass">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-headline text-2xl">Backfill Data Types?</AlertDialogTitle>
+            <AlertDialogDescription className="text-foreground/70 font-medium">
+              This will mark monthly and weekly records with a missing Data Type as SPENDS. Existing SPENDS and ORGANIC REVENUE values will be preserved. You can safely rerun this if interrupted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-6">
+            <AlertDialogCancel className="rounded-none h-12 px-6 font-bold" disabled={isBackfilling}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-brand hover:bg-ink rounded-none h-12 px-8 font-black" onClick={(event) => {
+              event.preventDefault();
+              void handleBackfillDataTypes();
+            }} disabled={isBackfilling}>
+              {isBackfilling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Mark as SPENDS'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -635,12 +702,12 @@ function SpendFormDialog({
   editingData: any;
   type: 'monthly' | 'weekly';
 }) {
-  const schema = type === 'monthly' ? monthlySpendSchema : weeklySpendSchema;
+  const schema = z.union([monthlySpendSchema, weeklySpendSchema]);
   const form = useForm({
     resolver: zodResolver(schema),
     defaultValues: editingData || {
       uploadRecordId: '', clientId: '', brandName: '', industry: '', type: '', subEntity: '',
-      channelVendor: '', creditLine: '', currency: 'INR', team: '',
+        dataType: 'SPENDS', channelVendor: '', creditLine: '', currency: 'INR', team: '',
       ...(type === 'monthly' ? { month: '', actualSpendsInr: 0 } : { week: '', spendsInr: 0 })
     }
   });
@@ -649,7 +716,7 @@ function SpendFormDialog({
     if (isOpen) {
       form.reset(editingData || {
         uploadRecordId: '', clientId: '', brandName: '', industry: '', type: '', subEntity: '',
-        channelVendor: '', creditLine: '', currency: 'INR', team: '',
+        dataType: 'SPENDS', channelVendor: '', creditLine: '', currency: 'INR', team: '',
         ...(type === 'monthly' ? { month: '', actualSpendsInr: 0 } : { week: '', spendsInr: 0 })
       });
     }
@@ -687,6 +754,19 @@ function SpendFormDialog({
                   </FormItem>
                 )} />
               ))}
+              <FormField control={form.control} name="dataType" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[10px] font-black uppercase tracking-widest opacity-60">Data Type</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger className="rounded-none bg-foreground/5 border-none h-10 shadow-inner"><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent className="rounded-none glass">
+                      <SelectItem value="SPENDS">SPENDS</SelectItem>
+                      <SelectItem value="ORGANIC REVENUE">ORGANIC REVENUE</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
               {type === 'monthly' ? (
                 <>
                   <FormField control={form.control} name="month" render={({ field }) => (

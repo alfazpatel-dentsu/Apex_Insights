@@ -129,9 +129,12 @@ export interface KpiWeeklyData {
 
 export type RagStatus = 'Green' | 'Amber' | 'Red' | 'N/A';
 
+export type SpendDataType = 'SPENDS' | 'ORGANIC REVENUE';
+
 export interface MonthlySpend {
   id: string;
   uploadRecordId?: string;
+  dataType?: SpendDataType;
   clientId: string;
   brandName: string;
   industry: string;
@@ -148,6 +151,7 @@ export interface MonthlySpend {
 export interface WeeklySpend {
   id: string;
   uploadRecordId?: string;
+  dataType?: SpendDataType;
   clientId: string;
   brandName: string;
   industry: string;

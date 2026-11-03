@@ -17,7 +17,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { isAllowedWorkEmail, type AgencyId, getCollectionPath, DEFAULT_AGENCY } from './agencies';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem, ActionCommentEntry } from './types';
+import { KpiData, KpiWeeklyData, MonthlySpend, WeeklySpend, SpendDataType, BusinessSnapshot, PerformanceShift, RagStatus, WbrEntry, UserProfile, Lead, LeadStatus, ServiceType, ActionItem, ActionCommentEntry } from './types';
 import { format, parse, isValid, startOfWeek, addDays, subMonths, subYears, startOfYear, subWeeks, endOfMonth, startOfMonth } from 'date-fns';
 import { generateBusinessSnapshot } from '@/ai/flows/business-snapshot-flow';
 import { canonicalizeChannel } from './normalize';
@@ -41,6 +41,14 @@ const sanitizeNumber = (val: any): number => {
     const cleaned = val.toString().replace(/[^0-9.-]/g, '').trim();
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : num;
+};
+
+const parseSpendDataType = (raw: any): SpendDataType => {
+    if (raw == null || raw.toString().trim() === '') return 'SPENDS';
+    const normalized = raw.toString().trim().toUpperCase().replace(/[^A-Z]/g, '');
+    if (normalized === 'SPENDS') return 'SPENDS';
+    if (normalized === 'ORGANICREVENUE') return 'ORGANIC REVENUE';
+    throw new Error(`Invalid Data Type "${raw}". Use SPENDS or ORGANIC REVENUE.`);
 };
 
 const getRowVal = (row: any, ...possibleKeys: string[]) => {
@@ -554,6 +562,7 @@ export const saveMonthlySpend = async (db: Firestore, data: Omit<MonthlySpend, '
     const ref = id ? tenantDoc(db, agencyId, 'monthlySpends', id) : doc(tenantCollection(db, agencyId, 'monthlySpends'));
     const payload = {
       ...data,
+      dataType: parseSpendDataType(data.dataType),
       channelVendor: canonicalizeChannel(data.channelVendor),
       uploadRecordId: ref.id,
     };
@@ -570,6 +579,7 @@ export const saveWeeklySpend = async (db: Firestore, data: Omit<WeeklySpend, 'id
     const month = parseMonthStr(data.week, true);
     const payload = {
       ...data,
+      dataType: parseSpendDataType(data.dataType),
       channelVendor: canonicalizeChannel(data.channelVendor),
       month,
       uploadRecordId: ref.id,
@@ -737,6 +747,46 @@ export const clearAllSpendsData = async (db: Firestore, agencyId: AgencyId = DEF
     }
 };
 
+export const backfillSpendDataTypes = async (
+    db: Firestore,
+    agencyId: AgencyId = DEFAULT_AGENCY,
+    onProgress?: (progress: number) => void
+) => {
+    const [monthlySnap, weeklySnap] = await Promise.all([
+        getDocs(tenantCollection(db, agencyId, 'monthlySpends')),
+        getDocs(tenantCollection(db, agencyId, 'weeklySpends')),
+    ]);
+    const records = [...monthlySnap.docs, ...weeklySnap.docs];
+    const legacyRecords = records.filter((record) => {
+        const dataType = record.data().dataType;
+        return dataType == null || dataType.toString().trim() === '';
+    });
+    const CHUNK_SIZE = 400;
+
+    for (let i = 0; i < legacyRecords.length; i += CHUNK_SIZE) {
+        const batch = writeBatch(db);
+        legacyRecords.slice(i, i + CHUNK_SIZE).forEach((record) => {
+            batch.update(record.ref, { dataType: 'SPENDS' });
+        });
+        await batch.commit().catch((err) => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: '/monthlySpends and /weeklySpends',
+                operation: 'write',
+                requestResourceData: { dataType: 'SPENDS' },
+            }));
+            throw err;
+        });
+        onProgress?.(Math.min(100, Math.round(((i + Math.min(CHUNK_SIZE, legacyRecords.length - i)) / Math.max(legacyRecords.length, 1)) * 100)));
+        await throttle();
+    }
+
+    if (legacyRecords.length === 0) onProgress?.(100);
+    return {
+        monthlyUpdated: legacyRecords.filter((record) => record.ref.parent.id === 'monthlySpends').length,
+        weeklyUpdated: legacyRecords.filter((record) => record.ref.parent.id === 'weeklySpends').length,
+    };
+};
+
 export const bulkSaveMonthlySpends = async (db: Firestore, entries: any[], onProgress?: (progress: number) => void, agencyId: AgencyId = DEFAULT_AGENCY) => {
     const col = tenantCollection(db, agencyId, 'monthlySpends');
     let processedCount = 0;
@@ -759,6 +809,7 @@ export const bulkSaveMonthlySpends = async (db: Firestore, entries: any[], onPro
             if (!month) month = fallbackMonth;
 
             batch.set(docRef, {
+                dataType: parseSpendDataType(getRowVal(entry, 'Data Type', 'dataType')),
                 clientId: getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A',
                 brandName: getRowVal(entry, 'Brand Name', 'Brand', 'client')?.toString().trim() || 'Unknown',
                 industry: getRowVal(entry, 'Industry') || 'N/A',
@@ -811,6 +862,7 @@ export const bulkSaveWeeklySpends = async (db: Firestore, entries: any[], onProg
             if (!month) month = fallbackMonth;
 
             batch.set(docRef, {
+                dataType: parseSpendDataType(getRowVal(entry, 'Data Type', 'dataType')),
                 clientId: getRowVal(entry, 'Client ID', 'ClientID', 'clientId')?.toString().trim() || 'N/A',
                 brandName: getRowVal(entry, 'Brand Name', 'Brand', 'client')?.toString().trim() || 'Unknown',
                 industry: getRowVal(entry, 'Industry') || 'N/A',
