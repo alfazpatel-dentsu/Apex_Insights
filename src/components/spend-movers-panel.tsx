@@ -36,6 +36,7 @@ import {
 } from 'recharts';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import type { SpendDataType } from '@/lib/types';
 
 type SortKey = 'change' | 'pct';
 type SortDir = 'asc' | 'desc';
@@ -170,6 +171,8 @@ function MultiSelectFilter({
 }
 
 export function SpendMoversPanel({
+  dataType,
+  onDataTypeChange,
   grain,
   onGrainChange,
   periodA,
@@ -204,6 +207,8 @@ export function SpendMoversPanel({
   onToggleCompareTeam,
   onClearCompareFilters,
 }: {
+  dataType: SpendDataType;
+  onDataTypeChange: (dataType: SpendDataType) => void;
   grain: SpendCompareGrain;
   onGrainChange: (grain: SpendCompareGrain) => void;
   periodA: string;
@@ -327,13 +332,15 @@ export function SpendMoversPanel({
   };
 
   const exportComparison = async () => {
-    const filename = `Aztec_Spend_Comparison_${periodA || 'baseline'}_vs_${periodB || 'compare'}.xlsx`;
+    const dataTypeSlug = dataType.replace(/\s+/g, '_');
+    const filename = `Aztec_${dataTypeSlug}_Comparison_${periodA || 'baseline'}_vs_${periodB || 'compare'}.xlsx`;
     try {
       const { Workbook } = await import('exceljs');
       const workbook = new Workbook();
-      const sheet = workbook.addWorksheet('Spend comparison');
+      const sheet = workbook.addWorksheet(`${dataType} comparison`);
       const periodLabels = periodCols.map((period) => period.label);
       const selectedFilters = [
+        `Data Type: ${dataType}`,
         `Grain: ${COMPARE_GRAINS.find((option) => option.value === grain)?.label || grain}`,
         `Baseline: ${baselineLabel || periodA || '—'}`,
         `Compare: ${compareLabel || periodB || '—'}`,
@@ -534,13 +541,25 @@ export function SpendMoversPanel({
 
         <div className="flex flex-wrap items-end gap-2" data-testid="spend-compare-controls">
           <div className="space-y-1">
+            <div className="text-[9px] font-black uppercase tracking-widest text-secondary">Data Type</div>
+            <Select value={dataType} onValueChange={(value) => onDataTypeChange(value as SpendDataType)}>
+              <SelectTrigger className="h-9 w-[160px] rounded-none text-[10px] font-black uppercase tracking-widest" data-testid="spend-compare-data-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-none">
+                <SelectItem value="SPENDS" className="text-[10px] font-bold uppercase">SPENDS</SelectItem>
+                <SelectItem value="ORGANIC REVENUE" className="text-[10px] font-bold uppercase">ORGANIC REVENUE</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
             <div className="text-[9px] font-black uppercase tracking-widest text-secondary">Grain</div>
             <Select value={grain} onValueChange={(v) => onGrainChange(v as SpendCompareGrain)}>
               <SelectTrigger className="h-9 w-[120px] rounded-none text-[10px] font-black uppercase tracking-widest">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="rounded-none">
-                {COMPARE_GRAINS.map((g) => (
+                {COMPARE_GRAINS.filter((g) => dataType !== 'ORGANIC REVENUE' || g.value !== 'week').map((g) => (
                   <SelectItem key={g.value} value={g.value} className="text-[10px] font-bold uppercase">
                     {g.label}
                   </SelectItem>

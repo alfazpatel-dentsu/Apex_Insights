@@ -27,7 +27,7 @@ import { format, parse, subMonths, subWeeks, isValid } from 'date-fns';
 import { where } from 'firebase/firestore';
 
 import { useCollection, useUser, useDoc } from '@/firebase';
-import { MonthlySpend, WeeklySpend, UserProfile } from '@/lib/types';
+import { MonthlySpend, WeeklySpend, SpendDataType, UserProfile } from '@/lib/types';
 import { getActiveAgency, agencyCollectionPath, getCollectionPath } from '@/lib/agencies';
 import { canonicalizeChannel } from '@/lib/normalize';
 import {
@@ -299,6 +299,7 @@ export function SpendsAnalytics() {
   const [qoqDimension, setQoqDimension] = useState<Dimension>('overall');
 
   const [excludeLargeClients, setExcludeLargeClients] = useState(false);
+  const [compareDataType, setCompareDataType] = useState<SpendDataType>('SPENDS');
   const [compareGrain, setCompareGrain] = useState<SpendCompareGrain>('month');
   const [periodA, setPeriodA] = useState('');
   const [periodB, setPeriodB] = useState('');
@@ -367,14 +368,16 @@ export function SpendsAnalytics() {
       ? monthlyDataAllClients.filter((row) => !isMyntraOrOlaClient(row))
       : monthlyDataAllClients;
     return base.filter((row) => {
+      if ((row.dataType || 'SPENDS') !== compareDataType) return false;
       if (compareChannels.length > 0 && !compareChannels.includes(row.channelVendor)) return false;
       if (compareTypes.length > 0 && !compareTypes.includes(row.type)) return false;
       if (compareClients.length > 0 && !compareClients.includes(row.brandName)) return false;
       if (compareTeams.length > 0 && !compareTeams.includes(row.team)) return false;
       return true;
     });
-  }, [monthlyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients, compareTeams]);
+  }, [monthlyDataAllClients, excludeLargeClients, compareDataType, compareChannels, compareTypes, compareClients, compareTeams]);
   const compareWeeklyData = useMemo(() => {
+    if (compareDataType === 'ORGANIC REVENUE') return [];
     const base = excludeLargeClients
       ? weeklyDataAllClients.filter((row) => !isMyntraOrOlaClient(row))
       : weeklyDataAllClients;
@@ -385,7 +388,7 @@ export function SpendsAnalytics() {
       if (compareTeams.length > 0 && !compareTeams.includes(row.team)) return false;
       return true;
     });
-  }, [weeklyDataAllClients, excludeLargeClients, compareChannels, compareTypes, compareClients, compareTeams]);
+  }, [weeklyDataAllClients, excludeLargeClients, compareDataType, compareChannels, compareTypes, compareClients, compareTeams]);
 
   // Unique Options for Filters
   const filterOptions = useMemo(() => {
@@ -587,8 +590,12 @@ export function SpendsAnalytics() {
     [weeklyDataAllClients]
   );
   const periodOptions = useMemo(
-    () => listPeriodOptions(compareGrain, monthKeys, weekKeys),
-    [compareGrain, monthKeys, weekKeys]
+    () => listPeriodOptions(
+      compareGrain,
+      compareMonthlyData.map((row) => row.month),
+      compareWeeklyData.map((row) => row.week)
+    ),
+    [compareGrain, compareMonthlyData, compareWeeklyData]
   );
 
   useEffect(() => {
@@ -604,6 +611,38 @@ export function SpendsAnalytics() {
         || ''
     );
   }, [stats?.keys.lastMonthKey, stats?.keys.prevMonthKey, monthKeys, weekKeys, periodB]);
+
+  useEffect(() => {
+    if (compareDataType === 'ORGANIC REVENUE' && compareGrain === 'week') {
+      setCompareGrain('month');
+      return;
+    }
+
+    const latest = periodOptions[periodOptions.length - 1];
+    if (!latest) {
+      if (periodA) setPeriodA('');
+      if (periodB) setPeriodB('');
+      return;
+    }
+
+    if (!periodOptions.some((option) => option.id === periodB)) {
+      setPeriodB(latest.id);
+    }
+    if (!periodOptions.some((option) => option.id === periodA)) {
+      setPeriodA(
+        pickExistingPeriod(periodYearsAgo(latest.id, compareGrain, 1), periodOptions)
+          || pickExistingPeriod(priorPeriod(latest.id, compareGrain), periodOptions)
+          || latest.id
+      );
+    }
+  }, [compareDataType, compareGrain, periodOptions, periodA, periodB]);
+
+  const handleDataTypeChange = (dataType: SpendDataType) => {
+    setCompareDataType(dataType);
+    if (dataType === 'ORGANIC REVENUE' && compareGrain === 'week') {
+      setCompareGrain('month');
+    }
+  };
 
   const handleGrainChange = (grain: SpendCompareGrain) => {
     setCompareGrain(grain);
@@ -833,7 +872,9 @@ export function SpendsAnalytics() {
 
       <div id="spend-movers">
         <SpendMoversPanel
-          key={`${compareGrain}-${periodA}-${periodB}`}
+          key={`${compareDataType}-${compareGrain}-${periodA}-${periodB}`}
+          dataType={compareDataType}
+          onDataTypeChange={handleDataTypeChange}
           grain={compareGrain}
           onGrainChange={handleGrainChange}
           periodA={periodA}
