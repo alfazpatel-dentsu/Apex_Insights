@@ -509,7 +509,7 @@ export default function AdminPage() {
         isOpen={isEditUserDialogOpen} 
         onOpenChange={(open) => {
           setIsEditUserDialogOpen(open);
-          if (!open) setSelectedUserForEdit(null);
+          if (!open) setSelectedUserForEdit(undefined);
         }}
         onSave={async (d, id) => {
           try {

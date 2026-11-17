@@ -97,7 +97,11 @@ const wbrSchema = z.object({
 
 type WbrFormValues = z.infer<typeof wbrSchema>;
 
-async function fetchClientMonthRange<T extends { month?: string }>(
+const normalizeRagStatus = (value?: RagStatus): 'Green' | 'Amber' | 'Red' => {
+  return value === 'Green' || value === 'Amber' || value === 'Red' ? value : 'Green';
+};
+
+async function fetchClientMonthRange<T extends { month?: string }>( 
   db: Firestore,
   collectionName: string,
   clientId: string,
@@ -266,8 +270,8 @@ export default function WbrEditPage() {
             emcsm: existingEntry.emcsm || cData?.emcsm || '',
             clientPartner: existingEntry.clientPartner || '',
             contractStatus: existingEntry.contractStatus || 'Valid',
-            engagementRag: existingEntry.engagementRag || 'Green',
-            performanceRag: existingEntry.performanceRag || 'Green',
+            engagementRag: normalizeRagStatus(existingEntry.engagementRag),
+            performanceRag: normalizeRagStatus(existingEntry.performanceRag),
             financeIssues: existingEntry.financeIssues || '',
             organicOpportunities: existingEntry.organicOpportunities || '',
             crossSellOpportunities: existingEntry.crossSellOpportunities || '',
@@ -377,7 +381,7 @@ export default function WbrEditPage() {
     return REVIEW_FIELDS.includes(fieldName);
   };
 
-  const renderFieldInfo = () => {
+  const renderFieldInfo = (_fieldName: string) => {
     if (isAdmin) return <ShieldCheck className="h-3.5 w-3.5 text-primary" />;
     return null;
   };

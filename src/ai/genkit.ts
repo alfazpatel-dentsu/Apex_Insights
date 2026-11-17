@@ -12,4 +12,12 @@ export const ai = genkit({
   ],
 });
 
+export function assertGoogleAiConfigured() {
+  if (!process.env.GOOGLE_GENAI_API_KEY?.trim() && !process.env.GEMINI_API_KEY?.trim()) {
+    throw new Error(
+      'Gemini API key is not configured. In Firebase App Hosting, create the GEMINI_API_KEY Secret Manager secret and deploy the backend. For local development only, set GEMINI_API_KEY in .env.local and restart the development server.'
+    );
+  }
+}
+
 export { z };

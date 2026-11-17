@@ -781,7 +781,7 @@ function KpiTrackingContent() {
 
       <KpiDialog isOpen={isDialogOpen} onOpenChange={(open) => {
         setIsDialogOpen(open);
-        if (!open) setSelectedKpiId(null);
+        if (!open) setSelectedKpiId(undefined);
       }} onSave={async (data) => {
         if (!activeAgency) throw new Error('Your account does not have an active agency.');
         const { clientId, clientName, cluster, lob, cduLead, emCsm, channel, kpi, kpiType, currency, ...rest } = data;
