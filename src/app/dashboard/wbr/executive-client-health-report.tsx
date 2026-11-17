@@ -30,6 +30,7 @@ import { exportToPdf } from '@/lib/pdf-export';
 import { spendWeekStartKey } from '@/lib/spend-week';
 import type {
   ActionItem,
+  Client,
   ExecutiveClientHealthAccount,
   ExecutiveClientHealthAction,
   ExecutiveClientHealthKpi,
@@ -128,6 +129,12 @@ function isAtRisk(entry: WbrEntry): boolean {
   return ['Red', 'Amber'].includes(entry.performanceRag) || ['Red', 'Amber'].includes(entry.engagementRag);
 }
 
+function resolveClientName(clientId: string, ...candidates: (string | undefined)[]): string {
+  return candidates.find((candidate) =>
+    candidate?.trim() && candidate.trim().toLocaleLowerCase() !== clientId.trim().toLocaleLowerCase()
+  )?.trim() || clientId;
+}
+
 function makeWeekEvidence(
   dateKey: string,
   spends: WeeklySpend[],
@@ -202,7 +209,7 @@ function ragClass(rag: RagStatus) {
   return 'border-ink/20 bg-ink/5 text-secondary';
 }
 
-export function ExecutiveClientHealthReportPanel({ wbrDate }: { wbrDate: string }) {
+export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate: string; clients: Client[] }) {
   const firestore = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
@@ -216,6 +223,10 @@ export function ExecutiveClientHealthReportPanel({ wbrDate }: { wbrDate: string 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const clientNameById = useMemo(
+    () => new Map(clients.map((client) => [client.uniqueId, client.name])),
+    [clients]
+  );
 
   useEffect(() => setSelectedDate(wbrDate), [wbrDate]);
 
@@ -245,12 +256,23 @@ export function ExecutiveClientHealthReportPanel({ wbrDate }: { wbrDate: string 
   const { data: savedReport } = useDoc<ExecutiveClientHealthReport>(
     reportId && agency ? `${getCollectionPath(agency, 'businessSnapshots')}/${reportId}` : null
   );
-  const activeReport =
+  const storedOrGeneratedReport =
     generatedReport?.wbrDate === selectedDate
       ? generatedReport
       : savedReport?.schemaVersion === 2 && savedReport.wbrDate === selectedDate
         ? savedReport
         : null;
+  const activeReport = useMemo(() => storedOrGeneratedReport ? ({
+    ...storedOrGeneratedReport,
+    riskAccounts: storedOrGeneratedReport.riskAccounts.map((account) => ({
+      ...account,
+      clientName: resolveClientName(
+        account.clientId,
+        clientNameById.get(account.clientId),
+        account.clientName
+      ),
+    })),
+  }) : null, [storedOrGeneratedReport, clientNameById]);
 
   const accountsById = useMemo(
     () => new Map((activeReport?.riskAccounts || []).map((account) => [account.clientId, account])),
@@ -365,7 +387,12 @@ export function ExecutiveClientHealthReportPanel({ wbrDate }: { wbrDate: string 
 
         return {
           clientId: entry.clientId,
-          clientName: entry.clientName || entry.clientId,
+          clientName: resolveClientName(
+            entry.clientId,
+            clientNameById.get(entry.clientId),
+            [...previousKpis, ...currentKpis].find((kpi) => kpi.clientName)?.clientName,
+            entry.clientName
+          ),
           cluster: entry.cluster || 'Unassigned',
           performanceRag: entry.performanceRag || 'N/A',
           engagementRag: entry.engagementRag || 'N/A',
@@ -607,7 +634,8 @@ function AccountBulletSection({
             const account = accountsById.get(item.clientId);
             return (
               <p key={item.clientId} className="break-inside-avoid border border-foreground/10 p-3 text-xs leading-relaxed">
-                <strong className="text-primary">{account?.clientName || item.clientId}:</strong> {item.bullet}
+                <strong className="text-primary">{account?.clientName || item.clientId}:</strong>{' '}
+                {account ? item.bullet.split(account.clientId).join(account.clientName) : item.bullet}
               </p>
             );
           })}

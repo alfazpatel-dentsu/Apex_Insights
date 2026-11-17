@@ -274,7 +274,7 @@ function WbrPageContent() {
           <div className={cn("flex items-center gap-2 px-6 h-14 rounded-3xl border shadow-lg", isWindowOpen ? "bg-success/10 border-success/20 text-success" : "bg-destructive/10 border-destructive/20 text-destructive")}>{isWindowOpen ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}<span className="text-xs font-black uppercase tracking-widest">{isWindowOpen ? 'Edit Window Open' : 'Historical Lock Active'}</span></div>
         </div>
       </PageHeader>
-      <ExecutiveClientHealthReportPanel wbrDate={format(currentWbrDate, 'yyyy-MM-dd')} />
+      <ExecutiveClientHealthReportPanel wbrDate={format(currentWbrDate, 'yyyy-MM-dd')} clients={allClients} />
       <div className="flex flex-wrap items-center gap-4 bg-white/30 dark:bg-black/20 p-4 rounded-none backdrop-blur-3xl border border-white/10 "><div className="relative flex-1 min-w-[200px]"><Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" /><Input placeholder="Search account name..." className="pl-12 rounded-none glass h-12 text-sm shadow-inner" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         <FilterGroup label="Cluster" value={selectedCluster} onChange={setSelectedCluster} options={clusters} />
         <FilterGroup label="Lead" value={selectedLead} onChange={setSelectedLead} options={leads} />
