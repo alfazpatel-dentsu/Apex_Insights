@@ -255,14 +255,14 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
     return () => { cancelled = true; };
   }, [firestore, agency, toast, wbrDate]);
 
-  const reportId = selectedDate ? `executive-client-health-v2-${selectedDate}` : '';
+  const reportId = selectedDate ? `executive-client-health-v3-${selectedDate}` : '';
   const { data: savedReport } = useDoc<ExecutiveClientHealthReport>(
     reportId && agency ? `${getCollectionPath(agency, 'businessSnapshots')}/${reportId}` : null
   );
   const storedOrGeneratedReport =
     generatedReport?.wbrDate === selectedDate
       ? generatedReport
-      : savedReport?.schemaVersion === 2 &&
+      : savedReport?.schemaVersion === 3 &&
           savedReport.wbrDate === selectedDate &&
           savedReport.currentWeekDate
         ? savedReport
@@ -439,7 +439,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
       });
       setGeneratedReport({
         id: reportId,
-        schemaVersion: 2,
+        schemaVersion: 3,
         reportType: 'executive-client-health',
         wbrDate: selectedDate,
         currentWeekDate,
@@ -606,7 +606,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
         <div className="border border-dashed border-foreground/20 p-6 text-center">
           <ChartBar className="mx-auto h-8 w-8 text-secondary/50" />
           <h3 className="mt-3 text-sm font-black uppercase tracking-tight">Generate an executive WBR brief</h3>
-          <p className="mt-1 text-xs text-secondary">The report lists each Red and Amber account, compares exact weekly spend and KPIs, summarizes the review notes, and surfaces pending actions.</p>
+          <p className="mt-1 text-xs text-secondary">Generate a concise, account-by-account AI readout. Previously saved summaries need to be regenerated for this improved format.</p>
         </div>
       )}
     </section>
@@ -635,6 +635,20 @@ function ClientReviewLink({
   );
 }
 
+function removeClientPrefix(bullet: string, ...labels: string[]): string {
+  let trimmed = bullet.trim();
+  for (const label of labels) {
+    const prefix = label.trim();
+    if (!prefix) continue;
+    while (trimmed.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())) {
+      const remainder = trimmed.slice(prefix.length);
+      if (!/^[\s:,\u2013\u2014-]/.test(remainder)) break;
+      trimmed = remainder.replace(/^[\s:,\u2013\u2014-]+/, '');
+    }
+  }
+  return trimmed;
+}
+
 function RagRoster({ title, accounts, wbrDate }: { title: string; accounts: ExecutiveClientHealthAccount[]; wbrDate: string }) {
   return (
     <div className="border border-foreground/15 p-3">
@@ -661,17 +675,20 @@ function AccountBulletSection({
     <section className="space-y-3">
       <h3 className="text-sm font-black uppercase tracking-widest">{title}</h3>
       {bullets.length ? (
-        <div className="grid gap-2 lg:grid-cols-2">
+        <ul className="grid gap-2 lg:grid-cols-2">
           {bullets.map((item) => {
             const account = accountsById.get(item.clientId);
             return (
-              <p key={item.clientId} className="break-inside-avoid border border-foreground/10 p-3 text-xs leading-relaxed">
-                <ClientReviewLink clientId={item.clientId} clientName={account?.clientName || item.clientId} wbrDate={wbrDate} className="font-bold text-primary" />:{' '}
-                {account ? item.bullet.split(account.clientId).join(account.clientName) : item.bullet}
-              </p>
+              <li key={item.clientId} className="flex items-start gap-2 break-inside-avoid border border-foreground/10 p-3 text-xs leading-relaxed">
+                <span aria-hidden="true" className="font-black text-primary">•</span>
+                <p>
+                  <ClientReviewLink clientId={item.clientId} clientName={account?.clientName || item.clientId} wbrDate={wbrDate} className="font-bold text-primary" />
+                  {' '}{removeClientPrefix(item.bullet, account?.clientName || '', item.clientId)}
+                </p>
+              </li>
             );
           })}
-        </div>
+        </ul>
       ) : <p className="text-xs text-secondary">No risk accounts in this WBR cycle.</p>}
     </section>
   );
@@ -695,12 +712,6 @@ function AccountEvidence({ account, wbrDate }: { account: ExecutiveClientHealthA
       <div className="grid gap-4 md:grid-cols-2">
         <WeekEvidence title="Last week" week={account.previousWeek} />
         <WeekEvidence title="Current week" week={account.currentWeek} />
-      </div>
-      <div className="grid gap-3 border-t border-foreground/10 pt-3 md:grid-cols-2">
-        <EvidenceText label="CSM comments" value={account.csmComments} />
-        <EvidenceText label="Performance summary" value={account.performanceSummary} />
-        <EvidenceText label="Executive summary" value={account.executiveSummary} />
-        <EvidenceText label="Challenges / opportunities" value={account.challenges.join(' ')} />
       </div>
     </article>
   );
@@ -746,14 +757,5 @@ function WeekEvidence({ title, week }: { title: string; week: ExecutiveClientHea
         );
       }) : <p className="text-[10px] text-secondary">No spend or KPI data recorded for this week.</p>}
     </section>
-  );
-}
-
-function EvidenceText({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[8px] font-black uppercase tracking-widest text-secondary">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap text-[10px] leading-relaxed">{value.trim() || 'Not recorded for this WBR cycle.'}</p>
-    </div>
   );
 }

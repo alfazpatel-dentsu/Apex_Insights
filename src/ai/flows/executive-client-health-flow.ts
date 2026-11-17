@@ -102,55 +102,42 @@ CURRENT_WEEK_KPIS={{#each this.currentWeek.kpis}}{{this.channel}} / {{this.name}
 PENDING_ACTIONS={{#each this.pendingActions}}{{this.taskName}} [{{this.status}}, {{this.priority}}], owner={{this.assignedTo}}, latest comment={{this.latestComment}}; {{/each}}
 {{/each}}
 
-Write concise, client-by-client bullets for senior leadership:
-- executiveSummary: briefly state portfolio exposure and what is driving it. Do not list or recalculate the RAG totals here; the UI presents exact, deterministic RAG client lists.
-- portfolioReadout: exactly one bullet for EVERY risk client, keyed by its exact CLIENT_ID. Combine that client's CSM comments, performance summary, executive summary, and challenges. Preserve material reasons and action plans.
-- performanceReadout: exactly one bullet for EVERY risk client, keyed by exact CLIENT_ID. Use week-by-week KPI target and achievement, channel and primary/non-primary classification. State which targets are missed (honor DESC means lower is better), and mention action plans from the account notes. Do not add KPI rows or aggregate incomparable metrics.
-- engagementReadout: exactly one bullet for EVERY risk client, keyed by exact CLIENT_ID. Summarize that account's CSM comments, executive summary/challenges, and contract status where relevant.
-- Do not omit any risk client. Do not invent causes, sentiment, commitments, owners, actions, or results. Treat empty comments, missing KPIs, and missing spends as unavailable, not zero.
-- Keep each bullet to one or two sentences. Use only evidence belonging to the matching client. Return arrays keyed to the supplied client IDs.`,
+SYNTHESIS RULES
+- Treat the source fields as evidence, not copy to reproduce. Do not quote, concatenate, or restate comments verbatim. Combine duplicate points and omit background details that do not change the leadership decision.
+- executiveSummary: 2-3 short sentences, at most 60 words, explaining portfolio exposure and the main shared drivers. The UI shows exact RAG rosters, so do not repeat counts or client lists.
+- portfolioReadout: exactly one concise bullet for EVERY risk client, keyed by exact CLIENT_ID. In at most 40 words, synthesize the principal account risk and its business impact using the CSM comment, performance summary, executive summary, and challenges. Include a mitigation only when the notes support it.
+- performanceReadout: exactly one concise bullet for EVERY risk client, keyed by exact CLIENT_ID. In at most 40 words, identify the most material missed KPI(s), with channel and week, and whether the notes show a response. Honor DESC (lower is better). Do not enumerate every KPI; the evidence table already provides exact values.
+- engagementReadout: exactly one concise bullet for EVERY risk client, keyed by exact CLIENT_ID. In at most 40 words, summarize the material relationship/operational challenge and relevant contract status.
+- Do not use field headings like "Comments" or "Challenges", repeat the client's name or ID in the bullet text, or invent causes, sentiment, commitments, owners, actions, or results.
+- Treat empty comments, missing KPIs, and missing spends as unavailable, not zero. Return arrays keyed to supplied client IDs and use distinct, executive-ready phrasing.`,
 });
-
-function fallbackAccountBullet(account: ExecutiveClientHealthAccount, section: 'portfolio' | 'performance' | 'engagement'): string {
-  if (section === 'portfolio') {
-    const notes = [account.csmComments, account.performanceSummary, account.executiveSummary, ...account.challenges]
-      .map((value) => value.trim())
-      .filter(Boolean);
-    return notes.length ? notes.join(' ') : 'No CSM comments, performance summary, executive summary, or challenge notes were recorded.';
-  }
-
-  if (section === 'engagement') {
-    const notes = [account.csmComments, account.executiveSummary, ...account.challenges]
-      .map((value) => value.trim())
-      .filter(Boolean);
-    if (account.contractStatus && account.contractStatus !== 'Valid') notes.push(`Contract status: ${account.contractStatus}.`);
-    return notes.length ? notes.join(' ') : 'No engagement comments or challenges were recorded.';
-  }
-
-  const metrics = [account.previousWeek, account.currentWeek].flatMap((week) =>
-    week.kpis.map((kpi) => {
-      const missed = kpi.direction === 'DESC' ? kpi.achieved > kpi.target : kpi.achieved < kpi.target;
-      return `${week.label}: ${kpi.channel} ${kpi.name} (${kpi.kpiType}) achieved ${kpi.achieved} against ${kpi.target}${missed ? ' (target missed)' : ''}`;
-    })
-  );
-  const plan = [account.performanceSummary, account.executiveSummary, ...account.challenges]
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return [...metrics, ...plan].join('. ') || 'No weekly KPI records or performance action plan were recorded.';
-}
 
 function ensureEveryRiskClient(
   generated: { clientId: string; bullet: string }[],
-  accounts: ExecutiveClientHealthAccount[],
-  section: 'portfolio' | 'performance' | 'engagement'
+  accounts: ExecutiveClientHealthAccount[]
 ) {
-  const generatedById = new Map(
-    generated.filter((item) => item.bullet.trim()).map((item) => [item.clientId, item.bullet.trim()])
-  );
-  return accounts.map((account) => ({
-    clientId: account.clientId,
-    bullet: generatedById.get(account.clientId) || fallbackAccountBullet(account, section),
-  }));
+  const expectedIds = new Set(accounts.map((account) => account.clientId));
+  const generatedById = new Map<string, string>();
+  generated.forEach((item) => {
+    const bullet = item.bullet.trim();
+    if (!expectedIds.has(item.clientId) || !bullet) return;
+    if (generatedById.has(item.clientId)) {
+      throw new Error(`AI returned a duplicate summary for client ${item.clientId}. Please regenerate the report.`);
+    }
+    if (bullet.split(/\s+/).length > 50) {
+      throw new Error(`AI returned an overlong account summary for client ${item.clientId}. Please regenerate the report.`);
+    }
+    generatedById.set(item.clientId, bullet);
+  });
+  const missingIds = accounts.filter((account) => !generatedById.has(account.clientId)).map((account) => account.clientId);
+  if (missingIds.length) {
+    throw new Error(`AI did not return concise summaries for every at-risk client (${missingIds.join(', ')}). Please regenerate the report.`);
+  }
+  return accounts.map((account) => {
+    const bullet = generatedById.get(account.clientId);
+    if (!bullet) throw new Error(`AI summary missing for client ${account.clientId}. Please regenerate the report.`);
+    return { clientId: account.clientId, bullet };
+  });
 }
 
 export async function generateExecutiveClientHealthSummary(
@@ -159,11 +146,14 @@ export async function generateExecutiveClientHealthSummary(
   assertGoogleAiConfigured();
   const { output } = await executiveClientHealthPrompt(input);
   if (!output) throw new Error('AI failed to generate the executive client health summary.');
+  if (!output.executiveSummary.trim() || output.executiveSummary.trim().split(/\s+/).length > 75) {
+    throw new Error('AI returned an empty or overlong executive summary. Please regenerate the report.');
+  }
 
   return {
     executiveSummary: output.executiveSummary,
-    portfolioReadout: ensureEveryRiskClient(output.portfolioReadout, input.riskAccounts, 'portfolio'),
-    performanceReadout: ensureEveryRiskClient(output.performanceReadout, input.riskAccounts, 'performance'),
-    engagementReadout: ensureEveryRiskClient(output.engagementReadout, input.riskAccounts, 'engagement'),
+    portfolioReadout: ensureEveryRiskClient(output.portfolioReadout, input.riskAccounts),
+    performanceReadout: ensureEveryRiskClient(output.performanceReadout, input.riskAccounts),
+    engagementReadout: ensureEveryRiskClient(output.engagementReadout, input.riskAccounts),
   };
 }
