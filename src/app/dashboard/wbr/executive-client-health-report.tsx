@@ -157,6 +157,9 @@ function makeWeekEvidence(
   const kpiRows: ExecutiveClientHealthKpi[] = kpis.flatMap((kpi) => {
     const week = weeklyByKpi.get(kpi.id);
     if (!week) return [];
+    const target = coerceKpiNumber(week.target);
+    const achieved = coerceKpiNumber(week.achieved);
+    if (target === 0 && achieved === 0) return [];
     return [{
       id: kpi.id,
       channel: canonicalizeChannel(kpi.channel),
@@ -164,8 +167,8 @@ function makeWeekEvidence(
       lob: kpi.lob || 'General',
       kpiType: isPrimaryKpiType(kpi.kpiType) ? 'PRIMARY' : 'NON-PRIMARY',
       direction: parseKpiDirection(kpi.direction, kpi.kpi),
-      target: coerceKpiNumber(week.target),
-      achieved: coerceKpiNumber(week.achieved),
+      target,
+      achieved,
       ...(kpi.currency ? { unit: kpi.currency } : {}),
     }];
   });
