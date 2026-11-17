@@ -3,7 +3,7 @@
  * @fileOverview AI flow to generate a high-level "Business Snapshot" cross-referencing KPIs and Spends.
  */
 
-import { ai, z } from '@/ai/genkit';
+import { ai, assertGoogleAiConfigured, z } from '@/ai/genkit';
 
 const BusinessSnapshotInputSchema = z.object({
   month: z.string(),
@@ -90,6 +90,7 @@ Bold section names with emojis. Numbered sub-pointers. Double newlines between s
 });
 
 export async function generateBusinessSnapshot(input: BusinessSnapshotInput): Promise<BusinessSnapshotOutput> {
+  assertGoogleAiConfigured();
   const { output } = await snapshotPrompt(input);
   if (!output) throw new Error('AI failed to generate business snapshot.');
   return output;

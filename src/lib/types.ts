@@ -313,3 +313,48 @@ export interface BusinessSnapshot {
     ragRisks: PerformanceShift[];
   };
 }
+
+export interface ExecutiveClientHealthAccount {
+  clientId: string;
+  clientName: string;
+  cluster: string;
+  performanceRag: RagStatus;
+  engagementRag: RagStatus;
+  contractStatus: string;
+  csmComments: string;
+  performanceSummary: string;
+  executiveSummary: string;
+  challenges: string[];
+  weeklySpend: number;
+  monthlySpend: number;
+  weeklyKpis: { name: string; target: number; achieved: number; unit?: string }[];
+  monthlyKpis: { name: string; target: number; achieved: number; unit?: string }[];
+}
+
+export interface ExecutiveClientHealthReport {
+  id: string;
+  reportType: 'executive-client-health';
+  wbrDate: string;
+  month: string;
+  weekNumber: number;
+  generatedAt: string;
+  savedAt?: string;
+  generatedBy?: string;
+  portfolio: {
+    clientCount: number;
+    performance: { green: number; amber: number; red: number };
+    engagement: { green: number; amber: number; red: number };
+    weeklySpend: number;
+    monthlySpend: number;
+    weeklyKpis: { target: number; achieved: number };
+    monthlyKpis: { target: number; achieved: number };
+  };
+  riskAccounts: ExecutiveClientHealthAccount[];
+  summary: {
+    executiveSummary: string;
+    portfolioReadout: string[];
+    performanceReadout: string[];
+    engagementReadout: string[];
+    priorityActions: string[];
+  };
+}

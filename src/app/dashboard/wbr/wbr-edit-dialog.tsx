@@ -47,6 +47,10 @@ const wbrSchema = z.object({
 
 type WbrFormValues = z.infer<typeof wbrSchema>;
 
+const normalizeRagValue = (value?: RagStatus): 'Green' | 'Amber' | 'Red' => {
+  return value === 'Green' || value === 'Amber' || value === 'Red' ? value : 'Green';
+};
+
 interface WbrEditDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -71,8 +75,8 @@ export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, isA
       clientPartner: client.clientPartner || '',
       contractStatus: entry?.contractStatus || 'Valid',
       financeIssues: entry?.financeIssues || '',
-      engagementRag: entry?.engagementRag || 'Green',
-      performanceRag: entry?.performanceRag || 'Green',
+      engagementRag: normalizeRagValue(entry?.engagementRag),
+      performanceRag: normalizeRagValue(entry?.performanceRag),
       organicOpportunities: entry?.organicOpportunities || '',
       crossSellOpportunities: entry?.crossSellOpportunities || '',
       performanceSummary: entry?.performanceSummary || '',
@@ -89,8 +93,8 @@ export function WbrEditDialog({ isOpen, onOpenChange, onSave, client, entry, isA
         clientPartner: client.clientPartner || '',
         contractStatus: entry?.contractStatus || 'Valid',
         financeIssues: entry?.financeIssues || '',
-        engagementRag: entry?.engagementRag || 'Green',
-        performanceRag: entry?.performanceRag || 'Green',
+        engagementRag: normalizeRagValue(entry?.engagementRag),
+        performanceRag: normalizeRagValue(entry?.performanceRag),
         organicOpportunities: entry?.organicOpportunities || '',
         crossSellOpportunities: entry?.crossSellOpportunities || '',
         performanceSummary: entry?.performanceSummary || '',

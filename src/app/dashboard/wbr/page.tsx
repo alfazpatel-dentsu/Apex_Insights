@@ -138,17 +138,17 @@ function WbrPageContent() {
     return isAfter(today, windowStart) && isBefore(today, windowEnd);
   }, [currentWbrDate, mounted]);
 
-  const clusters = useMemo(() => Array.from(new Set(allClients.map(c => c.cluster).filter(Boolean) || [])).sort(), [allClients]);
-  const leads = useMemo(() => Array.from(new Set(allClients.map(c => c.clusterLead).filter(Boolean) || [])).sort(), [allClients]);
+  const clusters = useMemo(() => Array.from(new Set(allClients.map(c => c.cluster).filter((value): value is string => !!value))).sort(), [allClients]);
+  const leads = useMemo(() => Array.from(new Set(allClients.map(c => c.clusterLead).filter((value): value is string => !!value))).sort(), [allClients]);
   const managers = useMemo(() => {
-    const fromClients = allClients.map(c => c.emcsm);
-    const fromEntries = (wbrEntries || []).map(e => e.emcsm);
-    return Array.from(new Set([...fromClients, ...fromEntries].filter((v): v is string => !!v && v !== 'N/A'))).sort();
+    const fromClients = allClients.map(c => c.emcsm).filter((value): value is string => !!value && value !== 'N/A');
+    const fromEntries = (wbrEntries || []).map(e => e.emcsm).filter((value): value is string => !!value && value !== 'N/A');
+    return Array.from(new Set([...fromClients, ...fromEntries])).sort();
   }, [allClients, wbrEntries]);
   const partners = useMemo(() => {
-    const fromClients = allClients.map(c => c.clientPartner);
-    const fromEntries = (wbrEntries || []).map(e => e.clientPartner);
-    return Array.from(new Set([...fromClients, ...fromEntries].filter((v): v is string => !!v && v !== 'N/A'))).sort();
+    const fromClients = allClients.map(c => c.clientPartner).filter((value): value is string => !!value && value !== 'N/A');
+    const fromEntries = (wbrEntries || []).map(e => e.clientPartner).filter((value): value is string => !!value && value !== 'N/A');
+    return Array.from(new Set([...fromClients, ...fromEntries])).sort();
   }, [allClients, wbrEntries]);
 
   const filteredClients = useMemo(() => {

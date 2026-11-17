@@ -1001,29 +1001,30 @@ export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string
     prevWbrDateStr ? getDocs(query(wbrCollection, where('wbrDate', '==', prevWbrDateStr), limit(200))) : Promise.resolve({ docs: [] } as any)
   ]);
 
-  const kpis = kpisSnap.docs.map(d => ({ id: d.id, ...d.data() } as KpiData));
-  const currentSpends = spendsSnap.docs.map(d => d.data() as MonthlySpend);
-  const prevSpends = prevSpendsSnap.docs.map(d => d.data() as MonthlySpend);
-  const yearlySpends = yearlySpendsSnap.docs.map(d => d.data() as MonthlySpend);
-  const weeklySpends = weeklySpendsSnap.docs.map(d => d.data() as WeeklySpend);
-  const kpiWeekly = kpiWeeklySnap.docs.map(d => d.data() as KpiWeeklyData);
-  const wbrEntries = wbrSnap.docs.map(d => ({ id: d.id, ...d.data() } as WbrEntry));
-  const prevWbrEntries = prevWbrSnap.docs.map(d => ({ id: d.id, ...d.data() } as WbrEntry));
+  const kpis = kpisSnap.docs.map((d: any) => ({ id: d.id, ...d.data() } as KpiData));
+  const currentSpends = spendsSnap.docs.map((d: any) => d.data() as MonthlySpend);
+  const prevSpends = prevSpendsSnap.docs.map((d: any) => d.data() as MonthlySpend);
+  const yearlySpends = yearlySpendsSnap.docs.map((d: any) => d.data() as MonthlySpend);
+  const weeklySpends = weeklySpendsSnap.docs.map((d: any) => d.data() as WeeklySpend);
+  const kpiWeekly = kpiWeeklySnap.docs.map((d: any) => d.data() as KpiWeeklyData);
+  const wbrEntries = wbrSnap.docs.map((d: any) => ({ id: d.id, ...d.data() } as WbrEntry));
+  const prevWbrEntries = prevWbrSnap.docs.map((d: any) => ({ id: d.id, ...d.data() } as WbrEntry));
 
   // FINANCIAL CALCULATIONS
-  const yearlyTotal = yearlySpends.reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
-  const monthlyTotal = currentSpends.reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
-  const prevMonthlyTotal = prevSpends.reduce((a, b) => a + (b.actualSpendsInr || 0), 0);
+  const yearlyTotal = yearlySpends.reduce<number>((a: number, b: MonthlySpend) => a + (b.actualSpendsInr || 0), 0);
+  const monthlyTotal = currentSpends.reduce<number>((a: number, b: MonthlySpend) => a + (b.actualSpendsInr || 0), 0);
+  const prevMonthlyTotal = prevSpends.reduce<number>((a: number, b: MonthlySpend) => a + (b.actualSpendsInr || 0), 0);
   
-  const getMap = (data: any[], keyField: string, valField: string) => data.reduce((acc, d) => {
-    acc[d[keyField]] = (acc[d[keyField]] || 0) + (d[valField] || 0);
+  const getMap = (data: Record<string, any>[], keyField: string, valField: string) => data.reduce((acc: Record<string, number>, d: Record<string, any>) => {
+    const key = d[keyField] as string;
+    acc[key] = (acc[key] || 0) + (Number(d[valField]) || 0);
     return acc;
   }, {} as Record<string, number>);
-
-  const getMetaMap = (data: any[]) => data.reduce((acc, d) => {
-    if (!acc[d.brandName]) acc[d.brandName] = { type: d.type || 'N/A', team: d.team || 'N/A', kpi: '' };
+  const getMetaMap = (data: Record<string, any>[]) => data.reduce((acc: Record<string, { type: string; team: string; kpi: string }>, d: Record<string, any>) => {
+    const brandName = String(d.brandName ?? '');
+    if (!acc[brandName]) acc[brandName] = { type: d.type || 'N/A', team: d.team || 'N/A', kpi: '' };
     return acc;
-  }, {} as Record<string, any>);
+  }, {} as Record<string, { type: string; team: string; kpi: string }>);
 
   const yearlyAvgMap: Record<string, number> = {};
   const yearlyMetaMap = getMetaMap(yearlySpends);
@@ -1047,8 +1048,8 @@ export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string
   const prevWeek = weeksArr[weeksArr.length - 2] || '';
   const lastWSpends = weeklySpends.filter(s => s.week === lastWeek);
   const prevWSpends = weeklySpends.filter(s => s.week === prevWeek);
-  const lastWTotal = lastWSpends.reduce((a, b) => a + (b.spendsInr || 0), 0);
-  const prevWTotal = prevWSpends.reduce((a, b) => a + (b.spendsInr || 0), 0);
+  const lastWTotal = lastWSpends.reduce<number>((a: number, b: WeeklySpend) => a + (b.spendsInr || 0), 0);
+  const prevWTotal = prevWSpends.reduce<number>((a: number, b: WeeklySpend) => a + (b.spendsInr || 0), 0);
   const { gainers: wGainers, losers: wLosers } = getShifts(getMap(lastWSpends, 'brandName', 'spendsInr'), getMap(prevWSpends, 'brandName', 'spendsInr'), getMetaMap([...lastWSpends, ...prevWSpends]), 'spend');
 
   // DUAL RAG HEALTH ASSESSMENT (WBR BASED)
@@ -1057,11 +1058,11 @@ export const refreshBusinessSnapshot = async (db: Firestore, targetMonth: string
   const ragAdvancements: PerformanceShift[] = [];
   const ragRisks: PerformanceShift[] = [];
 
-  wbrEntries.forEach(curr => {
+  wbrEntries.forEach((curr: WbrEntry) => {
     if (curr.performanceRag in pCounts) pCounts[curr.performanceRag as keyof typeof pCounts]++;
     if (curr.engagementRag in eCounts) eCounts[curr.engagementRag as keyof typeof eCounts]++;
 
-    const prev = prevWbrEntries.find(p => p.clientId === curr.clientId);
+    const prev = prevWbrEntries.find((p: WbrEntry) => p.clientId === curr.clientId);
     const brand = curr.clientName || curr.clientId;
     const team = curr.clusterLead || 'N/A';
     
