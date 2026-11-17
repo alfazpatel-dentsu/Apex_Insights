@@ -22,7 +22,7 @@ The VM update script handles this automatically when `src/app` is missing.
 |---------|----------|-----------------|
 | Next.js dev server | Yes | `npm run dev` — Turbopack, port **3000** |
 | Firebase Auth + Firestore | Yes (cloud) | Hardcoded project `vdc200007-ppclientcentre-prod` in `src/firebase/config.ts`; no local emulator config |
-| Gemini API | Optional | Business Snapshot AI uses `GEMINI_API_KEY`. Local development may use `.env.local`; Firebase App Hosting must bind it from Cloud Secret Manager via `apphosting.yaml`. |
+| Gemini API | Optional | Business Snapshot AI uses `GEMINI_API_KEY`. Local development may use `.env.local`. The App Hosting secret binding is temporarily disabled while non-AI changes are published; restore the Cloud Secret Manager binding in `apphosting.yaml` after its IAM access is configured. |
 | Cloud Functions (Sheets sync) | Optional | `functions/` — **1st gen** live `actionItems` → Google Sheets (`action-items-sheets` codebase); see `functions/README.md` |
 | Email / team alerts | Optional | Same functions codebase — Microsoft Graph send as `aztec_alerts@dentsu.com`; Admin → Notifications |
 
@@ -53,4 +53,4 @@ Login requires valid Firebase Auth credentials plus a Firestore `users/{uid}` pr
 
 ### Environment variables
 
-`.env` template includes empty Gemini key variables for local development. Never commit real key values. Production Gemini access uses the `GEMINI_API_KEY` Secret Manager reference in `apphosting.yaml`; create it with `firebase apphosting:secrets:set GEMINI_API_KEY --project vdc200007-ppclientcentre-prod` and deploy the App Hosting backend. Firebase config is hardcoded, not env-based.
+`.env` template includes empty Gemini key variables for local development. Never commit real key values. Production Gemini access is temporarily disabled; after Secret Manager IAM access is configured, restore the `GEMINI_API_KEY` reference in `apphosting.yaml`, create/update it with `firebase apphosting:secrets:set GEMINI_API_KEY --project vdc200007-ppclientcentre-prod`, and deploy the App Hosting backend. Firebase config is hardcoded, not env-based.
