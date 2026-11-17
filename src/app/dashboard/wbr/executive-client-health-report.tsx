@@ -25,9 +25,8 @@ import { useToast } from '@/hooks/use-toast';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { coerceKpiNumber, isPrimaryKpiType, parseKpiDirection } from '@/lib/kpi-rag';
-import { toSpendNumber } from '@/lib/spend-week';
+import { resolveWowWeekPair, spendWeekStartKey, toSpendNumber } from '@/lib/spend-week';
 import { exportToPdf } from '@/lib/pdf-export';
-import { spendWeekStartKey } from '@/lib/spend-week';
 import type {
   ActionItem,
   Client,
@@ -262,7 +261,9 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
   const storedOrGeneratedReport =
     generatedReport?.wbrDate === selectedDate
       ? generatedReport
-      : savedReport?.schemaVersion === 2 && savedReport.wbrDate === selectedDate
+      : savedReport?.schemaVersion === 2 &&
+          savedReport.wbrDate === selectedDate &&
+          savedReport.currentWeekDate
         ? savedReport
         : null;
   const activeReport = useMemo(() => storedOrGeneratedReport ? ({
@@ -306,14 +307,9 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
     if (!agency || !selectedDate) return;
     setIsGenerating(true);
     try {
-      const currentPeriod = getWeekPeriod(selectedDate);
-      const previousDate = format(subWeeks(parse(selectedDate, 'yyyy-MM-dd', new Date()), 1), 'yyyy-MM-dd');
-      const previousPeriod = getWeekPeriod(previousDate);
-      const months = Array.from(new Set([previousPeriod.month, currentPeriod.month]));
-      const spendMonthStart = format(subWeeks(parse(selectedDate, 'yyyy-MM-dd', new Date()), 1), 'yyyy-MM');
-      const spendMonthEnd = format(addDays(parse(selectedDate, 'yyyy-MM-dd', new Date()), 6), 'yyyy-MM');
-
-      const [wbrEntries, actionItems, weeklySpendRows, ...kpiAndWeeklyRows] = await Promise.all([
+      const selectedPeriod = getWeekPeriod(selectedDate);
+      const spendMonthStart = format(subWeeks(parse(selectedDate, 'yyyy-MM-dd', new Date()), 12), 'yyyy-MM');
+      const [wbrEntries, actionItems, weeklySpendRows] = await Promise.all([
         fetchAll<WbrEntry>(
           firestore,
           getCollectionPath(agency, 'wbrEntries')!,
@@ -323,14 +319,30 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
         fetchAll<WeeklySpend>(
           firestore,
           getCollectionPath(agency, 'weeklySpends')!,
-          [where('month', '>=', spendMonthStart), where('month', '<=', spendMonthEnd), orderBy('month')]
+          [where('month', '>=', spendMonthStart), where('month', '<=', selectedPeriod.month), orderBy('month')]
         ),
-        ...months.flatMap((month) => [
-          fetchAll<KpiData>(firestore, getCollectionPath(agency, 'kpis')!, [where('month', '==', month)]),
-          fetchAll<KpiWeeklyData>(firestore, getCollectionPath(agency, 'kpiWeeklyData')!, [where('month', '==', month)]),
-        ]),
       ]);
 
+      const weeklyRowsByKey = new Map<string, WeeklySpend[]>();
+      weeklySpendRows.forEach((row) => {
+        if (row.dataType === 'ORGANIC REVENUE') return;
+        const weekStart = spendWeekStartKey(row.week);
+        if (!weekStart || weekStart > selectedPeriod.weekStart) return;
+        const rows = weeklyRowsByKey.get(weekStart) || [];
+        rows.push(row);
+        weeklyRowsByKey.set(weekStart, rows);
+      });
+
+      const availableWeeks = resolveWowWeekPair(Array.from(weeklyRowsByKey.keys()));
+      const currentWeekDate = availableWeeks.currentKey || selectedPeriod.weekStart;
+      const previousWeekDate = availableWeeks.previousKey || format(subWeeks(parse(currentWeekDate, 'yyyy-MM-dd', new Date()), 1), 'yyyy-MM-dd');
+      const currentPeriod = getWeekPeriod(currentWeekDate);
+      const previousPeriod = getWeekPeriod(previousWeekDate);
+      const months = Array.from(new Set([previousPeriod.month, currentPeriod.month]));
+      const kpiAndWeeklyRows = await Promise.all(months.flatMap((month) => [
+        fetchAll<KpiData>(firestore, getCollectionPath(agency, 'kpis')!, [where('month', '==', month)]),
+        fetchAll<KpiWeeklyData>(firestore, getCollectionPath(agency, 'kpiWeeklyData')!, [where('month', '==', month)]),
+      ]));
       const kpisByMonth = new Map<string, KpiData[]>();
       const weeklyKpisByMonth = new Map<string, KpiWeeklyData[]>();
       months.forEach((month, index) => {
@@ -353,16 +365,6 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
         const rows = actionsByClient.get(action.clientId) || [];
         rows.push(pending);
         actionsByClient.set(action.clientId, rows);
-      });
-
-      const weeklyRowsByKey = new Map<string, WeeklySpend[]>();
-      weeklySpendRows.forEach((row) => {
-        if (row.dataType === 'ORGANIC REVENUE') return;
-        const weekStart = spendWeekStartKey(row.week);
-        if (!weekStart) return;
-        const rows = weeklyRowsByKey.get(weekStart) || [];
-        rows.push(row);
-        weeklyRowsByKey.set(weekStart, rows);
       });
 
       const portfolio = {
@@ -405,13 +407,13 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
           executiveSummary: entry.summary || '',
           challenges,
           previousWeek: makeWeekEvidence(
-            previousDate,
+            previousWeekDate,
             weeklyRowsByKey.get(previousPeriod.weekStart)?.filter((row) => row.clientId === entry.clientId) || [],
             previousKpis,
             weeklyKpisByMonth.get(previousPeriod.month) || []
           ),
           currentWeek: makeWeekEvidence(
-            selectedDate,
+            currentWeekDate,
             weeklyRowsByKey.get(currentPeriod.weekStart)?.filter((row) => row.clientId === entry.clientId) || [],
             currentKpis,
             weeklyKpisByMonth.get(currentPeriod.month) || []
@@ -429,7 +431,8 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
 
       const summary = await generateExecutiveClientHealthSummary({
         cycleDate: selectedDate,
-        previousWeekDate: previousDate,
+        currentWeekDate,
+        previousWeekDate,
         portfolio,
         riskAccounts,
       });
@@ -438,7 +441,8 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
         schemaVersion: 2,
         reportType: 'executive-client-health',
         wbrDate: selectedDate,
-        previousWeekDate: previousDate,
+        currentWeekDate,
+        previousWeekDate,
         generatedAt: new Date().toISOString(),
         ...(user?.uid ? { generatedBy: user.uid } : {}),
         portfolio,
@@ -535,7 +539,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
             <p className="text-[9px] font-black uppercase tracking-[0.28em] text-primary">Aztec Control Center · Weekly Review</p>
             <h2 className="mt-2 text-2xl font-black uppercase tracking-tight md:text-4xl">Executive Client Health</h2>
             <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-secondary">
-              Current week {getWeekPeriod(activeReport.wbrDate).label} · Compared with {getWeekPeriod(activeReport.previousWeekDate).label}
+              Current week {getWeekPeriod(activeReport.currentWeekDate || activeReport.wbrDate).label} · Compared with {getWeekPeriod(activeReport.previousWeekDate).label}
             </p>
           </header>
 

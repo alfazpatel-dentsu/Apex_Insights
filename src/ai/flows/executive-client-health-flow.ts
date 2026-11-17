@@ -53,6 +53,7 @@ const RiskAccountSchema = z.object({
 
 const ExecutiveClientHealthInputSchema = z.object({
   cycleDate: z.string(),
+  currentWeekDate: z.string(),
   previousWeekDate: z.string(),
   portfolio: z.object({
     clientCount: z.number(),
@@ -80,7 +81,7 @@ const executiveClientHealthPrompt = ai.definePrompt({
   input: { schema: ExecutiveClientHealthInputSchema },
   output: { schema: ExecutiveClientHealthOutputSchema },
   config: { temperature: 0.1 },
-  prompt: `Prepare an evidence-led CEO briefing for Aztec Control Center for WBR cycle {{cycleDate}}. Compare the current week with the immediately preceding week {{previousWeekDate}}.
+  prompt: `Prepare an evidence-led CEO briefing for Aztec Control Center for WBR cycle {{cycleDate}}. Compare the latest available spend week {{currentWeekDate}} with the previous available spend week {{previousWeekDate}}.
 
 PORTFOLIO RAG COUNTS (unique clients; do not recalculate):
 - Clients reviewed: {{portfolio.clientCount}}

@@ -367,6 +367,7 @@ export interface ExecutiveClientHealthReport {
   schemaVersion: 2;
   reportType: 'executive-client-health';
   wbrDate: string;
+  currentWeekDate?: string;
   previousWeekDate: string;
   generatedAt: string;
   savedAt?: string;
