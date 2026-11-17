@@ -94,27 +94,30 @@ service cloud.firestore {
     // All new business data must live below an agency. This is the security
     // boundary that prevents one agency from reading or writing another's data.
     match /agencies/{agencyId}/{document=**} {
-      allow read: if agencyId in ['sokrati', 'iprospect'] && canAccessAgency(agencyId);
-      allow write: if agencyId in ['sokrati', 'iprospect'] &&
-        canAccessAgency(agencyId) &&
-        !document.matches('actionItems/.*');
+      allow read, write: if agencyId in ['sokrati', 'iprospect'] && canAccessAgency(agencyId);
     }
     match /agencies/{agencyId}/actionItems/{id} {
       allow read: if agencyId in ['sokrati', 'iprospect'] && canAccessAgency(agencyId);
       allow create: if agencyId in ['sokrati', 'iprospect'] &&
         canAccessAgency(agencyId) &&
-        request.resource.data.createdBy == request.auth.uid &&
-        request.resource.data.updatedBy == request.auth.uid;
+        (!('createdBy' in request.resource.data) ||
+          request.resource.data.createdBy == request.auth.uid) &&
+        (!('updatedBy' in request.resource.data) ||
+          request.resource.data.updatedBy == request.auth.uid);
       allow update: if agencyId in ['sokrati', 'iprospect'] &&
         canAccessAgency(agencyId) &&
-        request.resource.data.updatedBy == request.auth.uid &&
         (
-          (!('createdBy' in resource.data) && !('createdBy' in request.resource.data)) ||
-          resource.data.createdBy == request.resource.data.createdBy
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedBy']) ||
+          request.resource.data.updatedBy == request.auth.uid
+        ) &&
+        (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) ||
+          (!('createdBy' in resource.data) &&
+            request.resource.data.createdBy == request.auth.uid) ||
+          ('createdBy' in resource.data &&
+            request.resource.data.createdBy == resource.data.createdBy)
         );
-      allow delete: if agencyId in ['sokrati', 'iprospect'] &&
-        canAccessAgency(agencyId) &&
-        resource.data.updatedBy == request.auth.uid;
+      allow delete: if agencyId in ['sokrati', 'iprospect'] && canAccessAgency(agencyId);
     }
 
     // Legacy root collections are Sokrati-only during migration. No iProspect
@@ -131,16 +134,23 @@ service cloud.firestore {
     match /actionItems/{id} {
       allow read: if canAccessAgency('sokrati');
       allow create: if canAccessAgency('sokrati') &&
-        request.resource.data.createdBy == request.auth.uid &&
-        request.resource.data.updatedBy == request.auth.uid;
+        (!('createdBy' in request.resource.data) ||
+          request.resource.data.createdBy == request.auth.uid) &&
+        (!('updatedBy' in request.resource.data) ||
+          request.resource.data.updatedBy == request.auth.uid);
       allow update: if canAccessAgency('sokrati') &&
-        request.resource.data.updatedBy == request.auth.uid &&
         (
-          (!('createdBy' in resource.data) && !('createdBy' in request.resource.data)) ||
-          resource.data.createdBy == request.resource.data.createdBy
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedBy']) ||
+          request.resource.data.updatedBy == request.auth.uid
+        ) &&
+        (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) ||
+          (!('createdBy' in resource.data) &&
+            request.resource.data.createdBy == request.auth.uid) ||
+          ('createdBy' in resource.data &&
+            request.resource.data.createdBy == resource.data.createdBy)
         );
-      allow delete: if canAccessAgency('sokrati') &&
-        resource.data.updatedBy == request.auth.uid;
+      allow delete: if canAccessAgency('sokrati');
     }
     match /wbrEntries/{id} { allow read, write: if canAccessAgency('sokrati'); }
     match /pageManagement/{id} { allow read, write: if canAccessAgency('sokrati'); }
