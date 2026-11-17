@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { addDays, format, parse, startOfWeek, subWeeks } from 'date-fns';
 import {
   collection,
@@ -547,16 +548,16 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
             <h3 className="text-sm font-black uppercase tracking-widest">Executive summary</h3>
             <p className="border-l-4 border-primary bg-primary/5 p-4 text-sm leading-relaxed">{activeReport.summary.executiveSummary}</p>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <RagRoster title="Performance · Red" accounts={ragGroups.performanceRed} />
-              <RagRoster title="Performance · Amber" accounts={ragGroups.performanceAmber} />
-              <RagRoster title="Engagement · Red" accounts={ragGroups.engagementRed} />
-              <RagRoster title="Engagement · Amber" accounts={ragGroups.engagementAmber} />
+              <RagRoster title="Performance · Red" accounts={ragGroups.performanceRed} wbrDate={activeReport.wbrDate} />
+              <RagRoster title="Performance · Amber" accounts={ragGroups.performanceAmber} wbrDate={activeReport.wbrDate} />
+              <RagRoster title="Engagement · Red" accounts={ragGroups.engagementRed} wbrDate={activeReport.wbrDate} />
+              <RagRoster title="Engagement · Amber" accounts={ragGroups.engagementAmber} wbrDate={activeReport.wbrDate} />
             </div>
           </section>
 
-          <AccountBulletSection title="Portfolio readout · account by account" bullets={activeReport.summary.portfolioReadout} accountsById={accountsById} />
-          <AccountBulletSection title="Performance drivers · account by account" bullets={activeReport.summary.performanceReadout} accountsById={accountsById} />
-          <AccountBulletSection title="Engagement & challenges · account by account" bullets={activeReport.summary.engagementReadout} accountsById={accountsById} />
+          <AccountBulletSection title="Portfolio readout · account by account" bullets={activeReport.summary.portfolioReadout} accountsById={accountsById} wbrDate={activeReport.wbrDate} />
+          <AccountBulletSection title="Performance drivers · account by account" bullets={activeReport.summary.performanceReadout} accountsById={accountsById} wbrDate={activeReport.wbrDate} />
+          <AccountBulletSection title="Engagement & challenges · account by account" bullets={activeReport.summary.engagementReadout} accountsById={accountsById} wbrDate={activeReport.wbrDate} />
 
           <section className="space-y-4">
             <div>
@@ -569,7 +570,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
                   <article key={action.id} className="break-inside-avoid border border-foreground/15 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <p className="text-[10px] font-black uppercase text-primary">{account.clientName}</p>
+                        <ClientReviewLink clientId={account.clientId} clientName={account.clientName} wbrDate={activeReport.wbrDate} className="text-[10px] font-black uppercase text-primary" />
                         <h4 className="mt-1 text-sm font-bold">{action.taskName}</h4>
                       </div>
                       <span className="border border-foreground/15 px-2 py-1 text-[8px] font-black uppercase">{action.status} · {action.priority}</span>
@@ -592,7 +593,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
             {activeReport.riskAccounts.length ? (
               <div className="grid gap-4 xl:grid-cols-2">
                 {activeReport.riskAccounts.map((account) => (
-                  <AccountEvidence key={account.clientId} account={account} />
+                  <AccountEvidence key={account.clientId} account={account} wbrDate={activeReport.wbrDate} />
                 ))}
               </div>
             ) : <p className="border border-dashed border-foreground/20 p-5 text-sm text-secondary">No Red or Amber clients were recorded for this WBR cycle.</p>}
@@ -612,12 +613,34 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
   );
 }
 
-function RagRoster({ title, accounts }: { title: string; accounts: ExecutiveClientHealthAccount[] }) {
+function ClientReviewLink({
+  clientId,
+  clientName,
+  wbrDate,
+  className,
+}: {
+  clientId: string;
+  clientName: string;
+  wbrDate: string;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={`/dashboard/wbr/${encodeURIComponent(clientId)}?date=${encodeURIComponent(wbrDate)}`}
+      className={cn('hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', className)}
+      aria-label={`Open Weekly Review for ${clientName}`}
+    >
+      {clientName}
+    </Link>
+  );
+}
+
+function RagRoster({ title, accounts, wbrDate }: { title: string; accounts: ExecutiveClientHealthAccount[]; wbrDate: string }) {
   return (
     <div className="border border-foreground/15 p-3">
       <h4 className="text-[9px] font-black uppercase tracking-widest">{title} · {accounts.length}</h4>
       {accounts.length
-        ? <ul className="mt-2 space-y-1 text-[10px]">{accounts.map((account) => <li key={account.clientId}>{account.clientName} <span className="text-secondary">({account.clientId})</span></li>)}</ul>
+        ? <ul className="mt-2 space-y-1 text-[10px]">{accounts.map((account) => <li key={account.clientId}><ClientReviewLink clientId={account.clientId} clientName={account.clientName} wbrDate={wbrDate} /> <span className="text-secondary">({account.clientId})</span></li>)}</ul>
         : <p className="mt-2 text-[10px] text-secondary">None</p>}
     </div>
   );
@@ -627,10 +650,12 @@ function AccountBulletSection({
   title,
   bullets,
   accountsById,
+  wbrDate,
 }: {
   title: string;
   bullets: { clientId: string; bullet: string }[];
   accountsById: Map<string, ExecutiveClientHealthAccount>;
+  wbrDate: string;
 }) {
   return (
     <section className="space-y-3">
@@ -641,7 +666,7 @@ function AccountBulletSection({
             const account = accountsById.get(item.clientId);
             return (
               <p key={item.clientId} className="break-inside-avoid border border-foreground/10 p-3 text-xs leading-relaxed">
-                <strong className="text-primary">{account?.clientName || item.clientId}:</strong>{' '}
+                <ClientReviewLink clientId={item.clientId} clientName={account?.clientName || item.clientId} wbrDate={wbrDate} className="font-bold text-primary" />:{' '}
                 {account ? item.bullet.split(account.clientId).join(account.clientName) : item.bullet}
               </p>
             );
@@ -652,12 +677,14 @@ function AccountBulletSection({
   );
 }
 
-function AccountEvidence({ account }: { account: ExecutiveClientHealthAccount }) {
+function AccountEvidence({ account, wbrDate }: { account: ExecutiveClientHealthAccount; wbrDate: string }) {
   return (
     <article className="space-y-4 break-inside-avoid border border-foreground/20 p-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-lg font-black uppercase tracking-tight">{account.clientName}</h4>
+          <h4 className="text-lg font-black uppercase tracking-tight">
+            <ClientReviewLink clientId={account.clientId} clientName={account.clientName} wbrDate={wbrDate} className="text-primary" />
+          </h4>
           <p className="text-[9px] font-bold uppercase tracking-widest text-secondary">{account.clientId} · {account.cluster} · {account.contractStatus}</p>
         </div>
         <div className="flex flex-wrap gap-1 text-[8px] font-black uppercase">
