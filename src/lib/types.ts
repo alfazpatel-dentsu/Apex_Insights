@@ -314,6 +314,38 @@ export interface BusinessSnapshot {
   };
 }
 
+export interface ExecutiveClientHealthKpi {
+  id: string;
+  channel: string;
+  name: string;
+  lob: string;
+  kpiType: 'PRIMARY' | 'NON-PRIMARY';
+  direction: 'ASC' | 'DESC';
+  target: number;
+  achieved: number;
+  unit?: string;
+}
+
+export interface ExecutiveClientHealthWeek {
+  weekStartDate: string;
+  weekEndDate: string;
+  label: string;
+  spendsByChannel: { channel: string; amount: number }[];
+  kpis: ExecutiveClientHealthKpi[];
+}
+
+export interface ExecutiveClientHealthAction {
+  id: string;
+  taskName: string;
+  description: string;
+  status: ActionStatus;
+  priority: ActionPriority;
+  assignedTo: string;
+  dueDate?: string;
+  latestComment: string;
+  latestCommentAt?: string;
+}
+
 export interface ExecutiveClientHealthAccount {
   clientId: string;
   clientName: string;
@@ -325,18 +357,17 @@ export interface ExecutiveClientHealthAccount {
   performanceSummary: string;
   executiveSummary: string;
   challenges: string[];
-  weeklySpend: number;
-  monthlySpend: number;
-  weeklyKpis: { name: string; target: number; achieved: number; unit?: string }[];
-  monthlyKpis: { name: string; target: number; achieved: number; unit?: string }[];
+  previousWeek: ExecutiveClientHealthWeek;
+  currentWeek: ExecutiveClientHealthWeek;
+  pendingActions: ExecutiveClientHealthAction[];
 }
 
 export interface ExecutiveClientHealthReport {
   id: string;
+  schemaVersion: 2;
   reportType: 'executive-client-health';
   wbrDate: string;
-  month: string;
-  weekNumber: number;
+  previousWeekDate: string;
   generatedAt: string;
   savedAt?: string;
   generatedBy?: string;
@@ -344,17 +375,12 @@ export interface ExecutiveClientHealthReport {
     clientCount: number;
     performance: { green: number; amber: number; red: number };
     engagement: { green: number; amber: number; red: number };
-    weeklySpend: number;
-    monthlySpend: number;
-    weeklyKpis: { target: number; achieved: number };
-    monthlyKpis: { target: number; achieved: number };
   };
   riskAccounts: ExecutiveClientHealthAccount[];
   summary: {
     executiveSummary: string;
-    portfolioReadout: string[];
-    performanceReadout: string[];
-    engagementReadout: string[];
-    priorityActions: string[];
+    portfolioReadout: { clientId: string; bullet: string }[];
+    performanceReadout: { clientId: string; bullet: string }[];
+    engagementReadout: { clientId: string; bullet: string }[];
   };
 }

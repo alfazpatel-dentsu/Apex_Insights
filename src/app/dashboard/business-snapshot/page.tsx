@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { 
   ArrowsClockwise, 
   CircleNotch, 
-  Sparkle,
   FileText, 
   ArrowUpRight, 
   ArrowDownRight, 
@@ -22,18 +21,17 @@ import {
   Warning, 
   Clock 
 } from "@phosphor-icons/react";
-import { addDays, format, parse, startOfWeek, subMonths, isValid } from 'date-fns';
+import { format, parse, subMonths, isValid } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useDoc, useFirestore, useUser, useCollection } from '@/firebase';
-import { BusinessSnapshot, ExecutiveClientHealthAccount, ExecutiveClientHealthReport, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, KpiWeeklyData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus, AgencyId } from '@/lib/types';
+import { BusinessSnapshot, UserProfile, PerformanceShift, MonthlySpend, WeeklySpend, KpiData, WbrEntry, ActionItem, ActionStatus, Client, Lead, RagStatus, AgencyId } from '@/lib/types';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { clientPathFromPrimaryKpis, kpiAttainmentPct, selectPrimaryKpisForPath, type ClientPath } from '@/lib/kpi-rag';
 import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { refreshBusinessSnapshot } from '@/lib/firestore-actions';
-import { generateExecutiveClientHealthSummary } from '@/ai/flows/executive-client-health-flow';
 import {
   aggregateBrandSpendBreakdown,
   aggregateSpendByWeekStart,
@@ -43,12 +41,11 @@ import {
   formatWeekStartLabel,
   isMyntraOrOlaClient,
   resolveWowWeekPair,
-  spendWeekStartKey,
   toSpendNumber,
 } from '@/lib/spend-week';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { where, query, collection, doc, getDocs, orderBy, limit, setDoc, startAfter, documentId, type Firestore, type QueryConstraint, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
+import { where, query, collection, getDocs, orderBy, limit, startAfter, documentId, type Firestore, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { exportToPdf } from '@/lib/pdf-export';
 import { 
@@ -74,36 +71,6 @@ function normalizeClid(clientId?: string | null): string | null {
 
 function isMomentumExcludedClient(row: Pick<WeeklySpend, 'clientId' | 'brandName'>): boolean {
   return isMyntraOrOlaClient(row);
-}
-
-function getWbrWeekNumber(wbrDate: string): number {
-  const parsedDate = parse(wbrDate, 'yyyy-MM-dd', new Date());
-  const monday = startOfWeek(parsedDate, { weekStartsOn: 1 });
-  const thursday = addDays(monday, 3);
-  const monthKey = format(thursday, 'yyyy-MM');
-  let weekNumber = 1;
-  let check = new Date(thursday);
-
-  while (true) {
-    check = new Date(check.getTime() - 7 * 24 * 60 * 60 * 1000);
-    if (format(check, 'yyyy-MM') === monthKey) weekNumber += 1;
-    else break;
-  }
-
-  return weekNumber;
-}
-
-function sumByClient<T extends { clientId?: string }>(
-  rows: T[],
-  getAmount: (row: T) => number
-): { byClient: Map<string, number>; total: number } {
-  const byClient = new Map<string, number>();
-  const total = rows.reduce((sum, row) => {
-    const amount = getAmount(row);
-    if (row.clientId) byClient.set(row.clientId, (byClient.get(row.clientId) || 0) + amount);
-    return sum + amount;
-  }, 0);
-  return { byClient, total };
 }
 
 const formatCurrency = (val: number) => {
@@ -207,31 +174,6 @@ const PATH_RANK: Record<ClientPath, number> = { 'off-path': 0, 'no-signal': 1, '
 
 const KPI_PAGE_SIZE = 500;
 
-async function fetchAllDocuments<T extends object>(
-  db: Firestore,
-  collectionPath: string,
-  filters: QueryConstraint[]
-): Promise<(T & { id: string })[]> {
-  const results: (T & { id: string })[] = [];
-  let cursor: QueryDocumentSnapshot<DocumentData> | undefined;
-
-  while (true) {
-    const constraints = [
-      ...filters,
-      orderBy(documentId()),
-      ...(cursor ? [startAfter(cursor)] : []),
-      limit(KPI_PAGE_SIZE),
-    ];
-    const snap = await getDocs(query(collection(db, collectionPath), ...constraints));
-    if (snap.empty) break;
-    snap.docs.forEach((entry) => results.push({ id: entry.id, ...(entry.data() as T) }));
-    if (snap.size < KPI_PAGE_SIZE) break;
-    cursor = snap.docs[snap.docs.length - 1];
-  }
-
-  return results;
-}
-
 /** Load every KPI row for a month (Firestore queries are capped; paginate past the first page). */
 async function fetchAllKpisForMonth(db: Firestore, month: string, agencyId: string): Promise<KpiData[]> {
   const results: KpiData[] = [];
@@ -282,12 +224,9 @@ export default function BusinessSnapshotPage() {
   const [mounted, setMounted] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
-  const [isSavingReport, setIsSavingReport] = useState(false);
   const [statsWindow, setStatsWindow] = useState<any[]>([]);
   const [monthlyWindow, setMonthlyWindow] = useState<any[]>([]);
   const snapshotRef = useRef<HTMLDivElement>(null);
-  const executiveReportRef = useRef<HTMLElement>(null);
 
   // INTELLIGENCE STATE
   const [newsFeed, setNewsFeed] = useState<any[]>([]);
@@ -298,9 +237,6 @@ export default function BusinessSnapshotPage() {
   const [clientHealthLoading, setClientHealthLoading] = useState(false);
   const [healthCycleDate, setHealthCycleDate] = useState<string | null>(null);
   const [healthKpiMonth, setHealthKpiMonth] = useState<string | null>(null);
-  const [wbrCycleDates, setWbrCycleDates] = useState<string[]>([]);
-  const [selectedCycleDate, setSelectedCycleDate] = useState('');
-  const [generatedReport, setGeneratedReport] = useState<ExecutiveClientHealthReport | null>(null);
   const [wbrRagSummary, setWbrRagSummary] = useState({
     pGreen: 0,
     pAmber: 0,
@@ -324,35 +260,6 @@ export default function BusinessSnapshotPage() {
     const ytdCompareStart = format(new Date(new Date().getFullYear() - 1, 0, 1), 'yyyy-MM');
     setMonthlyWindow([where('month', '>=', ytdCompareStart)]);
   }, []);
-
-  useEffect(() => {
-    if (!mounted || !activeAgency) return;
-    let cancelled = false;
-
-    const loadWbrCycles = async () => {
-      try {
-        const snap = await getDocs(query(
-          collection(firestore, getCollectionPath(activeAgency, 'wbrEntries')!),
-          orderBy('wbrDate', 'desc'),
-          limit(500)
-        ));
-        if (cancelled) return;
-        const dates = Array.from(new Set(
-          snap.docs.map((entry) => entry.data().wbrDate).filter((date): date is string => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date))
-        )).sort((a, b) => b.localeCompare(a));
-        setWbrCycleDates(dates);
-        setSelectedCycleDate((current) => dates.includes(current) ? current : dates[0] || '');
-      } catch (error) {
-        console.error('WBR cycle history load failed:', error);
-        toast({ variant: 'destructive', title: 'Unable to load WBR history', description: 'Check your access and try again.' });
-      }
-    };
-
-    loadWbrCycles();
-    return () => {
-      cancelled = true;
-    };
-  }, [mounted, firestore, activeAgency, toast]);
 
   const monthlyPath = getCollectionPath(activeAgency, 'monthlySpends');
   const { data: monthlySpends, loading: mLoading } = useCollection<MonthlySpend>(monthlyPath, monthlyWindow);
@@ -605,18 +512,6 @@ export default function BusinessSnapshotPage() {
   }, [monthlySpends, weeklySpends, mounted]);
 
   const { data: snapshotDoc } = useDoc<BusinessSnapshot>(stats && activeAgency ? `${getCollectionPath(activeAgency, 'businessSnapshots')}/${stats.month}` : null);
-  const executiveReportId = selectedCycleDate ? `executive-client-health-${selectedCycleDate}` : '';
-  const { data: savedExecutiveReport } = useDoc<ExecutiveClientHealthReport>(
-    executiveReportId && activeAgency
-      ? `${getCollectionPath(activeAgency, 'businessSnapshots')}/${executiveReportId}`
-      : null
-  );
-  const activeExecutiveReport =
-    generatedReport?.wbrDate === selectedCycleDate
-      ? generatedReport
-      : savedExecutiveReport?.wbrDate === selectedCycleDate
-        ? savedExecutiveReport
-        : null;
 
   useEffect(() => {
     if (!mounted || !firestore || !stats?.month || !activeAgency) return;
@@ -793,197 +688,6 @@ export default function BusinessSnapshotPage() {
 
   const isAdmin = userProfile?.role === 'Admin' || userProfile?.role === 'Cluster Lead';
 
-  const handleGenerateExecutiveReport = async () => {
-    if (!selectedCycleDate || !activeAgency) return;
-
-    setIsGeneratingReport(true);
-    try {
-      const month = selectedCycleDate.slice(0, 7);
-      const weekNumber = getWbrWeekNumber(selectedCycleDate);
-      const cycleWeekKey = spendWeekStartKey(selectedCycleDate);
-      const [wbrEntries, kpis, kpiWeeklyRows, monthlySpendRows, weeklySpendRows] = await Promise.all([
-        fetchAllDocuments<WbrEntry>(
-          firestore,
-          getCollectionPath(activeAgency, 'wbrEntries')!,
-          [where('wbrDate', '==', selectedCycleDate)]
-        ),
-        fetchAllKpisForMonth(firestore, month, activeAgency),
-        fetchAllDocuments<KpiWeeklyData>(
-          firestore,
-          getCollectionPath(activeAgency, 'kpiWeeklyData')!,
-          [where('month', '==', month)]
-        ),
-        fetchAllDocuments<MonthlySpend>(
-          firestore,
-          getCollectionPath(activeAgency, 'monthlySpends')!,
-          [where('month', '==', month)]
-        ),
-        fetchAllDocuments<WeeklySpend>(
-          firestore,
-          getCollectionPath(activeAgency, 'weeklySpends')!,
-          [where('month', '==', month)]
-        ),
-      ]);
-
-      const uniqueWbrEntries = new Map<string, WbrEntry>();
-      wbrEntries.forEach((entry) => {
-        if (entry.clientId) uniqueWbrEntries.set(entry.clientId, entry);
-      });
-      const cycleEntries = Array.from(uniqueWbrEntries.values());
-      const riskEntries = cycleEntries.filter((entry) =>
-        entry.performanceRag === 'Red' ||
-        entry.performanceRag === 'Amber' ||
-        entry.engagementRag === 'Red' ||
-        entry.engagementRag === 'Amber'
-      );
-
-      const monthlySpendsByClient = sumByClient(monthlySpendRows, (row) => toSpendNumber(row.actualSpendsInr));
-      const weeklyCycleRows = weeklySpendRows.filter((row) =>
-        cycleWeekKey && spendWeekStartKey(row.week) === cycleWeekKey
-      );
-      const weeklySpendsByClient = sumByClient(weeklyCycleRows, (row) => toSpendNumber(row.spendsInr));
-      const weeklyByKpi = new Map<string, KpiWeeklyData[]>();
-      kpiWeeklyRows.forEach((row) => {
-        const rows = weeklyByKpi.get(row.kpiDataId) || [];
-        rows.push(row);
-        weeklyByKpi.set(row.kpiDataId, rows);
-      });
-      const numeric = (value: unknown) => {
-        const result = Number(value);
-        return Number.isFinite(result) ? result : 0;
-      };
-
-      const weeklyKpiRows = kpis.flatMap((kpi) =>
-        (weeklyByKpi.get(kpi.id) || []).filter((row) => row.weekOfMonth === weekNumber)
-      );
-      const portfolio = {
-        clientCount: cycleEntries.length,
-        performance: {
-          green: cycleEntries.filter((row) => row.performanceRag === 'Green').length,
-          amber: cycleEntries.filter((row) => row.performanceRag === 'Amber').length,
-          red: cycleEntries.filter((row) => row.performanceRag === 'Red').length,
-        },
-        engagement: {
-          green: cycleEntries.filter((row) => row.engagementRag === 'Green').length,
-          amber: cycleEntries.filter((row) => row.engagementRag === 'Amber').length,
-          red: cycleEntries.filter((row) => row.engagementRag === 'Red').length,
-        },
-        weeklySpend: weeklySpendsByClient.total,
-        monthlySpend: monthlySpendsByClient.total,
-        weeklyKpis: {
-          target: weeklyKpiRows.reduce((total, row) => total + numeric(row.target), 0),
-          achieved: weeklyKpiRows.reduce((total, row) => total + numeric(row.achieved), 0),
-        },
-        monthlyKpis: {
-          target: kpis.reduce((total, row) => total + numeric(row.targetMonth), 0),
-          achieved: kpis.reduce((total, row) => total + numeric(row.achievedMonthTillYesterday), 0),
-        },
-      };
-
-      const riskAccounts: ExecutiveClientHealthAccount[] = riskEntries.map((entry) => {
-        const clientKpis = kpis.filter((kpi) => kpi.clientId === entry.clientId);
-        const challenges = [
-          entry.contractStatus && entry.contractStatus !== 'Valid'
-            ? `Contract status: ${entry.contractStatus}`
-            : '',
-        ].filter(Boolean);
-
-        return {
-          clientId: entry.clientId,
-          clientName: entry.clientName || entry.clientId,
-          cluster: entry.cluster || 'Unassigned',
-          performanceRag: entry.performanceRag || 'N/A',
-          engagementRag: entry.engagementRag || 'N/A',
-          contractStatus: entry.contractStatus || 'Not recorded',
-          csmComments: entry.financeIssues || '',
-          performanceSummary: entry.performanceSummary || '',
-          executiveSummary: entry.summary || '',
-          challenges,
-          weeklySpend: weeklySpendsByClient.byClient.get(entry.clientId) || 0,
-          monthlySpend: monthlySpendsByClient.byClient.get(entry.clientId) || 0,
-          weeklyKpis: clientKpis.flatMap((kpi) => {
-            const week = (weeklyByKpi.get(kpi.id) || []).find((row) => row.weekOfMonth === weekNumber);
-            return week ? [{
-              name: kpi.kpi || 'KPI',
-              target: numeric(week.target),
-              achieved: numeric(week.achieved),
-              ...(kpi.currency ? { unit: kpi.currency } : {}),
-            }] : [];
-          }),
-          monthlyKpis: clientKpis.map((kpi) => ({
-            name: kpi.kpi || 'KPI',
-            target: numeric(kpi.targetMonth),
-            achieved: numeric(kpi.achievedMonthTillYesterday),
-            ...(kpi.currency ? { unit: kpi.currency } : {}),
-          })),
-        };
-      }).sort((a, b) => {
-        const aRed = a.performanceRag === 'Red' || a.engagementRag === 'Red';
-        const bRed = b.performanceRag === 'Red' || b.engagementRag === 'Red';
-        return Number(bRed) - Number(aRed) || a.clientName.localeCompare(b.clientName);
-      });
-
-      const summary = await generateExecutiveClientHealthSummary({
-        cycleDate: selectedCycleDate,
-        month,
-        weekNumber,
-        portfolio,
-        riskAccounts,
-      });
-
-      setGeneratedReport({
-        id: `executive-client-health-${selectedCycleDate}`,
-        reportType: 'executive-client-health',
-        wbrDate: selectedCycleDate,
-        month,
-        weekNumber,
-        generatedAt: new Date().toISOString(),
-        ...(user?.uid ? { generatedBy: user.uid } : {}),
-        portfolio,
-        riskAccounts,
-        summary,
-      });
-      toast({ title: 'Executive summary generated', description: `${riskAccounts.length} at-risk account${riskAccounts.length === 1 ? '' : 's'} included.` });
-    } catch (error) {
-      console.error('Executive client health summary generation failed:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Summary generation failed',
-        description: error instanceof Error ? error.message : 'Unable to generate the report for this WBR cycle.',
-      });
-    } finally {
-      setIsGeneratingReport(false);
-    }
-  };
-
-  const handleSaveExecutiveReport = async () => {
-    if (!activeExecutiveReport || !activeAgency) return;
-
-    setIsSavingReport(true);
-    try {
-      const savedReport: ExecutiveClientHealthReport = {
-        ...activeExecutiveReport,
-        savedAt: new Date().toISOString(),
-        ...(user?.uid ? { generatedBy: activeExecutiveReport.generatedBy || user.uid } : {}),
-      };
-      await setDoc(
-        doc(firestore, getCollectionPath(activeAgency, 'businessSnapshots')!, savedReport.id),
-        savedReport
-      );
-      setGeneratedReport(savedReport);
-      toast({ title: 'Summary saved', description: `Saved for WBR cycle ${savedReport.wbrDate}.` });
-    } catch (error) {
-      console.error('Executive client health summary save failed:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Save failed',
-        description: error instanceof Error ? error.message : 'Unable to save this executive summary.',
-      });
-    } finally {
-      setIsSavingReport(false);
-    }
-  };
-
   const handleRefresh = async () => {
     if (!stats?.month || !activeAgency) return;
     setIsRefreshing(true);
@@ -1005,23 +709,6 @@ export default function BusinessSnapshotPage() {
       toast({ title: "Export Complete" });
     } catch (e: any) {
       toast({ variant: 'destructive', title: "Export Failed", description: e.message });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleExportExecutiveReportPdf = async () => {
-    if (!executiveReportRef.current || !selectedCycleDate) return;
-    setIsExporting(true);
-    try {
-      await exportToPdf(executiveReportRef.current, `Client_Health_${selectedCycleDate}`);
-      toast({ title: "Executive brief PDF exported" });
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Export failed',
-        description: error instanceof Error ? error.message : 'Unable to export the executive brief.',
-      });
     } finally {
       setIsExporting(false);
     }
@@ -1058,183 +745,7 @@ export default function BusinessSnapshotPage() {
         </div>
       ) : (
         <>
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border border-ink bg-surface p-5 md:p-6">
-          <div className="space-y-2">
-            <label htmlFor="executive-report-cycle" className="text-[9px] font-black uppercase tracking-[0.2em] text-secondary">
-              WBR history · Select a reporting week
-            </label>
-            <select
-              id="executive-report-cycle"
-              value={selectedCycleDate}
-              onChange={(event) => setSelectedCycleDate(event.target.value)}
-              disabled={!wbrCycleDates.length}
-              className="block h-11 min-w-[220px] border border-ink bg-background px-3 text-sm font-bold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              {wbrCycleDates.length ? wbrCycleDates.map((date) => (
-                <option key={date} value={date}>{format(parse(date, 'yyyy-MM-dd', new Date()), 'dd MMM yyyy')}</option>
-              )) : <option value="">No WBR history available</option>}
-            </select>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              className="h-11 bg-brand px-5 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-ink"
-              onClick={handleGenerateExecutiveReport}
-              disabled={!selectedCycleDate || isGeneratingReport}
-            >
-              {isGeneratingReport ? <CircleNotch className="mr-2 h-4 w-4 animate-spin" /> : <Sparkle className="mr-2 h-4 w-4" weight="fill" />}
-              Generate AI Summary
-            </Button>
-            <Button
-              variant="outline"
-              className="h-11 border-ink px-5 text-[10px] font-bold uppercase tracking-widest"
-              onClick={handleSaveExecutiveReport}
-              disabled={!activeExecutiveReport || isSavingReport}
-            >
-              {isSavingReport ? <CircleNotch className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-              {isSavingReport ? 'Saving' : activeExecutiveReport?.savedAt ? 'Saved' : 'Save Summary'}
-            </Button>
-            <Button
-              variant="outline"
-              className="h-11 border-ink px-5 text-[10px] font-bold uppercase tracking-widest"
-              onClick={handleExportExecutiveReportPdf}
-              disabled={!activeExecutiveReport || isExporting}
-            >
-              {isExporting ? <CircleNotch className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-              Report PDF
-            </Button>
-          </div>
-        </div>
-
         <div ref={snapshotRef} id="snapshot-content" className="space-y-16">
-          {activeExecutiveReport ? (
-            <section ref={executiveReportRef} className="space-y-8 border border-ink bg-surface p-5 md:p-8 lg:p-10">
-              <header className="flex flex-col gap-3 border-b border-ink pb-6 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-[0.28em] text-brand">Aztec Control Center · Executive Brief</p>
-                  <h2 className="mt-2 text-3xl font-black uppercase tracking-tighter md:text-4xl">At-Risk Client Health</h2>
-                  <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-secondary">
-                    WBR cycle {activeExecutiveReport.wbrDate} · Week {activeExecutiveReport.weekNumber} · {activeExecutiveReport.month}
-                  </p>
-                </div>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-secondary">
-                  {activeExecutiveReport.savedAt ? `Saved ${format(new Date(activeExecutiveReport.savedAt), 'dd MMM yyyy, HH:mm')}` : 'Unsaved generated brief'}
-                </p>
-              </header>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <ExecutiveMetric label="Performance · Red" value={activeExecutiveReport.portfolio.performance.red} tone="red" />
-                <ExecutiveMetric label="Performance · Amber" value={activeExecutiveReport.portfolio.performance.amber} tone="amber" />
-                <ExecutiveMetric label="Engagement · Red" value={activeExecutiveReport.portfolio.engagement.red} tone="red" />
-                <ExecutiveMetric label="Engagement · Amber" value={activeExecutiveReport.portfolio.engagement.amber} tone="amber" />
-              </div>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                <div className="space-y-4 border border-ink/15 p-5">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-secondary">Portfolio RAG distribution</p>
-                    <h3 className="mt-1 text-xl font-black uppercase tracking-tight">Risk at a glance</h3>
-                  </div>
-                  {([
-                    ['Performance', activeExecutiveReport.portfolio.performance],
-                    ['Engagement', activeExecutiveReport.portfolio.engagement],
-                  ] as const).map(([label, counts]) => {
-                    const total = counts.green + counts.amber + counts.red;
-                    return (
-                      <div key={label} className="space-y-2">
-                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
-                          <span>{label}</span><span className="text-secondary">{total} accounts</span>
-                        </div>
-                        <div className="flex h-3 overflow-hidden bg-ink/5" aria-label={`${label} RAG distribution`}>
-                          <div className="bg-success" style={{ width: `${total ? counts.green / total * 100 : 0}%` }} />
-                          <div className="bg-warning" style={{ width: `${total ? counts.amber / total * 100 : 0}%` }} />
-                          <div className="bg-destructive" style={{ width: `${total ? counts.red / total * 100 : 0}%` }} />
-                        </div>
-                        <div className="flex gap-4 text-[9px] font-mono text-secondary">
-                          <span>GREEN {counts.green}</span><span>AMBER {counts.amber}</span><span>RED {counts.red}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="grid grid-cols-2 gap-px border border-ink bg-ink">
-                  <ExecutiveMetric label="Week spend" value={formatCurrency(activeExecutiveReport.portfolio.weeklySpend)} />
-                  <ExecutiveMetric label="Month spend" value={formatCurrency(activeExecutiveReport.portfolio.monthlySpend)} />
-                  <ExecutiveMetric
-                    label="Week KPI achieved / target"
-                    value={`${activeExecutiveReport.portfolio.weeklyKpis.achieved.toLocaleString()} / ${activeExecutiveReport.portfolio.weeklyKpis.target.toLocaleString()}`}
-                  />
-                  <ExecutiveMetric
-                    label="Month KPI achieved / target"
-                    value={`${activeExecutiveReport.portfolio.monthlyKpis.achieved.toLocaleString()} / ${activeExecutiveReport.portfolio.monthlyKpis.target.toLocaleString()}`}
-                  />
-                </div>
-              </div>
-              <p className="text-[9px] leading-relaxed text-secondary">
-                Weekly spend and KPI figures are matched to the selected WBR week. Monthly spend is the recorded total for the selected month; monthly KPI figures use the month-tracker values.
-              </p>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                <div className="space-y-3 border-l-4 border-brand bg-cream/50 p-5">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em]">Executive summary</h3>
-                  <p className="text-sm font-medium leading-relaxed">{activeExecutiveReport.summary.executiveSummary}</p>
-                </div>
-                <ExecutiveBulletSection title="Portfolio readout" bullets={activeExecutiveReport.summary.portfolioReadout} />
-                <ExecutiveBulletSection title="Performance drivers" bullets={activeExecutiveReport.summary.performanceReadout} />
-                <ExecutiveBulletSection title="Engagement & challenges" bullets={activeExecutiveReport.summary.engagementReadout} />
-                <div className="lg:col-span-2">
-                  <ExecutiveBulletSection title="Leadership priorities" bullets={activeExecutiveReport.summary.priorityActions} />
-                </div>
-              </div>
-
-              <div className="space-y-4 border-t border-ink pt-6">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-secondary">Account-level evidence</p>
-                    <h3 className="mt-1 text-2xl font-black uppercase tracking-tighter">Red &amp; Amber Accounts</h3>
-                  </div>
-                  <span className="font-mono text-[10px] font-bold text-secondary">{activeExecutiveReport.riskAccounts.length} accounts in scope</span>
-                </div>
-                {activeExecutiveReport.riskAccounts.length ? (
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    {activeExecutiveReport.riskAccounts.map((account) => (
-                      <article key={account.clientId} className="space-y-4 border border-ink/20 p-5 break-inside-avoid">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <h4 className="text-lg font-black uppercase tracking-tight">{account.clientName}</h4>
-                            <p className="text-[9px] font-bold uppercase tracking-widest text-secondary">{account.cluster} · {account.contractStatus}</p>
-                          </div>
-                          <div className="flex gap-2 text-[8px] font-black uppercase tracking-widest">
-                            <RagBadge label="Performance" value={account.performanceRag} />
-                            <RagBadge label="Engagement" value={account.engagementRag} />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 border-y border-ink/10 py-3 text-[10px]">
-                          <p><span className="text-secondary">WEEK SPEND </span><strong>{formatCurrency(account.weeklySpend)}</strong></p>
-                          <p><span className="text-secondary">MONTH SPEND </span><strong>{formatCurrency(account.monthlySpend)}</strong></p>
-                        </div>
-                        <AccountText label="CSM comments / challenges" value={account.csmComments} />
-                        {account.challenges.map((challenge) => <AccountText key={challenge} label="Challenge" value={challenge} />)}
-                        <AccountText label="Performance summary" value={account.performanceSummary} />
-                        <AccountText label="Executive summary" value={account.executiveSummary} />
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <AccountKpis title="Selected week KPIs" rows={account.weeklyKpis} />
-                          <AccountKpis title="Month KPIs" rows={account.monthlyKpis} />
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="border border-dashed border-ink/30 p-6 text-sm text-secondary">No Red or Amber accounts were recorded for this WBR cycle.</p>
-                )}
-              </div>
-            </section>
-          ) : (
-            <div className="border border-dashed border-ink/30 bg-surface p-8 text-center">
-              <h2 className="text-lg font-black uppercase tracking-tight">Generate an executive brief</h2>
-              <p className="mt-2 text-sm text-secondary">Choose a WBR cycle above to summarize Red and Amber account health, comments, spend, and KPI evidence.</p>
-            </div>
-          )}
-          
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
             <div className="lg:col-span-2 bg-surface border border-ink p-10 space-y-8">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1578,84 +1089,6 @@ export default function BusinessSnapshotPage() {
         </div>
         </>
       )}
-    </div>
-  );
-}
-
-function ExecutiveMetric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  tone?: 'red' | 'amber';
-}) {
-  return (
-    <div className={cn(
-      'min-w-0 border border-ink/15 bg-surface p-4',
-      tone === 'red' && 'border-destructive/30 bg-destructive/[0.04]',
-      tone === 'amber' && 'border-warning/30 bg-warning/[0.05]'
-    )}>
-      <p className="text-[8px] font-black uppercase tracking-widest text-secondary">{label}</p>
-      <p className={cn(
-        'mt-2 break-words text-xl font-black tracking-tight md:text-2xl',
-        tone === 'red' && 'text-destructive',
-        tone === 'amber' && 'text-warning'
-      )}>{value}</p>
-    </div>
-  );
-}
-
-function RagBadge({ label, value }: { label: string; value: RagStatus }) {
-  const tone = value === 'Red'
-    ? 'border-destructive/30 bg-destructive/5 text-destructive'
-    : value === 'Amber'
-      ? 'border-warning/30 bg-warning/10 text-warning'
-      : value === 'Green'
-        ? 'border-success/30 bg-success/5 text-success'
-        : 'border-ink/20 bg-ink/5 text-secondary';
-  return <span className={cn('border px-2 py-1', tone)}>{label}: {value}</span>;
-}
-
-function ExecutiveBulletSection({ title, bullets }: { title: string; bullets: string[] }) {
-  return (
-    <section className="space-y-3 border border-ink/15 p-5">
-      <h3 className="text-[10px] font-black uppercase tracking-[0.2em]">{title}</h3>
-      {bullets.length ? (
-        <ul className="space-y-2 text-sm leading-relaxed">
-          {bullets.map((bullet, index) => <li key={`${title}-${index}`} className="flex gap-2"><span className="font-black text-brand">•</span><span>{bullet}</span></li>)}
-        </ul>
-      ) : <p className="text-sm italic text-secondary">No evidence recorded for this section.</p>}
-    </section>
-  );
-}
-
-function AccountText({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-[8px] font-black uppercase tracking-widest text-secondary">{label}</p>
-      <p className="whitespace-pre-wrap text-[11px] leading-relaxed">{value.trim() || 'Not recorded for this cycle.'}</p>
-    </div>
-  );
-}
-
-function AccountKpis({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: { name: string; target: number; achieved: number; unit?: string }[];
-}) {
-  return (
-    <div className="space-y-2">
-      <p className="text-[8px] font-black uppercase tracking-widest text-secondary">{title}</p>
-      {rows.length ? rows.map((row, index) => (
-        <div key={`${row.name}-${index}`} className="flex items-start justify-between gap-2 border-t border-ink/10 pt-2 text-[10px]">
-          <span className="font-bold">{row.name}{row.unit ? ` (${row.unit})` : ''}</span>
-          <span className="shrink-0 font-mono">{row.achieved.toLocaleString()} / {row.target.toLocaleString()}</span>
-        </div>
-      )) : <p className="text-[10px] italic text-secondary">No KPI data recorded.</p>}
     </div>
   );
 }
