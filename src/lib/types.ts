@@ -364,9 +364,10 @@ export interface ExecutiveClientHealthAccount {
 
 export interface ExecutiveClientHealthReport {
   id: string;
-  schemaVersion: 2;
+  schemaVersion: 3;
   reportType: 'executive-client-health';
   wbrDate: string;
+  currentWeekDate: string;
   previousWeekDate: string;
   generatedAt: string;
   savedAt?: string;

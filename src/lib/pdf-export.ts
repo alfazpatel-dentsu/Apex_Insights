@@ -16,14 +16,20 @@ export async function exportToPdf(element: HTMLElement | null, month: string) {
       scale: 2, // High resolution
       useCORS: true,
       logging: false,
-      backgroundColor: null, 
+      backgroundColor: '#ffffff',
       onclone: (clonedDoc) => {
-        // Ensure the cloned element for snapshotting is visible and correctly styled
-        const el = clonedDoc.getElementById('snapshot-content');
-        if (el) {
+        clonedDoc.documentElement.classList.remove('dark');
+        clonedDoc.documentElement.style.colorScheme = 'light';
+        clonedDoc.body.classList.remove('dark');
+        clonedDoc.body.style.backgroundColor = '#ffffff';
+
+        const el = element.id ? clonedDoc.getElementById(element.id) : null;
+        if (el?.id === 'snapshot-content') {
           el.style.padding = '20px';
-          // Force a consistent background color for the capture
           el.style.backgroundColor = 'hsl(35 30% 95%)';
+        } else if (el) {
+          el.style.backgroundColor = '#ffffff';
+          el.style.color = '#0a0a0a';
         }
       }
     });

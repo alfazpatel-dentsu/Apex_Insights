@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { addDays, format, parse, startOfWeek, subWeeks } from 'date-fns';
 import {
   collection,
@@ -25,9 +26,8 @@ import { useToast } from '@/hooks/use-toast';
 import { canonicalizeChannel, resolveActionStatus } from '@/lib/normalize';
 import { getActiveAgency, getCollectionPath } from '@/lib/agencies';
 import { coerceKpiNumber, isPrimaryKpiType, parseKpiDirection } from '@/lib/kpi-rag';
-import { toSpendNumber } from '@/lib/spend-week';
+import { resolveWowWeekPair, spendWeekStartKey, toSpendNumber } from '@/lib/spend-week';
 import { exportToPdf } from '@/lib/pdf-export';
-import { spendWeekStartKey } from '@/lib/spend-week';
 import type {
   ActionItem,
   Client,
@@ -255,14 +255,16 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
     return () => { cancelled = true; };
   }, [firestore, agency, toast, wbrDate]);
 
-  const reportId = selectedDate ? `executive-client-health-v2-${selectedDate}` : '';
+  const reportId = selectedDate ? `executive-client-health-v3-${selectedDate}` : '';
   const { data: savedReport } = useDoc<ExecutiveClientHealthReport>(
     reportId && agency ? `${getCollectionPath(agency, 'businessSnapshots')}/${reportId}` : null
   );
   const storedOrGeneratedReport =
     generatedReport?.wbrDate === selectedDate
       ? generatedReport
-      : savedReport?.schemaVersion === 2 && savedReport.wbrDate === selectedDate
+      : savedReport?.schemaVersion === 3 &&
+          savedReport.wbrDate === selectedDate &&
+          savedReport.currentWeekDate
         ? savedReport
         : null;
   const activeReport = useMemo(() => storedOrGeneratedReport ? ({
@@ -306,14 +308,9 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
     if (!agency || !selectedDate) return;
     setIsGenerating(true);
     try {
-      const currentPeriod = getWeekPeriod(selectedDate);
-      const previousDate = format(subWeeks(parse(selectedDate, 'yyyy-MM-dd', new Date()), 1), 'yyyy-MM-dd');
-      const previousPeriod = getWeekPeriod(previousDate);
-      const months = Array.from(new Set([previousPeriod.month, currentPeriod.month]));
-      const spendMonthStart = format(subWeeks(parse(selectedDate, 'yyyy-MM-dd', new Date()), 1), 'yyyy-MM');
-      const spendMonthEnd = format(addDays(parse(selectedDate, 'yyyy-MM-dd', new Date()), 6), 'yyyy-MM');
-
-      const [wbrEntries, actionItems, weeklySpendRows, ...kpiAndWeeklyRows] = await Promise.all([
+      const selectedPeriod = getWeekPeriod(selectedDate);
+      const spendMonthStart = format(subWeeks(parse(selectedDate, 'yyyy-MM-dd', new Date()), 12), 'yyyy-MM');
+      const [wbrEntries, actionItems, weeklySpendRows] = await Promise.all([
         fetchAll<WbrEntry>(
           firestore,
           getCollectionPath(agency, 'wbrEntries')!,
@@ -323,14 +320,30 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
         fetchAll<WeeklySpend>(
           firestore,
           getCollectionPath(agency, 'weeklySpends')!,
-          [where('month', '>=', spendMonthStart), where('month', '<=', spendMonthEnd), orderBy('month')]
+          [where('month', '>=', spendMonthStart), where('month', '<=', selectedPeriod.month), orderBy('month')]
         ),
-        ...months.flatMap((month) => [
-          fetchAll<KpiData>(firestore, getCollectionPath(agency, 'kpis')!, [where('month', '==', month)]),
-          fetchAll<KpiWeeklyData>(firestore, getCollectionPath(agency, 'kpiWeeklyData')!, [where('month', '==', month)]),
-        ]),
       ]);
 
+      const weeklyRowsByKey = new Map<string, WeeklySpend[]>();
+      weeklySpendRows.forEach((row) => {
+        if (row.dataType === 'ORGANIC REVENUE') return;
+        const weekStart = spendWeekStartKey(row.week);
+        if (!weekStart || weekStart > selectedPeriod.weekStart) return;
+        const rows = weeklyRowsByKey.get(weekStart) || [];
+        rows.push(row);
+        weeklyRowsByKey.set(weekStart, rows);
+      });
+
+      const availableWeeks = resolveWowWeekPair(Array.from(weeklyRowsByKey.keys()));
+      const currentWeekDate = availableWeeks.currentKey || selectedPeriod.weekStart;
+      const previousWeekDate = availableWeeks.previousKey || format(subWeeks(parse(currentWeekDate, 'yyyy-MM-dd', new Date()), 1), 'yyyy-MM-dd');
+      const currentPeriod = getWeekPeriod(currentWeekDate);
+      const previousPeriod = getWeekPeriod(previousWeekDate);
+      const months = Array.from(new Set([previousPeriod.month, currentPeriod.month]));
+      const kpiAndWeeklyRows = await Promise.all(months.flatMap((month) => [
+        fetchAll<KpiData>(firestore, getCollectionPath(agency, 'kpis')!, [where('month', '==', month)]),
+        fetchAll<KpiWeeklyData>(firestore, getCollectionPath(agency, 'kpiWeeklyData')!, [where('month', '==', month)]),
+      ]));
       const kpisByMonth = new Map<string, KpiData[]>();
       const weeklyKpisByMonth = new Map<string, KpiWeeklyData[]>();
       months.forEach((month, index) => {
@@ -353,16 +366,6 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
         const rows = actionsByClient.get(action.clientId) || [];
         rows.push(pending);
         actionsByClient.set(action.clientId, rows);
-      });
-
-      const weeklyRowsByKey = new Map<string, WeeklySpend[]>();
-      weeklySpendRows.forEach((row) => {
-        if (row.dataType === 'ORGANIC REVENUE') return;
-        const weekStart = spendWeekStartKey(row.week);
-        if (!weekStart) return;
-        const rows = weeklyRowsByKey.get(weekStart) || [];
-        rows.push(row);
-        weeklyRowsByKey.set(weekStart, rows);
       });
 
       const portfolio = {
@@ -405,13 +408,13 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
           executiveSummary: entry.summary || '',
           challenges,
           previousWeek: makeWeekEvidence(
-            previousDate,
+            previousWeekDate,
             weeklyRowsByKey.get(previousPeriod.weekStart)?.filter((row) => row.clientId === entry.clientId) || [],
             previousKpis,
             weeklyKpisByMonth.get(previousPeriod.month) || []
           ),
           currentWeek: makeWeekEvidence(
-            selectedDate,
+            currentWeekDate,
             weeklyRowsByKey.get(currentPeriod.weekStart)?.filter((row) => row.clientId === entry.clientId) || [],
             currentKpis,
             weeklyKpisByMonth.get(currentPeriod.month) || []
@@ -429,16 +432,18 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
 
       const summary = await generateExecutiveClientHealthSummary({
         cycleDate: selectedDate,
-        previousWeekDate: previousDate,
+        currentWeekDate,
+        previousWeekDate,
         portfolio,
         riskAccounts,
       });
       setGeneratedReport({
         id: reportId,
-        schemaVersion: 2,
+        schemaVersion: 3,
         reportType: 'executive-client-health',
         wbrDate: selectedDate,
-        previousWeekDate: previousDate,
+        currentWeekDate,
+        previousWeekDate,
         generatedAt: new Date().toISOString(),
         ...(user?.uid ? { generatedBy: user.uid } : {}),
         portfolio,
@@ -535,7 +540,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
             <p className="text-[9px] font-black uppercase tracking-[0.28em] text-primary">Aztec Control Center · Weekly Review</p>
             <h2 className="mt-2 text-2xl font-black uppercase tracking-tight md:text-4xl">Executive Client Health</h2>
             <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-secondary">
-              Current week {getWeekPeriod(activeReport.wbrDate).label} · Compared with {getWeekPeriod(activeReport.previousWeekDate).label}
+              Current week {getWeekPeriod(activeReport.currentWeekDate || activeReport.wbrDate).label} · Compared with {getWeekPeriod(activeReport.previousWeekDate).label}
             </p>
           </header>
 
@@ -543,16 +548,16 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
             <h3 className="text-sm font-black uppercase tracking-widest">Executive summary</h3>
             <p className="border-l-4 border-primary bg-primary/5 p-4 text-sm leading-relaxed">{activeReport.summary.executiveSummary}</p>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <RagRoster title="Performance · Red" accounts={ragGroups.performanceRed} />
-              <RagRoster title="Performance · Amber" accounts={ragGroups.performanceAmber} />
-              <RagRoster title="Engagement · Red" accounts={ragGroups.engagementRed} />
-              <RagRoster title="Engagement · Amber" accounts={ragGroups.engagementAmber} />
+              <RagRoster title="Performance · Red" accounts={ragGroups.performanceRed} wbrDate={activeReport.wbrDate} />
+              <RagRoster title="Performance · Amber" accounts={ragGroups.performanceAmber} wbrDate={activeReport.wbrDate} />
+              <RagRoster title="Engagement · Red" accounts={ragGroups.engagementRed} wbrDate={activeReport.wbrDate} />
+              <RagRoster title="Engagement · Amber" accounts={ragGroups.engagementAmber} wbrDate={activeReport.wbrDate} />
             </div>
           </section>
 
-          <AccountBulletSection title="Portfolio readout · account by account" bullets={activeReport.summary.portfolioReadout} accountsById={accountsById} />
-          <AccountBulletSection title="Performance drivers · account by account" bullets={activeReport.summary.performanceReadout} accountsById={accountsById} />
-          <AccountBulletSection title="Engagement & challenges · account by account" bullets={activeReport.summary.engagementReadout} accountsById={accountsById} />
+          <AccountBulletSection title="Portfolio readout · account by account" bullets={activeReport.summary.portfolioReadout} accountsById={accountsById} wbrDate={activeReport.wbrDate} />
+          <AccountBulletSection title="Performance drivers · account by account" bullets={activeReport.summary.performanceReadout} accountsById={accountsById} wbrDate={activeReport.wbrDate} />
+          <AccountBulletSection title="Engagement & challenges · account by account" bullets={activeReport.summary.engagementReadout} accountsById={accountsById} wbrDate={activeReport.wbrDate} />
 
           <section className="space-y-4">
             <div>
@@ -565,7 +570,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
                   <article key={action.id} className="break-inside-avoid border border-foreground/15 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <p className="text-[10px] font-black uppercase text-primary">{account.clientName}</p>
+                        <ClientReviewLink clientId={account.clientId} clientName={account.clientName} wbrDate={activeReport.wbrDate} className="text-[10px] font-black uppercase text-primary" />
                         <h4 className="mt-1 text-sm font-bold">{action.taskName}</h4>
                       </div>
                       <span className="border border-foreground/15 px-2 py-1 text-[8px] font-black uppercase">{action.status} · {action.priority}</span>
@@ -588,7 +593,7 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
             {activeReport.riskAccounts.length ? (
               <div className="grid gap-4 xl:grid-cols-2">
                 {activeReport.riskAccounts.map((account) => (
-                  <AccountEvidence key={account.clientId} account={account} />
+                  <AccountEvidence key={account.clientId} account={account} wbrDate={activeReport.wbrDate} />
                 ))}
               </div>
             ) : <p className="border border-dashed border-foreground/20 p-5 text-sm text-secondary">No Red or Amber clients were recorded for this WBR cycle.</p>}
@@ -601,19 +606,55 @@ export function ExecutiveClientHealthReportPanel({ wbrDate, clients }: { wbrDate
         <div className="border border-dashed border-foreground/20 p-6 text-center">
           <ChartBar className="mx-auto h-8 w-8 text-secondary/50" />
           <h3 className="mt-3 text-sm font-black uppercase tracking-tight">Generate an executive WBR brief</h3>
-          <p className="mt-1 text-xs text-secondary">The report lists each Red and Amber account, compares exact weekly spend and KPIs, summarizes the review notes, and surfaces pending actions.</p>
+          <p className="mt-1 text-xs text-secondary">Generate a concise, account-by-account AI readout. Previously saved summaries need to be regenerated for this improved format.</p>
         </div>
       )}
     </section>
   );
 }
 
-function RagRoster({ title, accounts }: { title: string; accounts: ExecutiveClientHealthAccount[] }) {
+function ClientReviewLink({
+  clientId,
+  clientName,
+  wbrDate,
+  className,
+}: {
+  clientId: string;
+  clientName: string;
+  wbrDate: string;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={`/dashboard/wbr/${encodeURIComponent(clientId)}?date=${encodeURIComponent(wbrDate)}`}
+      className={cn('hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', className)}
+      aria-label={`Open Weekly Review for ${clientName}`}
+    >
+      {clientName}
+    </Link>
+  );
+}
+
+function removeClientPrefix(bullet: string, ...labels: string[]): string {
+  let trimmed = bullet.trim();
+  for (const label of labels) {
+    const prefix = label.trim();
+    if (!prefix) continue;
+    while (trimmed.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())) {
+      const remainder = trimmed.slice(prefix.length);
+      if (!/^[\s:,\u2013\u2014-]/.test(remainder)) break;
+      trimmed = remainder.replace(/^[\s:,\u2013\u2014-]+/, '');
+    }
+  }
+  return trimmed;
+}
+
+function RagRoster({ title, accounts, wbrDate }: { title: string; accounts: ExecutiveClientHealthAccount[]; wbrDate: string }) {
   return (
     <div className="border border-foreground/15 p-3">
       <h4 className="text-[9px] font-black uppercase tracking-widest">{title} · {accounts.length}</h4>
       {accounts.length
-        ? <ul className="mt-2 space-y-1 text-[10px]">{accounts.map((account) => <li key={account.clientId}>{account.clientName} <span className="text-secondary">({account.clientId})</span></li>)}</ul>
+        ? <ul className="mt-2 space-y-1 text-[10px]">{accounts.map((account) => <li key={account.clientId}><ClientReviewLink clientId={account.clientId} clientName={account.clientName} wbrDate={wbrDate} /> <span className="text-secondary">({account.clientId})</span></li>)}</ul>
         : <p className="mt-2 text-[10px] text-secondary">None</p>}
     </div>
   );
@@ -623,37 +664,44 @@ function AccountBulletSection({
   title,
   bullets,
   accountsById,
+  wbrDate,
 }: {
   title: string;
   bullets: { clientId: string; bullet: string }[];
   accountsById: Map<string, ExecutiveClientHealthAccount>;
+  wbrDate: string;
 }) {
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-black uppercase tracking-widest">{title}</h3>
       {bullets.length ? (
-        <div className="grid gap-2 lg:grid-cols-2">
+        <ul className="grid gap-2 lg:grid-cols-2">
           {bullets.map((item) => {
             const account = accountsById.get(item.clientId);
             return (
-              <p key={item.clientId} className="break-inside-avoid border border-foreground/10 p-3 text-xs leading-relaxed">
-                <strong className="text-primary">{account?.clientName || item.clientId}:</strong>{' '}
-                {account ? item.bullet.split(account.clientId).join(account.clientName) : item.bullet}
-              </p>
+              <li key={item.clientId} className="flex items-start gap-2 break-inside-avoid border border-foreground/10 p-3 text-xs leading-relaxed">
+                <span aria-hidden="true" className="font-black text-primary">•</span>
+                <p>
+                  <ClientReviewLink clientId={item.clientId} clientName={account?.clientName || item.clientId} wbrDate={wbrDate} className="font-bold text-primary" />
+                  {' '}{removeClientPrefix(item.bullet, account?.clientName || '', item.clientId)}
+                </p>
+              </li>
             );
           })}
-        </div>
+        </ul>
       ) : <p className="text-xs text-secondary">No risk accounts in this WBR cycle.</p>}
     </section>
   );
 }
 
-function AccountEvidence({ account }: { account: ExecutiveClientHealthAccount }) {
+function AccountEvidence({ account, wbrDate }: { account: ExecutiveClientHealthAccount; wbrDate: string }) {
   return (
     <article className="space-y-4 break-inside-avoid border border-foreground/20 p-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-lg font-black uppercase tracking-tight">{account.clientName}</h4>
+          <h4 className="text-lg font-black uppercase tracking-tight">
+            <ClientReviewLink clientId={account.clientId} clientName={account.clientName} wbrDate={wbrDate} className="text-primary" />
+          </h4>
           <p className="text-[9px] font-bold uppercase tracking-widest text-secondary">{account.clientId} · {account.cluster} · {account.contractStatus}</p>
         </div>
         <div className="flex flex-wrap gap-1 text-[8px] font-black uppercase">
@@ -664,12 +712,6 @@ function AccountEvidence({ account }: { account: ExecutiveClientHealthAccount })
       <div className="grid gap-4 md:grid-cols-2">
         <WeekEvidence title="Last week" week={account.previousWeek} />
         <WeekEvidence title="Current week" week={account.currentWeek} />
-      </div>
-      <div className="grid gap-3 border-t border-foreground/10 pt-3 md:grid-cols-2">
-        <EvidenceText label="CSM comments" value={account.csmComments} />
-        <EvidenceText label="Performance summary" value={account.performanceSummary} />
-        <EvidenceText label="Executive summary" value={account.executiveSummary} />
-        <EvidenceText label="Challenges / opportunities" value={account.challenges.join(' ')} />
       </div>
     </article>
   );
@@ -715,14 +757,5 @@ function WeekEvidence({ title, week }: { title: string; week: ExecutiveClientHea
         );
       }) : <p className="text-[10px] text-secondary">No spend or KPI data recorded for this week.</p>}
     </section>
-  );
-}
-
-function EvidenceText({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[8px] font-black uppercase tracking-widest text-secondary">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap text-[10px] leading-relaxed">{value.trim() || 'Not recorded for this WBR cycle.'}</p>
-    </div>
   );
 }
